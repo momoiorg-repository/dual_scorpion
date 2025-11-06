@@ -1,0 +1,2 @@
+from .config_dual_scropion_follower import DualScropionFollowerConfig
+from .dual_scropion_follower import DualScropionFollower
