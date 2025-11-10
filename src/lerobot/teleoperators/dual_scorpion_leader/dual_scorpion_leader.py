@@ -26,20 +26,20 @@ from lerobot.motors.feetech import (
 )
 
 from ..teleoperator import Teleoperator
-from .config_dual_scropion_leader import DualScropionLeaderConfig
+from .config_dual_scorpion_leader import DualScorpionLeaderConfig
 
 logger = logging.getLogger(__name__)
 
-class DualScropionLeader(Teleoperator):
+class DualScorpionLeader(Teleoperator):
     """
-    Dual Scropion Leader Arm
+    Dual Scorpion Leader Arm
     """
-    config_class = DualScropionLeaderConfig    
-    name = "dual_scropion_leader"
+    config_class = DualScorpionLeaderConfig    
+    name = "dual_scorpion_leader"
 
-    def __init__(self, config: DualScropionLeaderConfig):
+    def __init__(self, config: DualScorpionLeaderConfig):
         """
-        Initialize the Dual Scropion Leader Arm
+        Initialize the Dual Scorpion Leader Arm
         Dual Scropion 双腕リーダーアームを初期化
         """
         super().__init__(config)

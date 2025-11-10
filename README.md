@@ -1,88 +1,76 @@
 # dual_scorpion
-hardware design of SO-101 based dual arm robot
+> Soft Robotics SO-101–derived, open-hardware dual arm robot with matched teleoperation leaders.
 
-Dual_scorpion is the so-101 based integrated dual arm robot.
-fork of the so-101 design repository
-optimized for dual arm operation
-added 2 DoF to the arm
-created clavicle rod, spine and base
+dual_scorpion (code-name `dual_scropion` in the CLI) extends the original SO-101 single arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
 
-
----
+## Contents
+- [Highlights](#highlights)
+- [Repository Map](#repository-map)
+- [Quickstart](#quickstart)
+- [Hardware Bring-Up](#hardware-bring-up)
+- [Configuration](#configuration)
+- [Runtime Workflows](#runtime-workflows)
+- [3D Printed Parts](#3d-printed-parts)
+- [Development Notes](#development-notes)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Highlights
+- Dual 7-DOF follower arms plus matching leader arms for real-time bimanual control.
+- CLI workflows (`lerobot-*`) for motor setup, calibration, teleoperation, data collection, and replay.
+- Hugging Face integration for storing demonstrations, policies, and evaluation runs.
+- `dual_scorpion_3d_printer_parts/` – STL files for follower and leader builds.
 
-- Dual 7-DOF follower arm implementation with articulated grippers.
-- Matching teleoperator (leader) arms for real-time bimanual control.
-- CLI workflows for motor setup, calibration, teleoperation, recording, and replay (`lerobot-*` commands).
-- Hugging Face dataset integration for storing demonstrations and policies.
-- Open hardware: printable parts shipped under `dual_scorpion_3d_printer_parts/`.
+## Quickstart
 
+### Requirements
+- Linux or macOS host with Python 3.10+.
+- `pip`, `venv`, and a recent `git`.
+- Feetech/BX servo buses (supported through the `[feetech]` extra).
 
----
-
-## Installation
-
+### Install
 ```bash
-git clone https://github.com/syun88/dual_scropion.git
-cd dual_scropion
+git clone https://github.com/momoiorg-repository/dual_scorpion.git
+cd dual_scorpion
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e ".[feetech]"
 ```
 
-Authenticate with Hugging Face if you plan to push datasets:
-
+### Optional: authenticate with Hugging Face
 ```bash
 huggingface-cli login
 export HF_USER=<your-hf-username>
 ```
 
----
 
 ## Hardware Bring-Up
-
-1. **3D print and assemble** parts from `dual_scorpion_3d_printer_parts/`.
-2. **Wire servos** to their controller boards, keeping IDs consistent between the left and right arms.
-3. **Verify USB ports** with `lerobot-find-port` to identify `/dev/tty*` (Linux/macOS) or `COM*` (Windows).
+1. **Print & assemble** the follower and leader parts from `dual_scorpion_3d_printer_parts/`.
+2. **Wire servos** to their controllers, mirroring IDs between left and right buses.
+3. **Probe USB ports** (`lerobot-find-port`) to map `/dev/tty*` or `COM*` devices.
 
 ### Set Motor IDs
-
 ```bash
 lerobot-setup-motors \
   --robot.type=dual_scropion_follower \
-  --robot.left_arm_port=/dev/tty.usbmodemXXXXX \
-  --robot.right_arm_port=/dev/tty.usbmodemYYYYY
+  --robot.left_arm_port=/dev/tty.usbmodemLEFT \
+  --robot.right_arm_port=/dev/tty.usbmodemRIGHT
 ```
-
-This utility walks through each servo and assigns the expected IDs.
+The tool steps through each servo, writes the expected ID, and stores the layout.
 
 ### Calibrate Encoders
-
 ```bash
 lerobot-calibrate \
   --robot.type=dual_scropion_follower \
-  --robot.left_arm_port=/dev/tty.usbmodemXXXXX \
-  --robot.right_arm_port=/dev/tty.usbmodemYYYYY \
+  --robot.left_arm_port=/dev/tty.usbmodemLEFT \
+  --robot.right_arm_port=/dev/tty.usbmodemRIGHT \
   --robot.use_degrees=true
 ```
-
-Follow the prompts to move each joint through its range of motion. Calibration files are written to your local cache and automatically re-used.
-
----
+Follow the prompts to sweep every joint. Calibration artifacts are cached locally and reused by the runtime.
 
 ## Configuration
-
-The follower configuration lives in `src/lerobot/robots/dual_scropion_follower/config_dual_scropion_follower.py`.
-
-Key fields:
-- `right_arm_port` / `left_arm_port`: USB device paths for each servo bus.
-- `max_relative_target`: Optional per-joint safety clamp for relative commands.
-- `cameras`: Mapping of camera IDs to `CameraConfig` definitions.
-- `use_degrees`: Toggle between degree and normalized units for actions.
-
-Create a Python config or CLI override to match your setup:
+Follower defaults live in `src/lerobot/robots/dual_scropion_follower/config_dual_scropion_follower.py`. Override them in Python or via CLI flags:
 
 ```python
 from lerobot.robots.dual_scropion_follower import DualScropionFollowerConfig
@@ -98,12 +86,15 @@ config = DualScropionFollowerConfig(
 )
 ```
 
----
+Key fields:
+- `right_arm_port` / `left_arm_port` – USB serial device for each servo daisy-chain.
+- `max_relative_target` – joint-level clamp for relative commands (safety margin).
+- `cameras` – optional camera definitions for streaming & logging.
+- `use_degrees` – toggle between degrees and normalized units.
 
 ## Runtime Workflows
 
 ### Teleoperate
-
 ```bash
 lerobot-teleoperate \
   --robot.type=dual_scropion_follower \
@@ -114,11 +105,9 @@ lerobot-teleoperate \
   --teleop.right_arm_port=/dev/tty.usbmodemLEADER_R \
   --display_data=true
 ```
-
-The leader arm mirrors joint commands onto the follower and streams any configured camera feeds.
+The leader mirrors joint commands to the follower while streaming configured cameras.
 
 ### Record Datasets
-
 ```bash
 lerobot-record \
   --robot.type=dual_scropion_follower \
@@ -133,11 +122,9 @@ lerobot-record \
   --dataset.single_task="Pick and place" \
   --dataset.num_episodes=10
 ```
-
-Frames, actions, and metadata are stored locally and optionally pushed to the Hugging Face Hub.
+Samples are written locally and pushed to the Hugging Face Hub when `HF_USER` is set.
 
 ### Replay Policies or Datasets
-
 ```bash
 lerobot-replay \
   --robot.type=dual_scropion_follower \
@@ -146,13 +133,18 @@ lerobot-replay \
   --dataset.repo_id=${HF_USER}/dual_scropion_demo \
   --dataset.episode=0
 ```
-
-Use `replay_loop.sh` for repeated evaluation runs after exporting `HF_USER`.
-
----
+For repeated evaluation runs, use `scripts/replay_loop.sh` after exporting `HF_USER`.
 
 ## 3D Printed Parts
+`dual_scorpion_3d_printer_parts/` contains STL packages for the follower and leader: base plates, spine, clavicle rods, wrists, and gripper jaws. Refer to the `media/` previews and the upcoming wiki for material choices, infill, and assembly notes. Issue PRs with updated CAD, BOMs, or fabrication tips.
 
-The STL models under Follower `dual_scorpion_3d_printer_parts/Follower` and Leader cover base plates, joint mounts, gripper jaws, and wrist assemblies. Manufacture guidance (material, infill, hardware) is tracked in the project wiki under construction. Contributions with assembly notes, BOMs, and CAD updates are welcome.
+## Development Notes
+- `Makefile` exposes Docker builds (`make build-user`) and representative end-to-end tests (`make test-end-to-end` and friends).
+- `docs/` captures calibration notes, wiring diagrams, and in-progress how-tos; contributions are welcome.
+- `examples/` plus `benchmarks/` provide script snippets for policy training/eval on Hugging Face datasets.
 
----
+## Contributing
+Issues and PRs are encouraged—especially around documentation gaps, new teleop tooling, and CAD improvements. Please open an issue before large hardware or API changes so we can coordinate on interfaces.
+
+## License
+Apache License 2.0 (see `LICENSE`). Use the assets freely within the terms, and consider sharing back improvements to benefit other dual_scorpion builders.

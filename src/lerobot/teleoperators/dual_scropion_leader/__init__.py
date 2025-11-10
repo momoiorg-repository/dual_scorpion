@@ -1,2 +1,0 @@
-from .config_dual_scropion_leader import DualScropionLeaderConfig
-from .dual_scropion_leader import DualScropionLeader

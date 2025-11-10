@@ -19,11 +19,11 @@ from dataclasses import dataclass
 
 from ..config import TeleoperatorConfig
 
-@TeleoperatorConfig.register_subclass("dual_scropion_leader")
+@TeleoperatorConfig.register_subclass("dual_scorpion_leader")
 @dataclass
-class DualScropionLeaderConfig(TeleoperatorConfig):
+class DualScorpionLeaderConfig(TeleoperatorConfig):
     """
-    Configuration for the SO-101 Dual Leader Arm Teleoperator
+    Configuration for the Dual Scorpion Leader Arm Teleoperator
     """
     # Port to connect to the arm
     right_arm_port: str  # Port for the right arm (e.g. "/dev/ttyACM1")
