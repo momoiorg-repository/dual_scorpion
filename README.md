@@ -16,7 +16,6 @@ dual_scorpion (code-name `dual_scropion` in the CLI) extends the original SO-101
 - [Configuration](#configuration)
 - [Runtime Workflows](#runtime-workflows)
 - [3D Printed Parts](#3d-printed-parts)
-- [Development Notes](#development-notes)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -140,12 +139,7 @@ lerobot-replay \
 For repeated evaluation runs, use `scripts/replay_loop.sh` after exporting `HF_USER`.
 
 ## 3D Printed Parts
-`dual_scorpion_3d_printer_parts/` contains STL packages for the follower and leader: base plates, spine, clavicle rods, wrists, and gripper jaws. Refer to the `media/` previews and the upcoming wiki for material choices, infill, and assembly notes. Issue PRs with updated CAD, BOMs, or fabrication tips.
-
-## Development Notes
-- `Makefile` exposes Docker builds (`make build-user`) and representative end-to-end tests (`make test-end-to-end` and friends).
-- `docs/` captures calibration notes, wiring diagrams, and in-progress how-tos; contributions are welcome.
-- `examples/` plus `benchmarks/` provide script snippets for policy training/eval on Hugging Face datasets.
+`dual_scorpion_3d_printer_parts/` hosts the STL sets for both follower and leader builds (base plates, spine, clavicle rods, wrists, grippers, etc.).
 
 ## Contributing
 Issues and PRs are encouraged—especially around documentation gaps, new teleop tooling, and CAD improvements. Please open an issue before large hardware or API changes so we can coordinate on interfaces.
