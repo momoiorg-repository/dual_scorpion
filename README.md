@@ -1,11 +1,16 @@
 # dual_scorpion
 > Soft Robotics SO-101–derived, open-hardware dual arm robot with matched teleoperation leaders.
 
-dual_scorpion (code-name `dual_scropion` in the CLI) extends the original SO-101 single arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
+Dual_scorpion is the so-101 based integrated dual arm robot.
+fork of the so-101 design repository
+optimized for dual arm operation
+added 2 DoF to the arm
+created clavicle rod, spine and base
+
+dual_scorpion (code-name `dual_scropion` in the CLI) extends the original SO-101 arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
 
 ## Contents
 - [Highlights](#highlights)
-- [Repository Map](#repository-map)
 - [Quickstart](#quickstart)
 - [Hardware Bring-Up](#hardware-bring-up)
 - [Configuration](#configuration)
@@ -16,17 +21,17 @@ dual_scorpion (code-name `dual_scropion` in the CLI) extends the original SO-101
 - [License](#license)
 
 ## Highlights
-- Dual 7-DOF follower arms plus matching leader arms for real-time bimanual control.
-- CLI workflows (`lerobot-*`) for motor setup, calibration, teleoperation, data collection, and replay.
-- Hugging Face integration for storing demonstrations, policies, and evaluation runs.
-- `dual_scorpion_3d_printer_parts/` – STL files for follower and leader builds.
+- Dual 7-DOF follower arms with matching leader arms for real-time bimanual control.
+- CLI workflows (`lerobot-*`) cover motor setup, calibration, teleoperation, recording, and replay.
+- Hugging Face integration stores demonstrations, policies, and evaluation runs.
+- `dual_scorpion_3d_printer_parts/` ships STL files for both follower and leader builds.
 
 ## Quickstart
 
 ### Requirements
 - Linux or macOS host with Python 3.10+.
 - `pip`, `venv`, and a recent `git`.
-- Feetech/BX servo buses (supported through the `[feetech]` extra).
+- Feetech/BX servo buses (through the `[feetech]` extra).
 
 ### Install
 ```bash
@@ -43,7 +48,6 @@ pip install -e ".[feetech]"
 huggingface-cli login
 export HF_USER=<your-hf-username>
 ```
-
 
 ## Hardware Bring-Up
 1. **Print & assemble** the follower and leader parts from `dual_scorpion_3d_printer_parts/`.
