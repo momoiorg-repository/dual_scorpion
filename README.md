@@ -1,6 +1,3 @@
-# dual_scorpion
-> Soft Robotics SO-101–derived, open-hardware dual arm robot with matched teleoperation leaders.
-
 Dual_scorpion is the so-101 based integrated dual arm robot.
 fork of the so-101 design repository
 optimized for dual arm operation
@@ -155,4 +152,4 @@ Issues and PRs are encouraged—especially around documentation gaps, new teleop
 ## License
 Apache License 2.0 (see `LICENSE`). Use the assets freely within the terms, and consider sharing back improvements to benefit other dual_scorpion builders.
 
-CHEN JUNGMING 陳俊銘
+**Author:** CHEN JUNGMING (陳俊銘)
