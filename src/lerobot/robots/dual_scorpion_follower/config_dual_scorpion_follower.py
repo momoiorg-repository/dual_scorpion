@@ -21,9 +21,9 @@ from lerobot.cameras import CameraConfig
 
 from ..config import RobotConfig
 
-@RobotConfig.register_subclass("dual_scropion_follower")
+@RobotConfig.register_subclass("dual_scorpion_follower")
 @dataclass
-class DualScropionFollowerConfig(RobotConfig):
+class DualScorpionFollowerConfig(RobotConfig):
     """
     Configuration for the SO-101 Dual Follower Arm
     """

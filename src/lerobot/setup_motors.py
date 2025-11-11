@@ -35,7 +35,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
-    dual_scropion_follower,
+    dual_scorpion_follower,
 )
 from lerobot.teleoperators import (  # noqa: F401
     TeleoperatorConfig,
@@ -43,18 +43,18 @@ from lerobot.teleoperators import (  # noqa: F401
     make_teleoperator_from_config,
     so100_leader,
     so101_leader,
-    dual_scropion_leader,
+    dual_scorpion_leader,
 )
 
 COMPATIBLE_DEVICES = [
     "koch_follower",
     "koch_leader",
     "so100_follower",
-    "dual_scropion_follower",
+    "dual_scorpion_follower",
     "so100_leader",
     "so101_follower",
     "so101_leader",
-    "dual_scropion_leader",
+    "dual_scorpion_leader",
     "lekiwi",
 ]
 

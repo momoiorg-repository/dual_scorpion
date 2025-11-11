@@ -205,8 +205,8 @@ dual_scorpion_3d_printer_parts/
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/syun88/dual_scropion.git
-cd dual_scropion
+git clone https://github.com/syun88/dual_scorpion.git
+cd dual_scorpion
 ```
 
 2. **Install LeRobot with Feetech support:**
@@ -232,9 +232,9 @@ pip install -e ".[feetech]"
 Create a configuration file for your Dual Scorpion:
 
 ```python
-from lerobot.robots.dual_scropion_follower import DualScropionFollowerConfig
+from lerobot.robots.dual_scorpion_follower import DualScorpionFollowerConfig
 
-config = DualScropionFollowerConfig(
+config = DualScorpionFollowerConfig(
     right_port="/dev/ttyACM0",  # Right arm serial port
     left_port="/dev/ttyACM1",   # Left arm serial port
     use_degrees=True,           # Use degree units
@@ -247,10 +247,10 @@ config = DualScropionFollowerConfig(
 ### Basic Robot Control
 
 ```python
-from lerobot.robots.dual_scropion_follower import DualScropionFollower
+from lerobot.robots.dual_scorpion_follower import DualScorpionFollower
 
 # Initialize the robot
-robot = DualScropionFollower(config)
+robot = DualScorpionFollower(config)
 
 # Connect to hardware
 robot.connect()
@@ -268,11 +268,11 @@ robot.set_joint_positions({
 ### Teleoperation with Dual Leader Arms
 
 ```python
-from lerobot.teleoperators.dual_scropion_leader import DualScropionLeader
+from lerobot.teleoperators.dual_scorpion_leader import DualScorpionLeader
 
 # Initialize leader arms for teleoperation
-leader = DualScropionLeader(leader_config)
-follower = DualScropionFollower(follower_config)
+leader = DualScorpionLeader(leader_config)
+follower = DualScorpionFollower(follower_config)
 
 # Start teleoperation
 leader.connect()
@@ -288,7 +288,7 @@ from lerobot import record
 
 # Record demonstrations using dual scorpion
 record(
-    robot="dual_scropion_follower",
+    robot="dual_scorpion_follower",
     output_dir="./dual_scorpion_dataset",
     episode_length=1000
 )
@@ -347,8 +347,8 @@ Dual Scorpion is ideal for:
 ### Project Structure
 ```
 dual_scorpion/
-├── src/lerobot/robots/dual_scropion_follower/     # Robot implementation
-├── src/lerobot/teleoperators/dual_scropion_leader/ # Teleoperation
+├── src/lerobot/robots/dual_scorpion_follower/     # Robot implementation
+├── src/lerobot/teleoperators/dual_scorpion_leader/ # Teleoperation
 ├── ros2_ws/                                       # ROS2 packages
 ├── dual_scorpion_3d_printer_parts/               # 3D printable files
 └── docs/                                         # Documentation

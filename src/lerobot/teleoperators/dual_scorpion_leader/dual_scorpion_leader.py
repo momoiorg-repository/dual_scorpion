@@ -40,7 +40,7 @@ class DualScorpionLeader(Teleoperator):
     def __init__(self, config: DualScorpionLeaderConfig):
         """
         Initialize the Dual Scorpion Leader Arm
-        Dual Scropion 双腕リーダーアームを初期化
+        Dual Scorpion 双腕リーダーアームを初期化
         """
         super().__init__(config)
         self.config = config
@@ -92,7 +92,7 @@ class DualScorpionLeader(Teleoperator):
     @property
     def action_features(self) -> dict[str, type]:
         """
-        Returns the action features for the Dual Scropion Leader Arm.
+        Returns the action features for the Dual Scorpion Leader Arm.
         アクション特徴を返す
         """
         features = {}
@@ -141,7 +141,7 @@ class DualScorpionLeader(Teleoperator):
     
     def calibrate(self) -> None:
         """
-        Run calibration for the Dual Scropion Leader Arm.
+        Run calibration for the Dual Scorpion Leader Arm.
         キャリブレーションを実行する
         """
         logger.info(f"\nRunning calibration for {self}")
@@ -215,8 +215,8 @@ class DualScorpionLeader(Teleoperator):
 
     def configure(self)  -> None:
         """
-        Configure the motors for the Dual Scropion Leader Arm.
-        Dual Scropion 双腕リーダーアームのモーターを設定する
+        Configure the motors for the Dual Scorpion Leader Arm.
+        Dual Scorpion 双腕リーダーアームのモーターを設定する
         """
         self.right_bus.disable_torque()  # 右腕のトルクの無効化
         self.left_bus.disable_torque()  # 左腕のトルクの無効化
@@ -241,7 +241,7 @@ class DualScorpionLeader(Teleoperator):
 
     def get_action(self) -> dict[str, float]:
         """
-        Read the current action from the Dual Scropion Leader Arm.
+        Read the current action from the Dual Scorpion Leader Arm.
         アクションを取得する
         """
         start = time.perf_counter()

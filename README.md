@@ -7,7 +7,7 @@ optimized for dual arm operation
 added 2 DoF to the arm
 created clavicle rod, spine and base
 
-dual_scorpion (code-name `dual_scropion` in the CLI) extends the original SO-101 arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
+dual_scorpion (CLI type `dual_scorpion`) extends the original SO-101 arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
 
 ## Contents
 - [Highlights](#highlights)
@@ -56,7 +56,7 @@ export HF_USER=<your-hf-username>
 ### Set Motor IDs
 ```bash
 lerobot-setup-motors \
-  --robot.type=dual_scropion_follower \
+  --robot.type=dual_scorpion_follower \
   --robot.left_arm_port=/dev/tty.usbmodemLEFT \
   --robot.right_arm_port=/dev/tty.usbmodemRIGHT
 ```
@@ -65,7 +65,7 @@ The tool steps through each servo, writes the expected ID, and stores the layout
 ### Calibrate Encoders
 ```bash
 lerobot-calibrate \
-  --robot.type=dual_scropion_follower \
+  --robot.type=dual_scorpion_follower \
   --robot.left_arm_port=/dev/tty.usbmodemLEFT \
   --robot.right_arm_port=/dev/tty.usbmodemRIGHT \
   --robot.use_degrees=true
@@ -73,37 +73,45 @@ lerobot-calibrate \
 Follow the prompts to sweep every joint. Calibration artifacts are cached locally and reused by the runtime.
 
 ## Configuration
-Follower defaults live in `src/lerobot/robots/dual_scropion_follower/config_dual_scropion_follower.py`. Override them in Python or via CLI flags:
+All follower parameters live in `src/lerobot/robots/dual_scorpion_follower/config_dual_scorpion_follower.py`. Every `lerobot-*` CLI accepts the same keys via `--robot.*` flags, or you can instantiate the config directly:
 
 ```python
-from lerobot.robots.dual_scropion_follower import DualScropionFollowerConfig
+from lerobot.robots.dual_scorpion_follower import DualScorpionFollowerConfig
 
-config = DualScropionFollowerConfig(
+config = DualScorpionFollowerConfig(
     right_arm_port="/dev/tty.usbmodemRIGHT",
     left_arm_port="/dev/tty.usbmodemLEFT",
-    use_degrees=True,
-    cameras={
-        "top": {"type": "opencv", "index_or_path": 0, "width": 640, "height": 480, "fps": 30},
-    },
+    disable_torque_on_disconnect=True,
     max_relative_target=12,
+    cameras={
+        "top": {
+            "type": "opencv",
+            "index_or_path": 0,
+            "width": 640,
+            "height": 480,
+            "fps": 30,
+        },
+    },
+    use_degrees=True,
 )
 ```
 
 Key fields:
-- `right_arm_port` / `left_arm_port` – USB serial device for each servo daisy-chain.
-- `max_relative_target` – joint-level clamp for relative commands (safety margin).
-- `cameras` – optional camera definitions for streaming & logging.
-- `use_degrees` – toggle between degrees and normalized units.
+- `right_arm_port` / `left_arm_port` – serial device assigned to each servo daisy-chain.
+- `disable_torque_on_disconnect` – drop torque when the driver exits (protects hardware at rest).
+- `max_relative_target` – per-joint clamp that keeps relative commands within a safe offset (can be scalar or list).
+- `cameras` – optional `dict[str, CameraConfig]` used for streaming or logging.
+- `use_degrees` – choose between degrees and normalized joint units.
 
 ## Runtime Workflows
 
 ### Teleoperate
 ```bash
 lerobot-teleoperate \
-  --robot.type=dual_scropion_follower \
+  --robot.type=dual_scorpion_follower \
   --robot.left_arm_port=/dev/tty.usbmodemFOLLOWER_L \
   --robot.right_arm_port=/dev/tty.usbmodemFOLLOWER_R \
-  --teleop.type=dual_scropion_leader \
+  --teleop.type=dual_scorpion_leader \
   --teleop.left_arm_port=/dev/tty.usbmodemLEADER_L \
   --teleop.right_arm_port=/dev/tty.usbmodemLEADER_R \
   --display_data=true
@@ -113,15 +121,15 @@ The leader mirrors joint commands to the follower while streaming configured cam
 ### Record Datasets
 ```bash
 lerobot-record \
-  --robot.type=dual_scropion_follower \
+  --robot.type=dual_scorpion_follower \
   --robot.left_arm_port=/dev/tty.usbmodemFOLLOWER_L \
   --robot.right_arm_port=/dev/tty.usbmodemFOLLOWER_R \
-  --teleop.type=dual_scropion_leader \
+  --teleop.type=dual_scorpion_leader \
   --teleop.left_arm_port=/dev/tty.usbmodemLEADER_L \
   --teleop.right_arm_port=/dev/tty.usbmodemLEADER_R \
   --robot.id=scorpion_follower \
   --teleop.id=scorpion_leader \
-  --dataset.repo_id=${HF_USER}/dual_scropion_demo \
+  --dataset.repo_id=${HF_USER}/dual_scorpion_demo \
   --dataset.single_task="Pick and place" \
   --dataset.num_episodes=10
 ```
@@ -130,10 +138,10 @@ Samples are written locally and pushed to the Hugging Face Hub when `HF_USER` is
 ### Replay Policies or Datasets
 ```bash
 lerobot-replay \
-  --robot.type=dual_scropion_follower \
+  --robot.type=dual_scorpion_follower \
   --robot.left_arm_port=/dev/tty.usbmodemFOLLOWER_L \
   --robot.right_arm_port=/dev/tty.usbmodemFOLLOWER_R \
-  --dataset.repo_id=${HF_USER}/dual_scropion_demo \
+  --dataset.repo_id=${HF_USER}/dual_scorpion_demo \
   --dataset.episode=0
 ```
 For repeated evaluation runs, use `scripts/replay_loop.sh` after exporting `HF_USER`.

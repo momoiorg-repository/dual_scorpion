@@ -30,18 +30,18 @@ from lerobot.motors.feetech import (
 
 from ..robot import Robot
 from ..utils import ensure_safe_goal_position
-from .config_dual_scropion_follower import DualScropionFollowerConfig
+from .config_dual_scorpion_follower import DualScorpionFollowerConfig
 
 logger = logging.getLogger(__name__)
 
-class DualScropionFollower(Robot):
+class DualScorpionFollower(Robot):
     """
     SO-101 Dual Follower Arm
     """
-    config_class = DualScropionFollowerConfig
+    config_class = DualScorpionFollowerConfig
     name = "so101_dual_follower"
 
-    def __init__(self, config: DualScropionFollowerConfig):
+    def __init__(self, config: DualScorpionFollowerConfig):
         """
         Initialize the SO-101 Dual Follower Arm with the provided configuration.
         SO-101 双腕フォロワーアームを初期化
