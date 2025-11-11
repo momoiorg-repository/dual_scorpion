@@ -163,4 +163,4 @@ Issues and PRs are encouraged—especially around documentation gaps, new teleop
 ## License
 Apache License 2.0 (see `LICENSE`). Use the assets freely within the terms, and consider sharing back improvements to benefit other dual_scorpion builders.
 
-**Author:** [CHEN JUNGMING (陳俊銘)](https://github.com/syun88)
+**Author:** CHEN JUNGMING (陳俊銘)
