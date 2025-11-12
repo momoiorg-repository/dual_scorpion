@@ -153,7 +153,7 @@ For repeated evaluation runs, use `scripts/replay_loop.sh` after exporting `HF_U
 `dual_scorpion_3d_printer_parts/` hosts the STL sets for both follower and leader builds (base plates, spine, clavicle rods, wrists, grippers, etc.).
 
 ## Acknowledgments
-Dual_scorpion is designed based on the so-101 design. The so-101 development team has given us permission to create a derivative model, and we are very grateful to them.
+Dual_scorpion is designed based on the design of so-101. The development team of so-101 agreed to create a derivative model, and we are deeply grateful to them.
 - Built on the SO-101 open-hardware design from the Hugging Face LeRobot project (https://github.com/huggingface/lerobot).
 - Documentation and calibration guidance reference the official SO-101 guide on the Hugging Face Hub® (https://huggingface.co/docs/lerobot/so101).
 - This derivative work remains under the Apache License 2.0 in alignment with the upstream project’s licensing.
