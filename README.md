@@ -1,8 +1,8 @@
 Dual_scorpion is the so-101 based integrated dual arm robot.
-fork of the so-101 design repository
-optimized for dual arm operation
-added 2 DoF to the arm
-created clavicle rod, spine and base
+It is the independent fork of the so-101 design repository, and
+is optimized for dual arm operation.
+We added 2 DoF to the arm
+created clavicle rod, spine and base.
 
 dual_scorpion (CLI type `dual_scorpion`) extends the original SO-101 arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
 
@@ -153,6 +153,7 @@ For repeated evaluation runs, use `scripts/replay_loop.sh` after exporting `HF_U
 `dual_scorpion_3d_printer_parts/` hosts the STL sets for both follower and leader builds (base plates, spine, clavicle rods, wrists, grippers, etc.).
 
 ## Acknowledgments
+Dual_scorpion is designed based on the so-101 design. The so-101 development team has given us permission to create a derivative model, and we are very grateful to them.
 - Built on the SO-101 open-hardware design from the Hugging Face LeRobot project (https://github.com/huggingface/lerobot).
 - Documentation and calibration guidance reference the official SO-101 guide on the Hugging Face Hub® (https://huggingface.co/docs/lerobot/so101).
 - This derivative work remains under the Apache License 2.0 in alignment with the upstream project’s licensing.
