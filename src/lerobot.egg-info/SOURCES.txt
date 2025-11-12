@@ -169,7 +169,7 @@ src/lerobot/teleoperators/bi_so100_leader/__init__.py
 src/lerobot/teleoperators/bi_so100_leader/bi_so100_leader.py
 src/lerobot/teleoperators/bi_so100_leader/config_bi_so100_leader.py
 src/lerobot/teleoperators/dual_scorpion_leader/__init__.py
-src/lerobot/teleoperators/dual_scorpion_leader/config_so101_dual_leader.py
+src/lerobot/teleoperators/dual_scorpion_leader/config_dual_scorpion_leader.py
 src/lerobot/teleoperators/dual_scorpion_leader/dual_scorpion_leader.py
 src/lerobot/teleoperators/gamepad/__init__.py
 src/lerobot/teleoperators/gamepad/configuration_gamepad.py

@@ -124,262 +124,170 @@ Requires-Dist: lerobot[pusht]; extra == "all"
 Requires-Dist: lerobot[xarm]; extra == "all"
 Dynamic: license-file
 
-<p align="center">
-  <img alt="Dual Scorpion Robot" src="https://raw.githubusercontent.com/huggingface/lerobot/main/media/lerobot-logo-thumbnail.png" width="100%">
-  <br/>
-  <br/>
-</p>
+Dual_scorpion is the so-101 based integrated dual arm robot.
+It is the independent fork of the so-101 design repository, and
+is optimized for dual arm operation.
+We added 2 DoF to the arm
+created clavicle rod, spine and base.
 
-<div align="center">
+dual_scorpion (CLI type `dual_scorpion`) extends the original SO-101 arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
 
-[![Tests](https://github.com/huggingface/lerobot/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/huggingface/lerobot/actions/workflows/nightly.yml?query=branch%3Amain)
-[![Python versions](https://img.shields.io/pypi/pyversions/lerobot)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/huggingface/lerobot/blob/main/LICENSE)
-[![Status](https://img.shields.io/pypi/status/lerobot)](https://pypi.org/project/lerobot/)
-[![Version](https://img.shields.io/pypi/v/lerobot)](https://pypi.org/project/lerobot/)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.1-ff69b4.svg)](https://github.com/huggingface/lerobot/blob/main/CODE_OF_CONDUCT.md)
-[![Discord](https://dcbadge.vercel.app/api/server/C5P34WJ68S?style=flat)](https://discord.gg/s3KuuzsPFb)
+**References**
+- Original SO-101 repository (Hugging Face LeRobot): https://github.com/huggingface/lerobot
+- SO-101 hardware/software documentation on the Hugging Face Hub®: https://huggingface.co/docs/lerobot/so101
+- Project overview video (YouTube): https://www.youtube.com/watch?v=a1u_bPGSeXs
+- Hugging Face® is a registered trademark of Hugging Face, Inc.
 
-</div>
+## Contents
+- [Highlights](#highlights)
+- [Quickstart](#quickstart)
+- [Hardware Bring-Up](#hardware-bring-up)
+- [Configuration](#configuration)
+- [Runtime Workflows](#runtime-workflows)
+- [3D Printed Parts](#3d-printed-parts)
+- [Contributing](#contributing)
+- [License](#license)
 
-<h2 align="center">
-    <p>🤖 Dual Scorpion Robot - Dual-Arm Manipulation Platform</p>
-</h2>
+## Highlights
+- Dual 7-DOF follower arms with matching leader arms for real-time bimanual control.
+- CLI workflows (`lerobot-*`) cover motor setup, calibration, teleoperation, recording, and replay.
+- Hugging Face integration stores demonstrations, policies, and evaluation runs.
+- `dual_scorpion_3d_printer_parts/` ships STL files for both follower and leader builds.
 
-<div align="center">
-  <p><strong>Meet Dual Scorpion – A sophisticated dual-arm robotic platform for advanced manipulation tasks!</strong></p>
-  <p>Featuring two 7-DOF arms with grippers, built on the LeRobot framework.</p>
-  <p>Perfect for bimanual manipulation, teleoperation, and AI-powered robotics research! 🦂</p>
-</div>
+## Quickstart
 
----
+### Requirements
+- Linux or macOS host with Python 3.10+.
+- `pip`, `venv`, and a recent `git`.
+- Feetech/BX servo buses (through the `[feetech]` extra).
 
-## 🦂 What is Dual Scorpion?
-
-**Dual Scorpion** is an advanced dual-arm (双腕) robotic manipulation platform that combines:
-
-- **Dual 7-DOF Arms**: Two identical robotic arms with 7 degrees of freedom each
-- **Precision Grippers**: Individual grippers on each arm for complex manipulation tasks
-- **LeRobot Integration**: Built on the state-of-the-art LeRobot framework for AI-powered robotics
-- **ROS2 Support**: 🚧 ROS2 integration under development (planned MoveIt motion planning)
-- **3D Printable Design**: Open-source hardware with 3D printable components
-
-### Key Features
-
-- **Bimanual Manipulation**: Perform complex tasks requiring two-handed coordination
-- **Teleoperation Support**: Use leader-follower control for intuitive operation
-- **AI Training Ready**: Collect demonstrations and train policies using LeRobot
-- **Modular Design**: Easy to assemble and customize
-- **Professional Grade**: Suitable for research, education, and commercial applications
-
-## 🏗️ Hardware Overview
-
-### Robot Specifications
-- **Arms**: 2x 7-DOF robotic arms
-- **Actuators**: Feetech STS3215 servo motors
-- **Grippers**: 1-DOF grippers with precision control
-- **Base**: Stable mounting platform for dual-arm configuration
-- **Materials**: 3D printable components (STL files included)
-
-### 3D Printable Parts
-```
-dual_scorpion_3d_printer_parts/
-├── dual_scorpion_base.stl          # Main base platform
-├── 6dof.stl                        # 6-DOF joint assembly
-├── joint0_motor_mount.stl          # Motor mounting bracket
-├── moving_jaw_so101_v1.stl         # Gripper jaw component
-├── under_arm_so101_v1.stl          # Arm segment
-├── wrist_roll_follower_so101_v1.stl # Wrist assembly
-└── wrist_roll_pitch_so101_v2.stl   # Wrist joint
-```
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.10+
-- ~~ROS2 Humble or later~~ (ROS2 integration is under development)
-- 3D printer (for hardware assembly)
-- Feetech servo motors (16x STS3215)
-
-### Installation
-
-1. **Clone the repository:**
+### Install
 ```bash
-git clone https://github.com/syun88/dual_scorpion.git
+git clone https://github.com/momoiorg-repository/dual_scorpion.git
 cd dual_scorpion
-```
-
-2. **Install LeRobot with Feetech support:**
-```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -e ".[feetech]"
 ```
 
-3. **For ROS2 integration (🚧 Under Development - Not Working Yet):**
+### Optional: authenticate with Hugging Face
 ```bash
-# Note: ROS2 integration is currently under development
-# cd ros2_ws
+huggingface-cli login
+export HF_USER=<your-hf-username>
 ```
 
-### Hardware Setup
+## Hardware Bring-Up
+1. **Print & assemble** the follower and leader parts from `dual_scorpion_3d_printer_parts/`.
+2. **Wire servos** to their controllers, mirroring IDs between left and right buses.
+3. **Probe USB ports** (`lerobot-find-port`) to map `/dev/tty*` or `COM*` devices.
 
-1. **Print the 3D parts** from `dual_scorpion_3d_printer_parts/`
-2. **Assemble the robot** following the mechanical design
-3. **Install Feetech motors** and connect via serial ports
-4. **Calibrate the system** using LeRobot's calibration tools
+### Set Motor IDs
+```bash
+lerobot-setup-motors \
+  --robot.type=dual_scorpion_follower \
+  --robot.left_arm_port=/dev/tty.usbmodemLEFT \
+  --robot.right_arm_port=/dev/tty.usbmodemRIGHT
+```
+The tool steps through each servo, writes the expected ID, and stores the layout.
 
-### Software Configuration
+### Calibrate Encoders
+```bash
+lerobot-calibrate \
+  --robot.type=dual_scorpion_follower \
+  --robot.left_arm_port=/dev/tty.usbmodemLEFT \
+  --robot.right_arm_port=/dev/tty.usbmodemRIGHT \
+  --robot.use_degrees=true
+```
+Follow the prompts to sweep every joint. Calibration artifacts are cached locally and reused by the runtime.
 
-Create a configuration file for your Dual Scorpion:
+## Configuration
+All follower parameters live in `src/lerobot/robots/dual_scorpion_follower/config_dual_scorpion_follower.py`. Every `lerobot-*` CLI accepts the same keys via `--robot.*` flags, or you can instantiate the config directly:
 
 ```python
 from lerobot.robots.dual_scorpion_follower import DualScorpionFollowerConfig
 
 config = DualScorpionFollowerConfig(
-    right_port="/dev/ttyACM0",  # Right arm serial port
-    left_port="/dev/ttyACM1",   # Left arm serial port
-    use_degrees=True,           # Use degree units
-    cameras={}                  # Add cameras if needed
+    right_arm_port="/dev/tty.usbmodemRIGHT",
+    left_arm_port="/dev/tty.usbmodemLEFT",
+    disable_torque_on_disconnect=True,
+    max_relative_target=12,
+    cameras={
+        "top": {
+            "type": "opencv",
+            "index_or_path": 0,
+            "width": 640,
+            "height": 480,
+            "fps": 30,
+        },
+    },
+    use_degrees=True,
 )
 ```
 
-## 🎮 Usage Examples
+Key fields:
+- `right_arm_port` / `left_arm_port` – serial device assigned to each servo daisy-chain.
+- `disable_torque_on_disconnect` – drop torque when the driver exits (protects hardware at rest).
+- `max_relative_target` – per-joint clamp that keeps relative commands within a safe offset (can be scalar or list).
+- `cameras` – optional `dict[str, CameraConfig]` used for streaming or logging.
+- `use_degrees` – choose between degrees and normalized joint units.
 
-### Basic Robot Control
+## Runtime Workflows
 
-```python
-from lerobot.robots.dual_scorpion_follower import DualScorpionFollower
-
-# Initialize the robot
-robot = DualScorpionFollower(config)
-
-# Connect to hardware
-robot.connect()
-
-# Move both arms to home position
-robot.reset()
-
-# Control individual joints
-robot.set_joint_positions({
-    "right_joint1": 45.0,  # degrees
-    "left_joint1": -45.0
-})
-```
-
-### Teleoperation with Dual Leader Arms
-
-```python
-from lerobot.teleoperators.dual_scorpion_leader import DualScorpionLeader
-
-# Initialize leader arms for teleoperation
-leader = DualScorpionLeader(leader_config)
-follower = DualScorpionFollower(follower_config)
-
-# Start teleoperation
-leader.connect()
-follower.connect()
-
-# The leader arms will control the follower arms in real-time
-```
-
-### Data Collection for AI Training
-
-```python
-from lerobot import record
-
-# Record demonstrations using dual scorpion
-record(
-    robot="dual_scorpion_follower",
-    output_dir="./dual_scorpion_dataset",
-    episode_length=1000
-)
-```
-
-## 🤖 ROS2 Integration
-
-> **🚧 Under Development**: ROS2 integration is currently being developed and is not functional yet.
-
-### Planned Features (Coming Soon)
+### Teleoperate
 ```bash
-# Visualize the Robot
-ros2 launch dual_scorpion_description display.launch.py
-
-# MoveIt Motion Planning
-ros2 launch dual_scorpion_moveit demo.launch.py
-
-# Hardware Interface
-ros2 launch dual_scorpion_hw_interface dual_scorpion_hw.launch.py
+lerobot-teleoperate \
+  --robot.type=dual_scorpion_follower \
+  --robot.left_arm_port=/dev/tty.usbmodemFOLLOWER_L \
+  --robot.right_arm_port=/dev/tty.usbmodemFOLLOWER_R \
+  --teleop.type=dual_scorpion_leader \
+  --teleop.left_arm_port=/dev/tty.usbmodemLEADER_L \
+  --teleop.right_arm_port=/dev/tty.usbmodemLEADER_R \
+  --display_data=true
 ```
+The leader mirrors joint commands to the follower while streaming configured cameras.
 
-**Status**: The ROS2 workspace exists but requires significant development work to be functional.
-
-## 📚 Documentation
-
-### LeRobot Framework
-- [LeRobot Documentation](https://huggingface.co/docs/lerobot/index)
-- [Robot Integration Guide](https://huggingface.co/docs/lerobot/integrate_hardware)
-- [Policy Training Tutorial](https://huggingface.co/docs/lerobot/policy_act_README)
-
-### Dual Scorpion Specific
-- [Hardware Assembly Guide](docs/hardware_assembly.md) (Coming Soon)
-- [Calibration Process](docs/calibration.md) (Coming Soon)
-- [ROS2 Integration](ros2_ws/README.md) (🚧 Under Development)
-- [API Reference](docs/api_reference.md) (Coming Soon)
-
-## 🔬 Research Applications
-
-Dual Scorpion is ideal for:
-
-- **Bimanual Manipulation Research**: Study coordination between two arms
-- **AI Policy Training**: Collect demonstrations and train manipulation policies
-- **Teleoperation Studies**: Human-robot interaction research
-- **Educational Robotics**: Learn advanced robotics concepts
-- **Industrial Applications**: Pick-and-place, assembly tasks
-
-### Supported AI Policies
-- **ACT (Action Chunking Transformer)**: For complex manipulation sequences
-- **Diffusion Policy**: For smooth, continuous motion generation
-- **TD-MPC**: For model-based reinforcement learning
-- **SmolVLA**: For vision-language-action integration
-- **VLA-from-FastVLAM**: Original model new Vision-Language-Action (VLA) framework using Apple's FastVLM as the vision-language backbone, with an Action Expert module for robot control. (Coming Soon)
-
-## 🛠️ Development
-
-### Project Structure
+### Record Datasets
+```bash
+lerobot-record \
+  --robot.type=dual_scorpion_follower \
+  --robot.left_arm_port=/dev/tty.usbmodemFOLLOWER_L \
+  --robot.right_arm_port=/dev/tty.usbmodemFOLLOWER_R \
+  --teleop.type=dual_scorpion_leader \
+  --teleop.left_arm_port=/dev/tty.usbmodemLEADER_L \
+  --teleop.right_arm_port=/dev/tty.usbmodemLEADER_R \
+  --robot.id=scorpion_follower \
+  --teleop.id=scorpion_leader \
+  --dataset.repo_id=${HF_USER}/dual_scorpion_demo \
+  --dataset.single_task="Pick and place" \
+  --dataset.num_episodes=10
 ```
-dual_scorpion/
-├── src/lerobot/robots/dual_scorpion_follower/     # Robot implementation
-├── src/lerobot/teleoperators/dual_scorpion_leader/ # Teleoperation
-├── ros2_ws/                                       # ROS2 packages
-├── dual_scorpion_3d_printer_parts/               # 3D printable files
-└── docs/                                         # Documentation
+Samples are written locally and pushed to the Hugging Face Hub when `HF_USER` is set.
+
+### Replay Policies or Datasets
+```bash
+lerobot-replay \
+  --robot.type=dual_scorpion_follower \
+  --robot.left_arm_port=/dev/tty.usbmodemFOLLOWER_L \
+  --robot.right_arm_port=/dev/tty.usbmodemFOLLOWER_R \
+  --dataset.repo_id=${HF_USER}/dual_scorpion_demo \
+  --dataset.episode=0
 ```
+For repeated evaluation runs, use `scripts/replay_loop.sh` after exporting `HF_USER`.
 
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with hardware if possible
-5. Submit a pull request
+## 3D Printed Parts
+`dual_scorpion_3d_printer_parts/` hosts the STL sets for both follower and leader builds (base plates, spine, clavicle rods, wrists, grippers, etc.).
 
-## 📄 License
+## Acknowledgments
+Dual_scorpion is designed based on the design of so-101. The development team of so-101 agreed to create a derivative model, and we are deeply grateful to them.
+- Built on the SO-101 open-hardware design from the Hugging Face LeRobot project (https://github.com/huggingface/lerobot).
+- Documentation and calibration guidance reference the official SO-101 guide on the Hugging Face Hub® (https://huggingface.co/docs/lerobot/so101).
+- This derivative work remains under the Apache License 2.0 in alignment with the upstream project’s licensing.
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+## Contributing
+Issues and PRs are encouraged—especially around documentation gaps, new teleop tooling, and CAD improvements. Please open an issue before large hardware or API changes so we can coordinate on interfaces.
 
-## 🙋‍♂️ Support
+## License
+Apache License 2.0 (see `LICENSE`). Use the assets freely within the terms, and consider sharing back improvements to benefit other dual_scorpion builders.
 
-For questions and support:
-- Open an issue on GitHub
-- Join the LeRobot Discord community
-- Check the documentation
-
-## 🔗 Related Projects
-
-- [LeRobot](https://github.com/huggingface/lerobot) - Main robotics framework
-- [SO-101 Robot](https://huggingface.co/docs/lerobot/so101) - Single arm version
-- [HopeJR](https://huggingface.co/docs/lerobot/hope_jr) - Humanoid robot arm
-
----
-
-**Made with ❤️ for the robotics community**
-
-*Dual Scorpion represents the next generation of accessible, AI-powered dual-arm manipulation platforms.*
+**Author:** CHEN JUNGMING (陳俊銘)
