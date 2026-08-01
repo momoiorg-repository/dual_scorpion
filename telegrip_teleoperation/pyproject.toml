@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools >= 61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dual-scorpion-telegrip"
+version = "1.0.0"
+description = "Teleoperation Control System for the Dual Scorpion Robot Arms"
+authors = [
+    {name = "Emil Rofors", email = "emirof@gmail.com"},
+]
+keywords = ["robotics", "teleoperation", "vr", "robot-control"]
+
+dependencies = [
+    "numpy",
+    "websockets",
+    "pybullet",
+    "scipy",
+    "pyyaml",
+]
+
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[project.scripts]
+telegrip = "telegrip.main:main_cli"
+
+[project.urls]
+Homepage = "https://github.com/momoiorg-repository/dual_scorpion"
+Repository = "https://github.com/momoiorg-repository/dual_scorpion"
+
+[tool.setuptools.packages.find]
+include = ["telegrip*"]

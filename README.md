@@ -12,6 +12,13 @@ dual_scorpion (CLI types `dual_scorpion_follower` and `dual_scorpion_leader`) ex
 - Project overview video (YouTube): https://www.youtube.com/watch?v=a1u_bPGSeXs
 - Hugging Face® is a registered trademark of Hugging Face, Inc.
 
+## Meta Quest arm teleoperation
+
+The isolated Telegrip WebXR add-on and its local/remote Quest setup guide are
+in [`telegrip_teleoperation/`](telegrip_teleoperation/README.md). That folder
+contains arm teleoperation only and reuses this repository's existing Dual
+Scorpion follower driver.
+
 ## Contents
 - [Highlights](#highlights)
 - [Quickstart](#quickstart)
@@ -62,7 +69,7 @@ For this version, all motors are standardized as **STS3215 Servo 7.4V, 19kg·cm,
 - Follower: `(7 + 1) × 2 = 16 motors`
 - Total: `(7 + 1) × 4 = 32 motors`
 
-The body frame is assembled using metal frames and connectors.  
+The body frame is assembled using metal frames and connectors.
 Cameras are not included in this parts list.
 
 > * It is also possible to use the 12V version of the servo, depending on your design, power supply, and torque requirements.

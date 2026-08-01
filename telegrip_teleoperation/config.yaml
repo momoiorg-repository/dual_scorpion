@@ -1,0 +1,129 @@
+control:
+  # Bench-calibrated yaw mapping "operator forward" (headset gaze direction
+  # captured when grip engages) onto the robot base frame. -90 = operator
+  # forward is robot -Y, the direction the arms extend outward - so pushing
+  # the controller forward extends the arm outward (bench-verified Jul 16;
+  # +90 made forward pull the arm inward/backward).
+  # Adjust in 90-deg steps first if forward/sideways come out swapped.
+  operator_to_robot_yaw_deg: -90
+  # Cartesian controller motion is expressed in one shared robot world frame.
+  # Mechanical left/right mirroring already lives in the two URDFs; reflecting
+  # only one controller here gives the arms opposite translation and rotation
+  # handedness. Keep both false unless the entire operator frame is mirrored.
+  mirror_lateral:
+    left: false
+    right: false
+  keyboard:
+    angle_step: 5
+    enabled: true
+    gripper_step: 10.0
+    pos_step: 0.01
+  pybullet:
+    enabled: true
+  vr:
+    enabled: true
+    shadow_enabled_by_default: true
+    controller_axes_enabled_by_default: true
+gripper:
+  closed_angle: 45.0
+  open_angle: 0.0
+ik:
+  # Position-priority full-pose IK across all seven body joints. It seeds from
+  # the current commanded pose so motion stays continuous, and the per-tick
+  # slew limit below protects the physical arms from branch flips.
+  # 0.5 deg/tick at 50 Hz = 25 deg/s. The previous 4 deg/tick permitted
+  # 200 deg/s command ramps, much faster than the measured arm response.
+  max_joint_step_deg: 0.5
+  # If the FK-verified full-pose solution misses the target position by more
+  # than this, the solve is repeated position-only (position beats orientation).
+  position_tolerance_m: 0.02
+  # Reachable-workspace sphere radius (m) around each shoulder (joint0).
+  # Controller targets outside this sphere are projected onto its surface so
+  # impossible targets never drive joints into their limits. The arm's true
+  # max shoulder-to-TCP reach is ~0.53 m; 0.48 leaves margin while cutting the
+  # constant boundary-riding seen in the Jul 17 left-arm session (86% of
+  # solves were clamped at the old 0.45). Absolute max reach is 0.546 m; we
+  # stop at 0.52 because a fully straight arm is a kinematic singularity
+  # where IK becomes ill-conditioned and chatters.
+  # Practical full reach. The URDF reaches 0.546 m, but stopping at 0.52 m
+  # avoids the exactly-straight kinematic singularity while using nearly the
+  # full physical arm length.
+  workspace_radius_m: 0.52
+  # Begin smoothly compressing radial hand motion before the straight-arm
+  # singularity. Targets remain responsive instead of suddenly sticking to a
+  # hard sphere at maximum reach.
+  workspace_soft_start_m: 0.48
+  # Max change (deg) of the orientation target per solve, measured from the
+  # current TCP orientation (task-space slew limit). Prevents a large
+  # accumulated orientation error (e.g. after a position-only stretch) from
+  # unwinding the wrist in one violent burst - the "left arm rotating multiple
+  # wrong ways" failure. 6 deg/solve at 50 Hz = up to 300 deg/s, still fast
+  # enough to track normal wrist motion.
+  orientation_slew_deg: 6
+network:
+  host_ip: 0.0.0.0
+  https_port: 8443
+  websocket_port: 8442
+paths:
+  urdf_left_path: URDF/dual_scorpion/dual_scorpion_left.urdf
+  urdf_right_path: URDF/dual_scorpion/dual_scorpion_right.urdf
+robot:
+  left_arm:
+    enabled: true
+    name: Left Arm
+    port: /dev/ttyACM1
+  right_arm:
+    enabled: true
+    name: Right Arm
+    port: /dev/ttyACM0
+  # 0.02 = 50 Hz control/send rate. The Quest streams poses at ~72 Hz, so 20 Hz
+  # (the old value) threw away most updates and made motion steppy/laggy. 50 Hz
+  # is well within the serial budget for 16 servos at 1 Mbps.
+  send_interval: 0.02
+  # Controller-to-TCP translation gain. At 1.10, moving a controller 10 cm
+  # moves the robot TCP 11 cm, making the compact workspace easier to cover
+  # without a full human-arm reach. The workspace clamp remains the final
+  # safety boundary.
+  vr_to_robot_scale: 1.10
+  # Per-arm controller-to-TCP rotation gain.
+  vr_rotation_scale:
+    left: 0.5
+    right: 0.5
+  # Full-pose controller orientation is enabled for both seven-joint arms.
+  vr_orientation_enabled:
+    left: true
+    right: true
+  # No body joints are locked; all seven joints participate in IK.
+  locked_joints:
+    left: {}
+    right: {}
+  # Translation remains position-only until controller rotation exceeds this
+  # intentional-motion threshold, preventing IK wrist/shoulder twisting while
+  # merely lifting a mostly straight controller.
+  vr_orientation_deadband_deg: 8
+  # Anti-windup: commanded joint angles may never lead the measured motor
+  # angles by more than this (deg). If a motor stalls or lags badly, the
+  # commanded state is pulled back to measured+limit so it stays anchored to
+  # the physical arm and recovers instead of running away (Jul 17: left arm
+  # commanded state froze 46 deg from the stalled motors for 5+ seconds).
+  command_lag_limit_deg: 8
+  # Start ("home") pose preset used on engage and for the A+B VR combo:
+  #   zero      - URDF zero, arms straight out (default)
+  #   backwards - joint2 tucked 80 deg + joint0 bent back 20 deg, arms folded
+  #               behind the shoulder line
+  # Override per launch with ./start.sh --backwards. Teleop is unaffected
+  # either way: the control origin is captured from the actual pose at grip
+  # engage.
+  start_pose: zero
+ssl:
+  certfile: cert.pem
+  keyfile: key.pem
+telemetry:
+  # One JSON object per line. Logging uses a background writer thread so disk
+  # I/O cannot pause the motor control loop.
+  enabled: true
+  log_dir: logs/sessions
+  # Fresh measured state anchors IK and outgoing-command anti-windup. At 20 Hz
+  # the cached pose is at most one control interval old enough for precision,
+  # while each dual-arm sync read is only a few milliseconds on this bus.
+  actual_sample_hz: 20

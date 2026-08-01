@@ -163,5 +163,6 @@ outputs/
 .cache/*
 *.stl
 *.urdf
+!telegrip_teleoperation/URDF/dual_scorpion/*.urdf
 *.xml
 *.part

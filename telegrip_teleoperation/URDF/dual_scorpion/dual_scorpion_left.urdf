@@ -1,0 +1,136 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="dual_scorpion_left">
+  <link name="base_link">
+    <inertial>
+      <mass value="0.00166433" />
+      <origin xyz="0.00273527 0.000514622 0.2002" rpy="0 -0 0" />
+      <inertia ixx="7.05433e-05" ixy="-5.34831e-09" ixz="-1.25577e-06" iyy="0.000103998" iyz="-2.36418e-07" izz="3.62521e-05" />
+    </inertial>
+  </link>
+  <link name="left_link_1">
+    <inertial>
+      <mass value="6.81805e-05" />
+      <origin xyz="-0.0276923 0.000184201 -0.0352935" rpy="0 -0 0" />
+      <inertia ixx="2.33205e-08" ixy="-5.08551e-11" ixz="-4.67906e-09" iyy="4.04588e-08" iyz="1.41441e-11" izz="2.65882e-08" />
+    </inertial>
+  </link>
+  <joint name="joint0" type="revolute">
+    <origin xyz="0.2923 0.0015 0.3967" rpy="-2.77106e-24 1.07852e-32 1.54074e-33" />
+    <axis xyz="-1 0 0" />
+    <parent link="base_link" />
+    <child link="left_link_1" />
+    <limit effort="1" velocity="1" lower="-1.41372" upper="1.50098" />
+  </joint>
+  <link name="ds_urdf_v4_1">
+    <inertial>
+      <mass value="5.16059e-09" />
+      <origin xyz="0.0232251 0.000155884 -0.005982" rpy="0 -0 0" />
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0" />
+    </inertial>
+  </link>
+  <joint name="joint1" type="revolute">
+    <origin xyz="-0.0199967 2.95597e-15 -0.061" rpy="-1.17484e-16 2.77556e-17 1.36056e-09" />
+    <axis xyz="0 0 1" />
+    <parent link="left_link_1" />
+    <child link="ds_urdf_v4_1" />
+    <limit effort="1" velocity="1" lower="-3.05433" upper="3.05433" />
+  </joint>
+  <link name="left_link_3">
+    <inertial>
+      <mass value="0.000129163" />
+      <origin xyz="0.0198183 -0.00122104 -0.0746289" rpy="-2.27773e-07 0 0" />
+      <inertia ixx="2.1178e-07" ixy="-8.61521e-11" ixz="-2.27068e-09" iyy="2.41179e-07" iyz="-7.83696e-09" izz="4.3049e-08" />
+    </inertial>
+  </link>
+  <joint name="joint2" type="revolute">
+    <origin xyz="-0.0183109 -0.0030748 -0.060508" rpy="2.53056e-16 5.7629e-18 -1.88737e-19" />
+    <!-- Axis flipped: joint2 was rotating the wrong way on the left arm. -->
+    <axis xyz="-1 0 0" />
+    <parent link="ds_urdf_v4_1" />
+    <child link="left_link_3" />
+    <limit effort="1" velocity="1" lower="-1.74533" upper="2.0944" />
+  </joint>
+  <link name="left_link_4">
+    <inertial>
+      <mass value="6.81805e-05" />
+      <origin xyz="0.0125077 0.000184201 -0.0352935" rpy="0 -0 0" />
+      <inertia ixx="2.33205e-08" ixy="-5.08551e-11" ixz="-4.67906e-09" iyy="4.04588e-08" iyz="1.41441e-11" izz="2.65882e-08" />
+    </inertial>
+  </link>
+  <joint name="joint3" type="revolute">
+    <origin xyz="0.0008 -0.00520003 -0.1348" rpy="-1.5708 1.39556e-18 -4.95715e-18" />
+    <axis xyz="1 0 0" />
+    <parent link="left_link_3" />
+    <child link="left_link_4" />
+    <limit effort="1" velocity="1" lower="-0.523599" upper="3.31613" />
+  </joint>
+  <link name="ds_urdf_v4">
+    <inertial>
+      <mass value="0.0203158" />
+      <origin xyz="9.96272e-05 -0.00461138 -0.0316214" rpy="0 0 -0.0119469" />
+      <inertia ixx="1.11361e-05" ixy="7.87506e-08" ixz="-2.22606e-08" iyy="1.29317e-05" iyz="-4.43108e-07" izz="6.34939e-06" />
+    </inertial>
+  </link>
+  <joint name="joint4" type="revolute">
+    <origin xyz="0.0202033 2.95597e-15 -0.061" rpy="-1.4286e-18 -1.23156e-16 -2.91434e-16" />
+    <axis xyz="0 0 1" />
+    <parent link="left_link_4" />
+    <child link="ds_urdf_v4" />
+    <limit effort="1" velocity="1" lower="-2.95511" upper="2.97901" />
+  </joint>
+  <link name="left_link_6">
+    <inertial>
+      <mass value="6.81805e-05" />
+      <origin xyz="-0.0276923 0.000184201 -0.0352935" rpy="0 -0 0" />
+      <inertia ixx="2.33205e-08" ixy="-5.0855e-11" ixz="-4.67906e-09" iyy="4.04588e-08" iyz="1.41442e-11" izz="2.65882e-08" />
+    </inertial>
+  </link>
+  <joint name="joint5" type="revolute">
+    <origin xyz="0.018551 -0.00329665 -0.060508" rpy="-8.12727e-12 -3.1739e-19 -0.0119469" />
+    <!-- Axis flipped: joint5 was rotating the wrong way on the left arm. -->
+    <axis xyz="-1 0 0" />
+    <parent link="ds_urdf_v4" />
+    <child link="left_link_6" />
+    <limit effort="1" velocity="1" lower="-1.74533" upper="2.0944" />
+  </joint>
+  <link name="left_link_7">
+    <inertial>
+      <mass value="9.28108e-05" />
+      <origin xyz="0.00574692 0.000295973 -0.0266679" rpy="0 -0 0" />
+      <inertia ixx="4.24859e-08" ixy="5.6838e-10" ixz="9.38588e-09" iyy="6.02663e-08" iyz="-1.16022e-10" izz="4.01829e-08" />
+    </inertial>
+  </link>
+  <joint name="joint6" type="revolute">
+    <origin xyz="-0.0199967 2.98372e-15 -0.061" rpy="1.05879e-22 3.17281e-19 -4.33681e-18" />
+    <axis xyz="0 0 1" />
+    <parent link="left_link_6" />
+    <child link="left_link_7" />
+    <limit effort="1" velocity="1" lower="-2.96706" upper="2.96706" />
+  </joint>
+  <link name="left_gripper_link">
+    <inertial>
+      <mass value="2.06928e-05" />
+      <origin xyz="0.00157467 0.0186244 -0.0300229" rpy="0 -0 0" />
+      <inertia ixx="1.14047e-08" ixy="-1.01886e-11" ixz="5.51271e-10" iyy="9.11649e-09" iyz="1.89574e-10" izz="3.25975e-09" />
+    </inertial>
+  </link>
+  <joint name="gripper" type="revolute">
+    <origin xyz="-0.0202033 -0.0181 -0.0234" rpy="-1.20731e-16 1.3606e-09 -2.78336e-15" />
+    <axis xyz="0 1 0" />
+    <parent link="left_link_7" />
+    <child link="left_gripper_link" />
+    <limit effort="1" velocity="1" lower="-0.174533" upper="1.91986" />
+  </joint>
+  <link name="tcp_link">
+    <inertial>
+      <mass value="0.001" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7" />
+    </inertial>
+  </link>
+  <joint name="tcp_fixed" type="fixed">
+    <origin xyz="-0.019053 0.000900 -0.105400" rpy="0 0 0" />
+    <parent link="left_link_7" />
+    <child link="tcp_link" />
+  </joint>
+</robot>
