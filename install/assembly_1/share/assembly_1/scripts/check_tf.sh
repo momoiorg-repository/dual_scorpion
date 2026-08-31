@@ -1,0 +1,1 @@
+/home/syun/open_pj/dual_scorpion/DS_URDF_IK/assembly_1/scripts/check_tf.sh

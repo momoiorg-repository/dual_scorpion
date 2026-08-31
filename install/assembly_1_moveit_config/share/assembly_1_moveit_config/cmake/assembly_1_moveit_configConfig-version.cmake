@@ -1,0 +1,1 @@
+/home/syun/open_pj/dual_scorpion/build/assembly_1_moveit_config/ament_cmake_core/assembly_1_moveit_configConfig-version.cmake

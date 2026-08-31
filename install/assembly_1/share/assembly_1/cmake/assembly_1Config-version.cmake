@@ -1,0 +1,1 @@
+/home/syun/open_pj/dual_scorpion/build/assembly_1/ament_cmake_core/assembly_1Config-version.cmake

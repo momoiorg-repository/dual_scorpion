@@ -1,0 +1,1 @@
+/home/syun/open_pj/dual_scorpion/DS_URDF_IK/build/assembly_1/ament_cmake_core/assembly_1Config.cmake

@@ -1,0 +1,1 @@
+/home/syun/open_pj/dual_scorpion/DS_URDF_IK/assembly_1_moveit_config/launch/demo_follower.launch.py

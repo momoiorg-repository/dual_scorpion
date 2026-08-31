@@ -1,0 +1,10 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: assembly_1
+    relative_path: urdf/assembly_1.urdf
+  srdf:
+    relative_path: config/assembly_1.srdf
+  package_settings:
+    author_name: CHEN JUNGMING (SYUN)
+    author_email: jimmy8805010@gmail.com
+    generated_timestamp: 1782349181
