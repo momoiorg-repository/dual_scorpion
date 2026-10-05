@@ -112,6 +112,7 @@ class RobotInterface:
 
         try:
             robot_config = DualScorpionFollowerConfig(
+                id="scorpion_follower_normal_gripper",
                 right_arm_port=self.config.follower_ports["right"],
                 left_arm_port=self.config.follower_ports["left"],
                 use_degrees=True,

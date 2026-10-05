@@ -71,11 +71,11 @@ robot:
   left_arm:
     enabled: true
     name: Left Arm
-    port: /dev/ttyACM1
+    port: /dev/ttyACM0
   right_arm:
     enabled: true
     name: Right Arm
-    port: /dev/ttyACM0
+    port: /dev/ttyACM1
   # 0.02 = 50 Hz control/send rate. The Quest streams poses at ~72 Hz, so 20 Hz
   # (the old value) threw away most updates and made motion steppy/laggy. 50 Hz
   # is well within the serial budget for 16 servos at 1 Mbps.
