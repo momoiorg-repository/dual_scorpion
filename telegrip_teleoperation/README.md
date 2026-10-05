@@ -1,10 +1,11 @@
 # Telegrip Quest teleoperation
 
-This folder is a standalone WebXR teleoperation add-on for the two Dual
-Scorpion follower arms. It contains only the Quest/keyboard input path,
-Cartesian IK, the arm hardware adapter, the browser UI, and the two URDFs
-needed by the IK solver. It does not include recording, replay, training,
-policies, cameras, speech, mobile-base, or lift control.
+This folder is a standalone teleoperation add-on for the two Dual Scorpion
+follower arms. The Quest/keyboard path contains Cartesian IK, the arm hardware
+adapter, the browser UI, and the two URDFs needed by the IK solver. An optional
+mocopi/head-camera path reuses this IK and visualization for simulation,
+including input replay. See the mocopi section below. Training, policies,
+speech, mobile-base, and lift control are not included.
 
 The implementation is adapted from the MIT-licensed
 [Telegrip project](https://github.com/DipFlip/telegrip). See [LICENSE](LICENSE).
@@ -149,3 +150,15 @@ telegrip --no-viz \
 
 Runtime TLS files (`cert.pem`, `key.pem`), generated tunnel configuration, and
 session telemetry are ignored by Git.
+
+## mocopi + head camera prototype
+
+This add-on also provides a simulation-first Sony mocopi/C270 input path.
+Start with the Japanese [MOCOPI_START_GUIDE.md](../MOCOPI_START_GUIDE.md).
+MuJoCo is the default viewer, using the assembly URDF's STL visuals and the
+existing corrected per-arm FK/IK. Install the optional viewer with
+`uv pip install --python .venv/bin/python -e './telegrip_teleoperation[mujoco]'`
+from the repository root; `--sim-backend pybullet` selects the previous viewer.
+See the Japanese [HOW_TO_USE.md](../HOW_TO_USE.md) for camera calibration,
+external stella_vslam integration, guided scale/extrinsic calibration, and
+fake/replay commands. Robot motor control is disabled for this path.

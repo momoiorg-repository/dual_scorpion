@@ -1,4 +1,9 @@
 .env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.*.example
 .venv
 env/
 venv/
@@ -100,6 +105,13 @@ celerybeat.pid
 # Windows
 Thumbs.db
 
+# Local private-key files (public .pub keys are not covered).
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
 ### Framework & Tool Specific ###
 
 .Python
@@ -166,3 +178,33 @@ outputs/
 !telegrip_teleoperation/URDF/dual_scorpion/*.urdf
 *.xml
 *.part
+
+# Locally measured mocopi camera/head calibrations; never commit personal tracking.
+config/mocopi/calibration/*.yaml
+config/mocopi/calibration/*.yml
+/config/mocopi/calibration/*
+!/config/mocopi/calibration/README.md
+telegrip_teleoperation/.venv/
+
+# Local recordings, checkerboard photographs, SLAM maps/vocabulary and engine logs.
+# output/pdf contains the distributable calibration board and stays versioned.
+/output/*
+!/output/pdf/
+/output/pdf/*
+!/output/pdf/README.md
+!/output/pdf/checkerboard_9x6_25mm_A4.pdf
+!/output/pdf/checkerboard_9x6_25mm_A4.png
+!/output/pdf/checkerboard_9x6_25mm_A4.svg
+/MUJOCO_LOG.TXT
+*.jsonl
+*.jsonl.calibration.yaml
+*.jsonl.calibration.yml
+*.fbow
+*.msgpack
+head-map*.msg
+/config/mocopi/calibration/checkerboard/
+
+# Generated ROS/colcon workspace products; preserve URDF and mesh source assets.
+/DS_URDF_IK/build/
+/DS_URDF_IK/install/
+/DS_URDF_IK/log/

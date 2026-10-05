@@ -1,11 +1,22 @@
-"""
-TeleGrip - dual_scorpion teleoperation system.
-"""
+"""TeleGrip - dual_scorpion teleoperation system, with lazy optional backends."""
 
-from .core.robot_interface import RobotInterface
-from .core.visualizer import PyBulletVisualizer as Visualizer
-from .control_loop import ControlLoop
-from .config import TelegripConfig, load_config
+from importlib import import_module
 
 __version__ = "0.2.0"
-__all__ = ["RobotInterface", "Visualizer", "ControlLoop", "TelegripConfig", "load_config"] 
+_EXPORTS = {
+    "RobotInterface": (".core.robot_interface", "RobotInterface"),
+    "Visualizer": (".core.visualizer", "PyBulletVisualizer"),
+    "ControlLoop": (".control_loop", "ControlLoop"),
+    "TelegripConfig": (".config", "TelegripConfig"),
+    "load_config": (".config", "load_config"),
+}
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+    module, attribute = _EXPORTS[name]
+    value = getattr(import_module(module, __name__), attribute)
+    globals()[name] = value
+    return value

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="297mm" height="210mm" viewBox="0 0 297 210">
+<title>Calibration checkerboard: 9x6 inner corners, 25 mm squares</title>
+<rect width="297" height="210" fill="white"/>
+<text x="148.5" y="9" text-anchor="middle" font-family="Arial,sans-serif" font-size="3.88" font-weight="bold">CAMERA CALIBRATION | 9 x 6 INNER CORNERS | 25 mm SQUARES</text>
+<rect x="23.5" y="17.5" width="25" height="25" fill="black"/>
+<rect x="73.5" y="17.5" width="25" height="25" fill="black"/>
+<rect x="123.5" y="17.5" width="25" height="25" fill="black"/>
+<rect x="173.5" y="17.5" width="25" height="25" fill="black"/>
+<rect x="223.5" y="17.5" width="25" height="25" fill="black"/>
+<rect x="48.5" y="42.5" width="25" height="25" fill="black"/>
+<rect x="98.5" y="42.5" width="25" height="25" fill="black"/>
+<rect x="148.5" y="42.5" width="25" height="25" fill="black"/>
+<rect x="198.5" y="42.5" width="25" height="25" fill="black"/>
+<rect x="248.5" y="42.5" width="25" height="25" fill="black"/>
+<rect x="23.5" y="67.5" width="25" height="25" fill="black"/>
+<rect x="73.5" y="67.5" width="25" height="25" fill="black"/>
+<rect x="123.5" y="67.5" width="25" height="25" fill="black"/>
+<rect x="173.5" y="67.5" width="25" height="25" fill="black"/>
+<rect x="223.5" y="67.5" width="25" height="25" fill="black"/>
+<rect x="48.5" y="92.5" width="25" height="25" fill="black"/>
+<rect x="98.5" y="92.5" width="25" height="25" fill="black"/>
+<rect x="148.5" y="92.5" width="25" height="25" fill="black"/>
+<rect x="198.5" y="92.5" width="25" height="25" fill="black"/>
+<rect x="248.5" y="92.5" width="25" height="25" fill="black"/>
+<rect x="23.5" y="117.5" width="25" height="25" fill="black"/>
+<rect x="73.5" y="117.5" width="25" height="25" fill="black"/>
+<rect x="123.5" y="117.5" width="25" height="25" fill="black"/>
+<rect x="173.5" y="117.5" width="25" height="25" fill="black"/>
+<rect x="223.5" y="117.5" width="25" height="25" fill="black"/>
+<rect x="48.5" y="142.5" width="25" height="25" fill="black"/>
+<rect x="98.5" y="142.5" width="25" height="25" fill="black"/>
+<rect x="148.5" y="142.5" width="25" height="25" fill="black"/>
+<rect x="198.5" y="142.5" width="25" height="25" fill="black"/>
+<rect x="248.5" y="142.5" width="25" height="25" fill="black"/>
+<rect x="23.5" y="167.5" width="25" height="25" fill="black"/>
+<rect x="73.5" y="167.5" width="25" height="25" fill="black"/>
+<rect x="123.5" y="167.5" width="25" height="25" fill="black"/>
+<rect x="173.5" y="167.5" width="25" height="25" fill="black"/>
+<rect x="223.5" y="167.5" width="25" height="25" fill="black"/>
+<path d="M23.5 199H123.5 M23.5 197.5V200.5 M123.5 197.5V200.5" stroke="black" stroke-width="0.2" fill="none"/>
+<text x="73.5" y="204" text-anchor="middle" font-family="Arial,sans-serif" font-size="2.82">100 mm - check with a ruler after printing</text>
+<text x="140" y="200" font-family="Arial,sans-serif" font-size="2.82">Print at 100% / Actual size. Do not fit to page.</text>
+</svg>

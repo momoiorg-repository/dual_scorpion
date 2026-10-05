@@ -22,6 +22,7 @@ dependencies = [
 requires-python = ">=3.12"
 
 [project.optional-dependencies]
+mujoco = ["mujoco>=3.3,<4"]
 dev = [
     "pytest",
     "pytest-asyncio",
@@ -32,6 +33,7 @@ dev = [
 
 [project.scripts]
 telegrip = "telegrip.main:main_cli"
+mocopi-track = "telegrip.mocopi.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/momoiorg-repository/dual_scorpion"

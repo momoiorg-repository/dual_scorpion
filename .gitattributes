@@ -23,3 +23,6 @@ tests/artifacts/cameras/*.png filter=lfs diff=lfs merge=lfs -text
 # This fork already stores these assets as normal tracked files.
 tests/artifacts/** -filter -diff -merge -text
 dual_scorpion_3d_printer_parts/**/*.stl -filter -diff -merge -text
+
+# Printable PDFs are binary documents even when their payload contains ASCII.
+output/pdf/*.pdf binary

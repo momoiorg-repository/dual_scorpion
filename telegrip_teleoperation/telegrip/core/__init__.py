@@ -1,15 +1,20 @@
-"""
-Core modules for the teleoperation system.
-Contains robot interface, kinematics, and visualization components.
-"""
+"""Lazy imports keep numerical/source tooling independent from robot drivers."""
 
-from .robot_interface import RobotInterface
-from .kinematics import IKSolver, ForwardKinematics
-from .visualizer import PyBulletVisualizer
+from importlib import import_module
 
-__all__ = [
-    "RobotInterface",
-    "IKSolver", 
-    "ForwardKinematics",
-    "PyBulletVisualizer",
-] 
+_EXPORTS = {
+    "RobotInterface": (".robot_interface", "RobotInterface"),
+    "IKSolver": (".kinematics", "IKSolver"),
+    "ForwardKinematics": (".kinematics", "ForwardKinematics"),
+    "PyBulletVisualizer": (".visualizer", "PyBulletVisualizer"),
+}
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+    module, attribute = _EXPORTS[name]
+    value = getattr(import_module(module, __name__), attribute)
+    globals()[name] = value
+    return value

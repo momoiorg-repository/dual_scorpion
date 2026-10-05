@@ -1,0 +1,70 @@
+mocopi:
+  # Operator declaration only: select the same mode in the smartphone app.
+  # upper_body: ANKLE sensors on upper arms; standard: sensors on ankles.
+  tracking_mode: upper_body
+  host: 0.0.0.0
+  port: 12351
+  source_ip: null
+  # PC receive time plus measured correction. Negative compensates UDP latency.
+  timestamp_offset_s: 0.0
+camera:
+  # UVC device path or integer index; --camera overrides capture/doctor/ROS bridge.
+  device: /dev/video2
+  width: 640
+  height: 480
+  fps: 30
+  fourcc: MJPG
+slam:
+  pose_port: 12352
+  topic: /run_slam/camera_pose
+  # Use a unique value for each freshly initialized map. See HOW_TO_USE.md.
+  map_id: head-map-001
+  intrinsics: calibration/c270_intrinsics.yaml
+  stella_config: calibration/c270_stella.yaml
+  head_calibration: calibration/head_tracking.yaml
+tracking:
+  max_pair_dt_s: 0.08
+  timeout_s: 0.3
+  max_head_step_m: 0.10
+  max_head_step_rad: 0.5
+  max_hand_step_m: 0.15
+  max_hand_step_rad: 0.8
+  startup_head_error_m: 0.15
+  startup_head_error_rad: 0.35
+  hz: 30
+  debug_port: 12353
+calibration:
+  duration_s: 15
+  min_samples: 60
+  max_rmse_m: 0.04
+  max_rotation_deg: 8
+  max_condition: 100000
+retarget:
+  # Capture the operator's heading from shoulders at each Enter/reanchor.
+  alignment_mode: body
+  # Use shoulder/elbow poses, including upper-arm twist, as a soft IK task.
+  # Hand TCP remains primary; hand-only restores the previous behavior.
+  arm_posture: upper-arm
+  arm_posture_gain: 0.8
+  translation_scale: 0.8
+  orientation_scale: 0.5
+  orientation_enabled: true
+  # Operator forward -> robot -Y; operator left -> robot +X; up -> +Z.
+  # body mode first removes the operator's neutral heading in the world.
+  world_to_robot_rotation: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]
+  max_translation_m: 0.35
+robot:
+  # Hands forward with bent elbows, matching the operator's requested neutral pose.
+  start_pose: work
+  # CAD visuals/meshes from the full assembly; FK/IK use the corrected per-arm trees below.
+  visual_urdf: ../../DS_URDF_IK/assembly_1/urdf/assembly_1.urdf
+  # Relative to THIS yaml file, not the shell working directory.
+  urdf:
+    left: ../../telegrip_teleoperation/URDF/dual_scorpion/dual_scorpion_left.urdf
+    right: ../../telegrip_teleoperation/URDF/dual_scorpion/dual_scorpion_right.urdf
+  # Custom angles are used only with --start-pose config; legacy backwards pose below.
+  initial_joints_deg:
+    left: [-20, 0, -80, 0, 0, 0, 0, 0]
+    right: [-20, 0, 80, 0, 0, 0, 0, 0]
+  max_joint_step_deg: 0.5
+  position_tolerance_m: 0.025
