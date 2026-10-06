@@ -47,7 +47,8 @@ retarget:
   arm_posture: upper-arm
   arm_posture_gain: 0.8
   translation_scale: 0.8
-  orientation_scale: 0.5
+  # Match the measured hand rotation; 0.5 would halve wrist motion.
+  orientation_scale: 1.0
   orientation_enabled: true
   # Operator forward -> robot -Y; operator left -> robot +X; up -> +Z.
   # body mode first removes the operator's neutral heading in the world.

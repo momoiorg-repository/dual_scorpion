@@ -469,7 +469,7 @@ def test_mujoco_urdf_frames_match_existing_fk_for_both_arms():
         assert sim.model.nq == 16 and sim.model.nmocap == 4
         # 17 CAD meshes: shared stand plus eight links per arm. No capsules.
         assert sim.model.nmesh == 17
-        assert sim.model.ngeom == 22
+        assert sim.model.ngeom == 20
         for fraction in (0.0, 0.25, 0.75):
             for arm in sim.arms.values():
                 arm.last_valid_target[:] = arm.lower + fraction * (arm.upper - arm.lower)
@@ -890,5 +890,68 @@ def test_old_hand_only_replay_can_start_without_upper_arm_bones():
         assert all(mapping.posture_target({}, side) is None for side, mapping in mappings.items())
         args = build_parser().parse_args(["run", "--arm-posture", "hand-only"])
         assert args.arm_posture == "hand-only"
+    finally:
+        sim.close()
+
+
+def test_default_hand_rotation_is_not_halved():
+    cfg = load_config(CONFIG)["retarget"]
+    human = pose([0.2, 0.3, 1.1])
+    robot = pose([0.25, -0.3, 0.25], Rotation.from_euler("x", 20, degrees=True).as_quat())
+    mapping = Retarget(
+        human,
+        robot,
+        rotation=np.array(cfg["world_to_robot_rotation"]),
+        orientation_scale=cfg["orientation_scale"],
+        orientation_enabled=cfg["orientation_enabled"],
+    )
+    turned = human.copy()
+    turned[:3, :3] = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+    target = mapping.target(turned)
+    angle = Rotation.from_matrix(target[:3, :3] @ robot[:3, :3].T).magnitude()
+    assert np.rad2deg(angle) == pytest.approx(90)
+    np.testing.assert_array_equal(target[:3, 3], robot[:3, 3])
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+@pytest.mark.parametrize("axis,angle_deg", [(0, -30), (1, 20), (2, 45)])
+def test_wrist_turns_with_upper_arm_guidance_and_orientation_markers(side, axis, angle_deg):
+    pytest.importorskip("mujoco")
+    pytest.importorskip("pybullet")
+    from telegrip.mocopi.mujoco_sim import MujocoSimulation
+    from telegrip.mocopi.posture import ArmPostureTarget, robot_arm_state
+
+    sim = MujocoSimulation(load_config(CONFIG)["robot"], gui=False)
+    try:
+        arm = sim.arms[side]
+        _, elbow, upper = robot_arm_state(arm.solver, arm.last_valid_target)
+        targets = {name: target.copy() for name, target in sim.initial_ee.items()}
+        targets[side][:3, :3] = (
+            targets[side][:3, :3] @ Rotation.from_rotvec(np.eye(3)[axis] * np.deg2rad(angle_deg)).as_matrix()
+        )
+        for _ in range(240):
+            before = arm.last_valid_target.copy()
+            sim.update(targets, postures={side: ArmPostureTarget(elbow, upper)})
+            assert arm.valid, arm.status
+            assert np.max(np.abs(arm.last_valid_target - before)) <= arm.max_step + 1e-6
+        actual = sim.data.body(f"{side}/tcp_link")
+        error = Rotation.from_matrix(targets[side][:3, :3] @ actual.xmat.reshape(3, 3).T).magnitude()
+        assert np.rad2deg(error) < (5 if axis == 2 else abs(angle_deg) * 0.5)
+        assert np.linalg.norm(actual.xpos - targets[side][:3, 3]) < 0.005
+        for number in range(3):
+            np.testing.assert_allclose(
+                sim.data.site(f"{side}/target_axis_{number}").xmat.reshape(3, 3),
+                targets[side][:3, :3],
+                atol=1e-7,
+            )
+            np.testing.assert_allclose(
+                sim.data.site(f"{side}/actual_axis_{number}").xmat,
+                actual.xmat,
+                atol=1e-7,
+            )
+        held = sim.data.qpos.copy(), sim.data.mocap_quat.copy()
+        sim.update(targets, valid=False)
+        np.testing.assert_array_equal(sim.data.qpos, held[0])
+        np.testing.assert_array_equal(sim.data.mocap_quat, held[1])
     finally:
         sim.close()

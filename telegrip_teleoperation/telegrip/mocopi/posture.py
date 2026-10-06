@@ -77,6 +77,7 @@ class ArmPostureIK:
     """Refine a slew-limited TCP command using local redundant joint motion."""
 
     ORIENTATION_LENGTH = 0.06  # metres/radian in the secondary posture objective
+    WRIST_ORIENTATION_LENGTH = 0.15  # preserve hand rotation alongside upper-arm guidance
 
     def __init__(self, solver, lower, upper, max_step_deg):
         self.solver = solver
@@ -93,7 +94,7 @@ class ArmPostureIK:
         return np.r_[
             target.elbow - state[2],
             self.ORIENTATION_LENGTH * Rotation.from_matrix(target.upper_rotation @ state[3].T).as_rotvec(),
-            0.02 * Rotation.from_matrix(tcp_rotation @ state[1].T).as_rotvec(),
+            self.WRIST_ORIENTATION_LENGTH * Rotation.from_matrix(tcp_rotation @ state[1].T).as_rotvec(),
         ]
 
     def refine(self, candidate, previous, target, tcp_target):
@@ -114,7 +115,7 @@ class ArmPostureIK:
                 np.r_[
                     state[2] - base[2],
                     self.ORIENTATION_LENGTH * Rotation.from_matrix(state[3] @ base[3].T).as_rotvec(),
-                    0.02 * Rotation.from_matrix(state[1] @ base[1].T).as_rotvec(),
+                    self.WRIST_ORIENTATION_LENGTH * Rotation.from_matrix(state[1] @ base[1].T).as_rotvec(),
                 ]
                 / epsilon
             )
@@ -141,7 +142,7 @@ class ArmPostureIK:
             trial_state = self.state(trial, previous[7])
             # Clipping can leave the null space. Reject such steps by FK;
             # preserve the primary position command within 0.5 mm. Wrist
-            # orientation is a softer objective than elbow/upper-arm posture.
+            # orientation and upper-arm posture share the secondary objective.
             if (
                 np.linalg.norm(trial_state[0] - base[0]) <= 0.0005
                 and np.linalg.norm(self.error(trial_state, target, tcp_rotation))

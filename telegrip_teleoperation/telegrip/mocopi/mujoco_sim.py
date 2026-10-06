@@ -13,6 +13,7 @@ from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from .ik import DualSimulation
 
@@ -81,6 +82,31 @@ def add_assembly_visuals(tree, side, source_path):
             link.append(visual)
 
 
+def add_orientation_axes(body, name, mujoco, length, alpha):
+    """Local RGB arrows: x=red, y=green, z=blue, rotating with the body."""
+    for axis, color in enumerate(([1, 0.2, 0.2], [0.2, 1, 0.2], [0.2, 0.4, 1])):
+        position, size = np.zeros(3), np.full(3, 0.002)
+        position[axis] = size[axis] = length / 2
+        body.add_site(
+            name=f"{name}_{axis}",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            pos=position,
+            size=size,
+            rgba=[*color, alpha],
+        )
+        end = np.eye(3)[axis] * length
+        for direction in (-1, 1):
+            start = end - np.eye(3)[axis] * length * 0.18
+            start += np.eye(3)[(axis + 1) % 3] * direction * length * 0.07
+            body.add_site(
+                name=f"{name}_{axis}_tip_{direction}",
+                type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+                fromto=[*start, *end],
+                size=[0.002, 0, 0],
+                rgba=[*color, alpha],
+            )
+
+
 def build_model(urdfs, mujoco, visual_urdf=None):
     """Import both original URDF trees, preserving axes, limits and mount offsets."""
     scene = mujoco.MjSpec.from_string(
@@ -117,20 +143,13 @@ def build_model(urdfs, mujoco, visual_urdf=None):
         arm = mujoco.MjSpec.from_string(ET.tostring(tree, encoding="unicode"))
         scene.attach(arm, frame=scene.worldbody.add_frame(), prefix=f"{side}/")
         tcp = scene.body(f"{side}/tcp_link")
-        tcp.add_site(name=f"{side}/actual", size=[0.015, 0, 0], rgba=[0.2, 0.9, 0.3, 1])
+        add_orientation_axes(tcp, f"{side}/actual_axis", mujoco, 0.07, 1)
         elbow_link = tree.find("joint[@name='joint4']/child").attrib["link"]
         scene.body(f"{side}/{elbow_link}").add_site(
             name=f"{side}/elbow_actual", size=[0.008, 0, 0], rgba=[0.9, 0.3, 0.8, 1]
         )
         target = scene.worldbody.add_body(name=f"{side}/target", mocap=True)
-        target.add_geom(
-            name=f"{side}/target_marker",
-            type=mujoco.mjtGeom.mjGEOM_SPHERE,
-            size=[0.018, 0, 0],
-            contype=0,
-            conaffinity=0,
-            rgba=[*COLORS[side][:3], 0.45],
-        )
+        add_orientation_axes(target, f"{side}/target_axis", mujoco, 0.11, 0.6)
         elbow_target = scene.worldbody.add_body(name=f"{side}/elbow_target", mocap=True)
         elbow_target.add_geom(
             name=f"{side}/elbow_target_marker",
@@ -199,6 +218,8 @@ class MujocoSimulation(DualSimulation):
                 self.data.qpos[self.qpos_indices[side]] = np.deg2rad(arm.last_valid_target)
                 marker = self.model.body(f"{side}/target").mocapid[0]
                 self.data.mocap_pos[marker] = self.targets[side][:3, 3]
+                quaternion = Rotation.from_matrix(self.targets[side][:3, :3]).as_quat()
+                self.data.mocap_quat[marker] = quaternion[[3, 0, 1, 2]]
                 posture = self.postures.get(side)
                 elbow_marker = self.model.body(f"{side}/elbow_target").mocapid[0]
                 self.model.geom(f"{side}/elbow_target_marker").rgba[3] = 0.45 if posture else 0

@@ -24,7 +24,7 @@
 | 同 `config.py` | YAML読み込み、相対path解決、主要閾値検査、camera index/path override |
 | 同 `mounting.py` | 上半身集中/標準modeの宣言に応じた6センサー装着案内 |
 | 同 `__main__.py` / `__init__.py` | guided CLI / package |
-| `tests/teleoperators/test_mocopi_tracking.py` | root CI配下の54テスト。MuJoCo/PyBullet未導入時は関連テストだけskip |
+| `tests/teleoperators/test_mocopi_tracking.py` | root CI配下の61テスト。MuJoCo/PyBullet未導入時は関連テストだけskip |
 | `config/mocopi/tracking.yaml` | 受信/camera/SLAM/同期/校正/retarget/robotの設定 |
 | `config/mocopi/calibration/README.md` | 校正値の生成案内。実測値を仮値で置き換えない |
 | `telegrip_teleoperation/telegrip/__init__.py` / `core/__init__.py` | existing public exportsを保ったlazy import |
@@ -37,7 +37,7 @@ rootのdependency/lock、既存IK solver/URDF/実機driverは変更していな�
 
 ## 検証結果
 
-- 新規54テスト PASS。SE(3)、hierarchy、Head-relative hands、scale、non-identity
+- 新規61テスト PASS。SE(3)、hierarchy、Head-relative hands、scale、non-identity
   world alignment、extrinsic、観測不能/noisy calibration拒否、左右、anchor/gain、
   同期/replay、UDP、map不一致、hand jump、NaN IK/残差、関節jump、既存両腕追従/HOLD。
 - `camera-capture` / `doctor` / ROS bridgeの `--camera` index/pathが既存OpenCVCameraへ届くこと、
@@ -102,13 +102,19 @@ raw physical Head sensor中心の追跡精度を保証するものではない�
 robot upper-armはURDF joint2 childのlink frame、elbowは既存FK skeletonと同じjoint4 origin。
 mesh重心を骨の位置として使用しない。
 既存IKでTCP位置を解き、既存FKの数値JacobianとSVDからTCP位置のnull spaceを求める。
-その空間で肘位置・上腕回転・手首回転のdamped least-squaresを解き、上腕/肘を手首より重視する。
+その空間で肘位置・上腕回転・手首回転のdamped least-squaresを解く。
+手の回転が弱い問題に対し、orientation_scaleを0.5から1.0へ、手首回転weightを0.02から0.15 m/radへ変更。
+上腕回転weightは0.06 m/radを維持し、肘・上腕と手首を同時に改善する。
 URDF limitsとlast commandからのslewを適用した後、FKで主目標からの位置変化0.5mm以内と
 姿勢objectiveの改善を再確認する。上腕目標のためにTCP位置を大きく動かさない。
 手首orientationはsoft objectiveになり、肘/上腕のためにずれる場合がある。
 `--arm-posture hand-only`は従来のfull-pose/position-priority IKへ戻す。
 旧replayの開始sampleに上腕boneがなければ、その腕だけhand-onlyへfallbackする。
 MuJoCoでは実際の肘をピンクのsite、肘目標を左右色の小球で表示。
+手先と目標へRGB方向軸を追加し、目標mocap quaternionを正しいwxyz順で更新。
+左右の手首を3軸方向へ回す6ケースを240更新ずつ検証し、TCP位置誤差5mm未満、
+45度ひねりの回転誤差5度未満、30/20度の傾け動作の回転誤差は要求角の半分未満を確認。
+手の回転90度が90度のrobot目標へ写ること、目標/実際の表示軸の向きとHOLDも検証。
 この追加後の実mocopi装着による追従、実camera/vSLAMの精度は未確認。
 
 IKは既存Telegripの左右solver、左右URDF joint limits、TCP link7を再利用。

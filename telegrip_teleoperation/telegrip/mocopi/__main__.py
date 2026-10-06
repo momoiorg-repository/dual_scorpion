@@ -266,6 +266,26 @@ def run(cfg, args):
                         "status": arm.status[:160],
                         "joints_deg": np.round(arm.last_valid_target, 3).tolist(),
                         "arm_posture": arm.posture_info,
+                        "hand_rotation_deg": round(
+                            float(
+                                np.rad2deg(
+                                    Rotation.from_matrix(
+                                        hands[side][:3, :3] @ mappings[side].human[:3, :3].T
+                                    ).magnitude()
+                                )
+                            ),
+                            1,
+                        ),
+                        "target_rotation_deg": round(
+                            float(
+                                np.rad2deg(
+                                    Rotation.from_matrix(
+                                        targets[side][:3, :3] @ mappings[side].robot[:3, :3].T
+                                    ).magnitude()
+                                )
+                            ),
+                            1,
+                        ),
                     }
                     for side, arm in simulation.arms.items()
                 }
