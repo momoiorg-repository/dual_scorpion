@@ -6,6 +6,8 @@ created clavicle rod, spine and base.
 
 dual_scorpion (CLI types `dual_scorpion_follower` and `dual_scorpion_leader`) extends the original SO-101 arm into a 7-DOF + gripper bimanual platform. The repository bundles printable parts, servo bring-up utilities, Hugging Face dataset hooks, and scripts for teleoperation, logging, and replay.
 
+![Dual Scorpion — Physical Robot](assets/images/DS_v3.png)
+
 **References**
 - Original SO-101 repository (Hugging Face LeRobot): https://github.com/huggingface/lerobot
 - SO-101 hardware/software documentation on the Hugging Face Hub®: https://huggingface.co/docs/lerobot/so101
@@ -179,6 +181,15 @@ Use `--joints=right_joint5` or `--joints=left_joint5` if only one arm should be 
 Only the selected JSON entries are updated, but the selected arm's motors are unlocked during the
 procedure so the joint can be moved by hand. The live table still shows every joint on that arm; selected
 rows are marked with `*`.
+
+### Motor Direction Configuration
+
+Dual Scorpion supports motor direction inversion using the `drive_mode` parameter in each motor's calibration JSON entry:
+
+- `drive_mode=0`: Normal direction
+- `drive_mode=1`: Reversed direction
+
+Each motor can be configured independently. Direction inversion is supported in degree-based control (`use_degrees=true`) as well as normalized position modes. Choose settings for the individual robot and its calibration.
 
 ## Configuration
 All follower parameters live in `src/lerobot/robots/dual_scorpion_follower/config_dual_scorpion_follower.py`. Every `lerobot-*` CLI accepts the same keys via `--robot.*` flags, or you can instantiate the config directly:
