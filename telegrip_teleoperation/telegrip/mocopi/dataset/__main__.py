@@ -36,6 +36,17 @@ def parser():
     evaluate.add_argument("--fps", type=int, default=30)
     evaluate.add_argument("--max-sync-s", type=float, default=0.08)
     evaluate.add_argument("--workspace", help="Optional YAML with left/right min_m and max_m")
+    replay = sub.add_parser("replay-sim", help="Replay an episode in MuJoCo and quantify tracking")
+    replay.add_argument("--dataset", required=True)
+    replay.add_argument("--episode", type=int, default=0)
+    replay.add_argument("--headless", action="store_true")
+    replay.add_argument("--fast", action="store_true", help="Do not wait for recorded frame times")
+    replay.add_argument("--no-camera", action="store_true", help="Do not open the recorded camera window")
+    replay.add_argument("--left-urdf", help="Override the left-arm URDF for this replay")
+    replay.add_argument("--right-urdf", help="Override the right-arm URDF for this replay")
+    replay.add_argument("--visual-urdf", help="Optional compatible assembly URDF for CAD visuals")
+    replay.add_argument("--plan", help="Write a new robot joint plan JSON")
+    replay.add_argument("--report", help="Write a new simulation metrics JSON")
     return result
 
 
@@ -73,6 +84,34 @@ def main():
                 output.parent.mkdir(parents=True, exist_ok=True)
                 with output.open("x", encoding="utf-8") as file:
                     file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+        elif args.command == "replay-sim":
+            from .replay import replay_sim
+
+            for side in ("left", "right"):
+                path = getattr(args, f"{side}_urdf")
+                if path:
+                    config["robot"]["urdf"][side] = str(Path(path).resolve())
+            if args.visual_urdf:
+                config["robot"]["visual_urdf"] = str(Path(args.visual_urdf).resolve())
+            elif args.left_urdf or args.right_urdf:
+                config["robot"]["visual_urdf"] = None
+            for path in (args.plan, args.report):
+                if path and Path(path).exists():
+                    raise FileExistsError(f"Output already exists: {path}")
+            plan, result = replay_sim(
+                config,
+                args.dataset,
+                args.episode,
+                gui=not args.headless,
+                realtime=not args.fast,
+                show_camera=not args.no_camera,
+            )
+            for path, document in ((args.plan, plan), (args.report, result)):
+                if path:
+                    output = Path(path)
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    with output.open("x", encoding="utf-8") as file:
+                        file.write(json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     except (ValueError, RuntimeError, OSError) as exc:
         parser().exit(1, f"Error: {exc}\n")

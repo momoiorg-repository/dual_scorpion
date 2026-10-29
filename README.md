@@ -27,7 +27,8 @@ The in-progress head-camera and mocopi demonstration capture workflow is documen
 in [MOCOPI_DATASET_GUIDE.md](MOCOPI_DATASET_GUIDE.md). Capture stores real camera
 and motion measurements without a robot connection, IK, or gripper measurements.
 Raw sessions can be evaluated for timing and converted into local LeRobot datasets;
-their actions describe measured human hand poses, not robot joint commands.
+their actions describe measured human hand poses, not robot joint commands. The
+dataset can be replayed against selected arm URDFs in MuJoCo with tracking metrics.
 
 ## Contents
 - [Highlights](#highlights)

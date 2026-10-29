@@ -126,3 +126,34 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
             np.testing.assert_allclose(current["action"], expected, atol=1e-6)
     with pytest.raises(FileExistsError):
         convert_sessions([session], output, "local/mocopi-test", fps=20)
+
+    pytest.importorskip("pybullet")
+    pytest.importorskip("mujoco")
+    from telegrip.mocopi.dataset.replay import model_fingerprint, replay_sim
+
+    # Replays are derived from human poses, and never add an invented gripper command.
+    plan, simulation = replay_sim(cfg, output, gui=False, realtime=False)
+    assert simulation["frames"] > 0 and not simulation["ik_failures"]
+    assert not plan["gripper_included"] and plan["source"] == "fake"
+    assert all(
+        len(frame["arms"][side]["joint_deg"]) == 7 for frame in plan["frames"] for side in ("left", "right")
+    )
+    assert simulation["tracking"]["left"]["position_m"]["max"] >= 0
+    assert (
+        simulation["tracking"]["right"]["max_joint_step_deg"]["max"]
+        <= cfg["robot"]["max_joint_step_deg"] + 1e-6
+    )
+
+    # An independently selected/updated URDF is detected and used; no assembly
+    # CAD meshes are needed to show the fallback kinematic skeleton.
+    original_hash = model_fingerprint(cfg)
+    custom = tmp_path / "left_changed.urdf"
+    contents = Path(cfg["robot"]["urdf"]["left"]).read_text()
+    assert "0.2923 0.0015 0.3967" in contents
+    custom.write_text(contents.replace("0.2923 0.0015 0.3967", "0.2933 0.0015 0.3967", 1))
+    cfg["robot"]["urdf"]["left"] = str(custom)
+    cfg["robot"]["visual_urdf"] = None
+    changed, changed_report = replay_sim(cfg, output, gui=False, realtime=False)
+    assert changed["urdf_sha256"]["left"] != original_hash["left"]
+    assert changed["urdf_sha256"]["right"] == original_hash["right"]
+    assert not changed_report["ik_failures"]

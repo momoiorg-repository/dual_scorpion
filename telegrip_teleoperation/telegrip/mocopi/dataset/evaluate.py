@@ -8,8 +8,9 @@ from .session import Session, aligned_segments, nearest_index
 def _summary(values):
     values = np.asarray(values, dtype=float)
     if not len(values):
-        return {"mean": None, "p95": None, "max": None}
+        return {"min": None, "mean": None, "p95": None, "max": None}
     return {
+        "min": float(np.min(values)),
         "mean": float(np.mean(values)),
         "p95": float(np.quantile(values, 0.95)),
         "max": float(np.max(values)),
