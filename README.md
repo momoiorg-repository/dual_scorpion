@@ -47,7 +47,8 @@ dataset with measured read times; this export does not assume any robot cameras.
 The guide also compares these human-pose records with the reference leader-operated
 dataset and explains their different cameras, state and action semantics.
 Quantitative metrics for every stage, their units and limits, and the CSV
-comparison table are defined in [docs/MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md).
+comparison table and dependency-free SVG plots are defined in
+[docs/MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md).
 
 ## Contents
 - [Highlights](#highlights)

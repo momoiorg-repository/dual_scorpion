@@ -43,6 +43,15 @@ def parser():
     metrics = sub.add_parser("metrics-csv", help="Combine saved evaluation reports into one comparison CSV")
     metrics.add_argument("--input", action="append", required=True, help="Saved JSON report; repeat for each")
     metrics.add_argument("--output", required=True, help="New CSV file to write")
+    plot = sub.add_parser("metrics-plot", help="Render selected report metrics as a dependency-free SVG")
+    plot.add_argument("--input", action="append", required=True, help="Saved JSON report; repeat for each")
+    plot.add_argument(
+        "--metric",
+        action="append",
+        required=True,
+        help="Flattened report metric, e.g. tracking.left.position_m.max; repeat for each",
+    )
+    plot.add_argument("--output", required=True, help="New SVG file to write")
     verify = sub.add_parser("verify", help="Read a finalized dataset and check structure and semantics")
     verify.add_argument("--dataset", required=True, help="Finalized mocopi dataset folder")
     verify.add_argument("--sample-frames", type=int, default=8, help="Sampled frames per episode (1..200)")
@@ -166,6 +175,10 @@ def main():
             from .report_csv import export_metrics_csv
 
             result = export_metrics_csv(args.input, args.output)
+        elif args.command == "metrics-plot":
+            from .report_plot import export_metrics_svg
+
+            result = export_metrics_svg(args.input, args.metric, args.output)
         elif args.command == "verify":
             from .verify import verify_dataset
 

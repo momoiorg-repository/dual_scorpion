@@ -148,6 +148,21 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset metrics-csv \
 各指標の計算式・単位・入力・評価条件・限界と、内部整合性の評価と外部Ground Truthを
 必要とする評価の区別は [MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md) にまとめています。
 
+CSVの列名を使って、同じJSONレポートからSVGの比較グラフも作れます。Matplotlibなどの
+追加依存は不要です。値がないレポートは空欄にせず `missing` と表示します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset metrics-plot \
+  --input outputs/mocopi/reports/episode-001.json \
+  --input outputs/mocopi/reports/episode-001-sim.json \
+  --metric camera_fps \
+  --metric tracking.left.position_m.max \
+  --output outputs/mocopi/reports/metrics.svg
+```
+
+SVGには元レポートのパス・選択した指標名がメタデータとして埋め込まれます。数値は
+平滑化・補間せず、JSONの値をそのまま描画します。
+
 ## 長時間・ノイズのストレス確認（機器なし）
 
 機器を使わずに、長時間記録と同期乱れへの耐性を確認できます。このテストは

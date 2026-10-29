@@ -989,6 +989,45 @@ def test_slam_map_mismatch_aborts_recording_before_camera_capture(tmp_path):
     assert meta["status"] == "aborted" and meta["camera_frames"] == 0
 
 
+def test_metrics_svg_renders_missing_values_and_provenance(tmp_path):
+    from telegrip.mocopi.dataset.report_plot import export_metrics_svg
+
+    first = tmp_path / "quality.json"
+    first.write_text(
+        json.dumps({"schema": "dual_scorpion.mocopi.quality.v1", "camera_fps": 19.8, "task": "first"})
+    )
+    second = tmp_path / "simulation.json"
+    second.write_text(
+        json.dumps(
+            {
+                "schema": "dual_scorpion.mocopi.simulation_metrics.v1",
+                "tracking": {"left": {"position_m": {"max": 0.021}}},
+                "task": "second",
+            }
+        )
+    )
+    plot = tmp_path / "metrics.svg"
+    summary = export_metrics_svg([first, second], ["camera_fps", "tracking.left.position_m.max"], plot)
+    assert summary["schema"] == "dual_scorpion.mocopi.metrics_plot.v1"
+    assert summary["reports"] == 2 and summary["output"] == str(plot)
+    assert summary["missing_values"] == {
+        "camera_fps": 1,
+        "tracking.left.position_m.max": 1,
+    }
+    text = plot.read_text(encoding="utf-8")
+    assert text.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert "camera_fps" in text and "tracking.left.position_m.max" in text
+    assert "19.8" in text and "0.021" in text and "missing" in text
+    assert "Dual Scorpion mocopi metrics comparison" in text
+
+    with pytest.raises(FileExistsError):
+        export_metrics_svg([first], ["camera_fps"], plot)
+    with pytest.raises(ValueError, match="duplicates"):
+        export_metrics_svg([first], ["camera_fps", "camera_fps"], tmp_path / "duplicate.svg")
+    with pytest.raises(ValueError, match="no numeric value"):
+        export_metrics_svg([first], ["not.a.metric"], tmp_path / "empty.svg")
+
+
 def test_metrics_csv_combines_quality_and_simulation_reports(tmp_path):
     import csv
 
