@@ -288,6 +288,37 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
         assert all(
             len(command) == 14 and all("gripper" not in key for key in command) for command in robot.commands
         )
+        from telegrip.mocopi.dataset.compare import compare_real
+
+        plan_file = tmp_path / "plan.json"
+        plan_file.write_text(json.dumps(plan))
+        reference = tmp_path / "physical-measurements.csv"
+        lines = ["frame,side,x_m,y_m,z_m\n"]
+        for side in ("left", "right"):
+            joint = np.r_[plan["frames"][-1]["arms"][side]["joint_deg"], 0.0]
+            position, _ = simulation.arms[side].solver.fk_solver.compute(joint)
+            position = position + [0.01, 0, 0]
+            lines.append(f"3,{side},{position[0]},{position[1]},{position[2]}\n")
+        reference.write_text("".join(lines))
+        comparison = compare_real(cfg, plan_file, tmp_path / "real-report.json", reference)
+        assert comparison["measured_frames"] == 4
+        for side in ("left", "right"):
+            assert comparison["tracking"][side]["tcp_sim_vs_encoder_fk_m"]["max"] < 1e-7
+            assert comparison["external_reference"]["measurements"][side]["count"] == 1
+            assert comparison["external_reference"]["measurements"][side]["fk_model_error_m"][
+                "mean"
+            ] == pytest.approx(0.01)
+        reference.write_text("frame,side,x_m,y_m,z_m\n100,left,0,0,0\n")
+        with pytest.raises(ValueError, match="not present"):
+            compare_real(cfg, plan_file, tmp_path / "real-report.json", reference)
+        reference.write_text("frame,side,x_m,y_m,z_m\n3,left,nan,0,0\n")
+        with pytest.raises(ValueError, match="finite metres"):
+            compare_real(cfg, plan_file, tmp_path / "real-report.json", reference)
+        altered = deepcopy(plan)
+        altered["frames"][0]["arms"]["left"]["joint_deg"][0] += 0.1
+        plan_file.write_text(json.dumps(altered))
+        with pytest.raises(ValueError, match="does not match"):
+            compare_real(cfg, plan_file, tmp_path / "real-report.json")
         stalled = FakeRobot(stalled=True)
         with pytest.raises(RuntimeError, match="fell behind"):
             execute_plan(

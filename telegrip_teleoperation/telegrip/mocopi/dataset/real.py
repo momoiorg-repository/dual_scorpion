@@ -1,5 +1,6 @@
 """Validate and replay a simulated joint plan on the existing follower buses."""
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -14,6 +15,11 @@ from .replay import model_fingerprint
 
 SIDES = ("left", "right")
 JOINTS = tuple(f"joint{i}" for i in range(7))
+
+
+def plan_hash(plan):
+    encoded = json.dumps(plan, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _joint_map(frame):
@@ -193,6 +199,7 @@ def execute_plan(
         "schema": "dual_scorpion.mocopi.real_metrics.v1",
         "status": "starting",
         "source": plan["source"],
+        "plan_sha256": plan_hash(plan),
         "robot_id": getattr(robot, "id", None),
         "urdf_sha256": plan["urdf_sha256"],
         "fps": plan["fps"],

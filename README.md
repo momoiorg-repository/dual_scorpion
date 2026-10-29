@@ -32,7 +32,8 @@ dataset can be replayed against selected arm URDFs in MuJoCo with tracking metri
 Optionally, the head-camera SLAM stream aligns the head and both arms while
 preserving the original mocopi poses and timestamps.
 Validated seven-joint plans can also be replayed through the existing follower
-driver, with encoder-based metrics; physical playback has not yet been verified.
+driver, with encoder-based metrics and optional comparison to externally measured
+TCP points; physical playback has not yet been verified.
 
 ## Contents
 - [Highlights](#highlights)

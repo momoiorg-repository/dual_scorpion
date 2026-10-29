@@ -228,3 +228,41 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
 レポートの `measured_fps` と `tracking` に、実際の関節角と目標の差、URDFとエンコーダーから
 計算した手先位置・向きの差が出ます。後者は独立した外部計測ではなく、
 URDFの誤差やたわみを含む実際の手先位置精度を直接測った値ではありません。
+
+## 実機とシミュレーションを比較する
+
+同じ計画、実機レポート、URDFを使って、左右の関節角の差と、エンコーダーの角度から
+URDFで計算した手先とシミュレーション上の手先との差を集計します。
+途中停止したレポートも、記録された範囲を比較できます。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset compare-real \
+  --plan outputs/mocopi/plans/episode-001.json \
+  --report outputs/mocopi/reports/episode-001-real.json \
+  --output outputs/mocopi/reports/episode-001-comparison.json
+```
+
+URDFを変更して計画した場合は、ここでも同じ `--left-urdf` / `--right-urdf` を指定します。
+計画とレポートが一致しない場合やURDFが異なる場合は比較を中止します。
+`tracking` の各項目に平均・95パーセンタイル・最大値が入ります。
+`tcp_sim_vs_encoder_fk_m` は、同じURDFから求めたシミュレーションとエンコーダーによる推定値の差です。
+この値だけでは、実機のたわみやURDF形状の誤差は分かりません。
+
+実際の手先を外部から計測できる場合は、次の形式のCSVを作り、上のコマンドに
+`--reference-csv outputs/mocopi/reports/tcp-measurements.csv` を追加します。
+
+```csv
+frame,side,x_m,y_m,z_m
+```
+
+ヘッダーの下に、計測した点ごとに `frame`（実機レポートの `frames` 内の番号）、
+`side`（`left` または `right`）、`x_m,y_m,z_m`（メートル）を記入します。
+値はそのフレームのエンコーダー読み取りと同じ時点の、URDFの `tcp_link` に対応する実機上の点です。
+座標系は選択した左右URDFの共通の原点・軸に合わせてください。定規や外部カメラの座標を
+使うときは、事前にこの座標系へ変換する必要があります。時点や座標を合わせられない測定値は、
+そのまま比較しないでください。点の計測では手先の回転精度は評価できません。
+
+追加後の `external_reference.measurements` には、外部計測点と目標の距離
+`target_error_m`、外部計測点とエンコーダー＋URDF推定位置の距離 `fk_model_error_m` を出します。
+フレーム番号ごとに計測した値を記入するため、停止位置だけの計測なら停止時点に対応する
+フレームの評価になります。実際の計測値がまだない場合はCSVを指定せず、推定値だけを確認できます。

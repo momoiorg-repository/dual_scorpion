@@ -64,6 +64,15 @@ def parser():
     real.add_argument("--max-sim-error-m", type=float, default=0.025)
     real.add_argument("--left-urdf", help="Left-arm URDF used to create the plan")
     real.add_argument("--right-urdf", help="Right-arm URDF used to create the plan")
+    compare = sub.add_parser(
+        "compare-real", help="Compare real feedback with simulation and measured TCP points"
+    )
+    compare.add_argument("--plan", required=True)
+    compare.add_argument("--report", required=True)
+    compare.add_argument("--reference-csv", help="Optional physical TCP measurements in robot-base metres")
+    compare.add_argument("--output", help="New JSON comparison report")
+    compare.add_argument("--left-urdf", help="Left-arm URDF used in the plan")
+    compare.add_argument("--right-urdf", help="Right-arm URDF used in the plan")
     return result
 
 
@@ -170,6 +179,19 @@ def main():
                 }
             else:
                 result = real_result
+        elif args.command == "compare-real":
+            from .compare import compare_real
+
+            for side in ("left", "right"):
+                path = getattr(args, f"{side}_urdf")
+                if path:
+                    config["robot"]["urdf"][side] = str(Path(path).resolve())
+            result = compare_real(config, args.plan, args.report, args.reference_csv)
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with output.open("x", encoding="utf-8") as file:
+                    file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     except (ValueError, RuntimeError, OSError) as exc:
         parser().exit(1, f"Error: {exc}\n")
