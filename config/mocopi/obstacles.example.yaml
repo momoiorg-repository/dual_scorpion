@@ -1,0 +1,7 @@
+schema: dual_scorpion.mocopi.obstacles.v1
+obstacles:
+  - name: workbench
+    # Robot/MJCF frame, metre units. Replace with measured scene dimensions.
+    center_m: [0.0, -0.35, -0.02]
+    half_size_m: [0.35, 0.20, 0.02]
+    rotation_deg: [0.0, 0.0, 0.0]

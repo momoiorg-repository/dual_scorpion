@@ -246,8 +246,9 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
 IK失敗、手の目標が制限されたフレーム数が入ります。
 新CADモデルでは、MuJoCoの接触判定を使い `collision_check` に接触数・接触があった
 フレーム数・最大めり込み深さ・接触したボディ組合せも出します。この判定は同梱MJCFの
-床と、親子関係にないロボットリンク同士のみを対象とします。テーブル、人、工具など
-周囲の障害物はモデルに含まれていないため、この結果だけで実機の衝突安全性を保証しません。
+床、親子関係にないロボットリンク同士、および後述のYAMLで明示指定した箱形状を対象とします。
+テーブル、人、工具などは自動計測されないため、実寸法を入力しない限りこの結果だけで
+実機の衝突安全性を保証しません。
 接触があった計画、または接触結果のない旧いFull CAD計画は `replay-real` と
 `convert-joints` で拒否されます。
 `feasibility` に「IK失敗0・位置誤差≤許容値・関節ステップ≤上限」の判定と、その根拠となる
@@ -283,6 +284,28 @@ IKは現在姿勢から各更新で `robot.max_joint_step_deg` 以内の解だ�
 `joint0`〜`joint6`、`gripper`、手先リンク名 `tcp_link` が必要です。
 新しいURDFに外観が含まれない場合、リンク間を簡略な線で表示します。
 同梱のassembly CAD外観が見つからない環境でも、簡略表示で姿勢を確認できます。
+
+### 作業環境の障害物を明示指定する
+
+テーブル・治具・作業領域の枠などを衝突評価へ入れる場合は、寸法を実測してYAMLに記入し、
+`replay-sim --obstacles` で指定します。書式の例は
+[config/mocopi/obstacles.example.yaml](config/mocopi/obstacles.example.yaml) です。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
+  --dataset outputs/mocopi/datasets/demo-001 --episode 0 --headless --fast \
+  --obstacles config/mocopi/obstacles.example.yaml \
+  --plan outputs/mocopi/plans/e1-obstacles.json \
+  --report outputs/mocopi/reports/e1-obstacles-sim.json
+```
+
+YAMLでは各箱の `center_m`・`half_size_m`・任意の `rotation_deg` を、
+ロボット/MJCF座標系・メートル単位で指定します。`name` は接触レポートの内訳に使います。
+障害物は自動計測や推定をせず、入力されたジオメトリだけを評価します。
+計画JSONには正規化した障害物定義・SHA-256・個数を保存し、評価レポートにも同じハッシュと
+障害物名を保存します。`replay-real` と `convert-joints` は計画の関節角から接触を再計算し、
+保存された障害物ハッシュ・接触数・最大めり込みと一致しない場合や接触がある場合は拒否します。
+旧URDF (`--sim-model legacy`) ではこのオプションを使えません。
 
 ### 計画から関節角のLeRobotデータを作る
 

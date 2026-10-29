@@ -30,13 +30,14 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `44b8582 docs: record mocopi hardware diagnostics` に続き、
-  この文書の更新を含む今回のブロック状態記録コミットが最新になる
+- 最新コミット: `a773ed2 docs: record blocked mocopi hardware state` に続き、
+  この文書の更新を含む今回の障害物シーン機能コミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
   `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
   → `4dd4b60`（Full CADのモデル内衝突評価）→ `bb6bc2c`（jitter/dropout境界テスト）
   → `aad68b5`（ハンドオフ整理）→ `860e520`（120秒ストレステスト）
-  → 今回（実機診断の記録）
+  → `44b8582`（実機診断の記録）→ `a773ed2`（実機状態の記録）
+  → 今回（operator-declared obstacle scene）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -63,7 +64,7 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
   - `real.py` / `real_dataset.py` — 実機検証ゲート・実行・フィードバック変換
 - 設定: `config/mocopi/tracking.yaml`（`robot.mujoco_full_model` を含む）
 - テスト: `tests/teleoperators/test_mocopi_tracking.py`（61件）、`test_mocopi_dataset.py`（14件）、
-  `test_mocopi_full_model.py`（7件）、`test_mocopi_stress.py`（1件）
+  `test_mocopi_full_model.py`（8件）、`test_mocopi_stress.py`（1件）
 
 ## 完成した機能（実装・検証済み）
 
@@ -131,6 +132,13 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
     合成セッションに±12 msのジッタと、3箇所の4フレーム連続mocopiドロップを注入する。
     12件の不良/ドロップを記録し、4エピソードへ分割したLeRobot Datasetを生成・検証する。
     各エピソードは0.2秒の固定格子を維持し、ドロップ境界は1.2秒として保存される
+18. **operator-declared obstacle scene** — `replay-sim --obstacles` がYAMLの箱形状
+    （中心・半サイズ・任意回転）をFull CAD MuJoCoモデルに追加する。寸法は実測入力のみで
+    自動推定しない。正規化した定義・SHA-256・個数を計画JSONに保存し、評価レポートと
+    関節角データセットにもハッシュ・個数・名前を保存する。`replay-real` と
+    `convert-joints` は同じ障害物シーンを再構築して接触を再計算し、不一致・接触が
+    あれば拒否する。`verify` も関節角データセット内の障害物ハッシュと個数を検証する。
+    旧URDFモデルではこのオプションを拒否する
 
 ## 実装途中の機能
 
@@ -140,8 +148,9 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
   実機由来の長時間記録・露出や無線遅延を含む実測条件は未検証
 - **実機 `--execute` 再生**: コードは完成。安全確認ができるまで実行しない。新CADモデルでは
   設計上拒否される
-- **外部障害物を含む衝突シーン**: モデル内の床・ロボットリンク衝突は測定できるが、
-  実作業環境のテーブル・人・工具はMJCFに含まれていない。実環境ジオメトリの追加と検証は未実施
+- **実環境ジオメトリの実測**: 箱形状の障害物シーン入力・ハッシュ・衝突検証は実装済み。
+  ただし現在の研究室環境のテーブル・治具・テープ範囲の実寸法は未計測のため、
+  実環境に一致するシーンはまだ作成していない
 
 ## 未着手の機能
 
@@ -164,9 +173,9 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
 | `tests/teleoperators/test_mocopi_dataset.py` | 14 passed（`metrics-csv`・`verify`・start-pose記録・jitter/dropout境界を含む） |
-| `tests/teleoperators/test_mocopi_full_model.py` | 7 passed（IK実返り値検証・モデル内衝突評価・`doctor` を含む） |
+| `tests/teleoperators/test_mocopi_full_model.py` | 8 passed（IK実返り値検証・モデル内衝突評価・障害物シーン・`doctor` を含む） |
 | `tests/teleoperators/test_mocopi_stress.py` | 1 passed（論理120秒・ジッタ・3箇所のドロップ） |
-| `tests/teleoperators` 全体 | 86 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators` 全体 | 87 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加の合成end-to-end確認はテストで実施: `capture --fake` → `evaluate` → `convert` →
@@ -212,12 +221,19 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
    モーターを動かさない。実施したら本ドキュメントへ結果を記録
 2. 実機由来の長時間記録が取得できたら、同じ評価・変換・検証コマンドで結果を記録する
 
-## 現在のブロック状態
+## 実機が必要な作業と実機なしで可能な作業の分離
 
-実機mocopiパケットが受信できないため、実機収録・実機レイテンシ評価・実機再生検証に
-進めない。ソフトウェア側の実機非依存検証、C270読み取り、MuJoCoモデル診断は完了している。
-ユーザーまたは現場担当者がスマホのmocopi SENDを開始し、UDP 12351でPCが受信できるように
-したあと、このGoalを再開すること。
+**実機が必要**: mocopi実packet受信、C270/mocopi/SLAMを使った実環境収録、実機露出・
+無線遅延の実測、`replay-real --execute` によるモーター駆動、実機エンコーダー比較、
+外部TCP実測。ユーザーは現在研究室にいないため、これらは安全確認とともに後日実施する。
+
+**実機なしで継続可能**: 合成収録・保存済みデータの品質評価、LeRobot変換・検証、
+MuJoCo IK/FK・衝突・障害物シーン評価、レポート/CSV、文書・テスト・不具合修正。
+実機がなくてもGoal全体をblockedにしない。残りのソフトウェア作業がある間はこの節に
+現在状態を追記して継続する。
+
+**実機mocopiの現在状態**: UDP 12351でフレームを受信できていない。再開時はスマホ側SENDと
+ネットワークを確認する。この状態は実機検証の保留理由であり、ソフトウェア開発の停止理由ではない。
 
 ## 必要な実行コマンド（環境設定）
 

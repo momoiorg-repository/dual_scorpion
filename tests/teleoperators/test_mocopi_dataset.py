@@ -361,6 +361,61 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     assert full_joints["model_kind"] == "full_mujoco" and not full_joints["hardware_replay_allowed"]
     assert full_joints["start_pose"] == "work"
     assert full_joints["episodes"][0]["start_pose"] == "work"
+    assert full_joints["obstacles"] == [] and full_joints["obstacle_count"] == 0
+    assert full_joints["obstacles_sha256"] == full_plan["obstacles_sha256"]
+
+    obstacle_file = tmp_path / "obstacles.yaml"
+    obstacle_file.write_text(
+        "\n".join(
+            [
+                "schema: dual_scorpion.mocopi.obstacles.v1",
+                "obstacles:",
+                "  - name: test-box",
+                "    center_m: [0.0, 0.0, 0.30]",
+                "    half_size_m: [0.50, 0.50, 0.50]",
+                "    rotation_deg: [0.0, 0.0, 0.0]",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="full MuJoCo model"):
+        replay_sim(cfg, output, gui=False, realtime=False, sim_model="legacy", obstacles=obstacle_file)
+    blocked_plan, blocked_report = replay_sim(
+        cfg,
+        stationary_output,
+        gui=False,
+        realtime=False,
+        slowdown=2,
+        sim_model="full",
+        obstacles=obstacle_file,
+    )
+    assert blocked_plan["obstacle_count"] == 1
+    assert blocked_plan["obstacles"][0]["name"] == "test-box"
+    assert blocked_report["collision_check"]["obstacle_names"] == ["test-box"]
+    assert blocked_report["collision_check"]["frames_with_collisions"] > 0
+    assert blocked_report["collision_check"]["contact_count"] > 0
+    assert blocked_report["collision_check"]["max_penetration_m"] > 0
+    assert blocked_report["feasibility"]["modeled_collision_frames"] > 0
+    blocked_file = tmp_path / "blocked-plan.json"
+    blocked_file.write_text(json.dumps(blocked_plan))
+    with pytest.raises(ValueError, match="modeled collisions"):
+        replay_real(cfg, blocked_file, allow_synthetic=True, max_sim_error_m=0.1)
+    with pytest.raises(ValueError, match="modeled collisions"):
+        export_joint_dataset(
+            cfg,
+            stationary_output,
+            [blocked_file],
+            tmp_path / "blocked-joints",
+            "local/blocked-joints",
+            max_sim_error_m=0.1,
+        )
+    changed_scene = json.loads(blocked_file.read_text())
+    changed_scene["obstacles_sha256"] = "0" * 64
+    changed_file = tmp_path / "changed-obstacle-plan.json"
+    changed_file.write_text(json.dumps(changed_scene))
+    with pytest.raises(ValueError, match="obstacle scene differs"):
+        replay_real(cfg, changed_file, allow_synthetic=True, max_sim_error_m=0.1)
 
     backwards_plan, backwards_report = replay_sim(
         cfg,

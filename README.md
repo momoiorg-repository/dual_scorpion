@@ -31,6 +31,9 @@ their actions describe measured human hand poses, not robot joint commands. The
 dataset can be replayed in the updated native MuJoCo model with tracking metrics.
 Its joint limits and physical motor mapping are unverified, so plans from this
 model are restricted to simulation; the previous per-arm URDFs remain optional.
+Operator-declared obstacle boxes can be added to the native-model collision
+check through a small YAML scene file; their dimensions must be measured and
+are never inferred automatically.
 Reviewed plans can produce a separate 14-joint LeRobot dataset labelled as
 kinematic simulation, paired with the recorded human head-camera video.
 Optionally, the head-camera SLAM stream aligns the head and both arms while

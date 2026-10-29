@@ -18,6 +18,7 @@ from scipy.spatial.transform import Rotation
 from .geometry import pose
 from .ik import SafeIK
 from .mujoco_sim import COLORS, add_orientation_axes
+from .obstacles import normalize_obstacles, obstacles_sha256
 
 LOG = logging.getLogger(__name__)
 SUFFIX = {"left": "L", "right": "R"}
@@ -38,7 +39,28 @@ FULL_START_POSES = {
 }
 
 
-def build_full_model(path, mujoco):
+def _add_obstacles(spec, mujoco, obstacles):
+    for obstacle in obstacles:
+        name = obstacle["name"]
+        body = spec.worldbody.add_body(
+            name=f"obstacle/{name}",
+            pos=np.asarray(obstacle["center_m"], dtype=float),
+        )
+        quaternion = Rotation.from_euler(
+            "xyz", np.asarray(obstacle["rotation_deg"], dtype=float), degrees=True
+        ).as_quat()
+        body.add_geom(
+            name=f"obstacle/{name}/box",
+            type=mujoco.mjtGeom.mjGEOM_BOX,
+            size=np.asarray(obstacle["half_size_m"], dtype=float),
+            quat=quaternion[[3, 0, 1, 2]],
+            contype=1,
+            conaffinity=1,
+            rgba=[0.9, 0.55, 0.1, 0.55],
+        )
+
+
+def build_full_model(path, mujoco, obstacles=()):
     path = Path(path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Full MuJoCo model not found: {path}")
@@ -61,6 +83,7 @@ def build_full_model(path, mujoco):
             conaffinity=0,
             rgba=[*COLORS[side][:3], 0],
         )
+    _add_obstacles(spec, mujoco, obstacles)
     return spec.compile()
 
 
@@ -196,7 +219,7 @@ class FullModelIK:
 class FullMujocoSimulation:
     """Mocopi-compatible viewer for the supplied full native MJCF model."""
 
-    def __init__(self, config, gui=True):
+    def __init__(self, config, gui=True, obstacles=None):
         if gui and os.environ.get("DISPLAY"):
             os.environ.setdefault("PYGLFW_LIBRARY_VARIANT", "x11")
         try:
@@ -206,7 +229,11 @@ class FullMujocoSimulation:
 
         self.mujoco, self.viewer, self.viewer_threads = mujoco, None, []
         self.postures, self.targets, self.initial_ee, self.arms = {}, {}, {}, {}
-        self.model = build_full_model(full_model_path(config), mujoco)
+        self.obstacles = normalize_obstacles(
+            {"schema": "dual_scorpion.mocopi.obstacles.v1", "obstacles": obstacles or []}
+        )
+        self.obstacles_sha256 = obstacles_sha256(self.obstacles)
+        self.model = build_full_model(full_model_path(config), mujoco, self.obstacles)
         self.data = mujoco.MjData(self.model)
         preset = config.get("start_pose", "config")
         if preset not in ("work", "backwards", "config"):
@@ -291,8 +318,9 @@ class FullMujocoSimulation:
         """Return contacts implied by the current kinematic state, without stepping.
 
         MuJoCo's contact list is rebuilt by ``mj_forward`` in ``_sync_state``.
-        The model excludes adjacent links, so these contacts are with the floor
-        or non-adjacent robot bodies. This does not model external obstacles.
+        The model excludes adjacent links, so these contacts are with the floor,
+        non-adjacent robot bodies, and any operator-declared obstacle boxes.
+        Unconfigured external obstacles are not inferred.
         """
         contacts = []
         for index in range(self.data.ncon):
@@ -320,7 +348,13 @@ class FullMujocoSimulation:
             "count": len(contacts),
             "max_penetration_m": max((contact["penetration_m"] for contact in contacts), default=0.0),
             "body_pairs": body_pairs,
-            "scope": "Native MJCF floor and non-adjacent robot bodies; external obstacles are not modeled",
+            "obstacle_count": len(self.obstacles),
+            "obstacle_names": [obstacle["name"] for obstacle in self.obstacles],
+            "scope": (
+                "Native MJCF floor, non-adjacent robot bodies, and operator-declared obstacles"
+                if self.obstacles
+                else "Native MJCF floor and non-adjacent robot bodies; external obstacles are not modeled"
+            ),
         }
 
     def update(self, targets, valid=True, postures=None):

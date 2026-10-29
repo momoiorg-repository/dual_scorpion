@@ -9,6 +9,7 @@ from scipy.spatial.transform import Rotation
 
 from ..full_mujoco import full_model_path
 from ..geometry import MocopiSample, pose, world_arm_landmarks, world_hands
+from ..obstacles import load_obstacles, obstacles_sha256
 from ..runtime import TrackingGate
 from .evaluate import _summary
 from .fingerprint import dataset_fingerprint, file_sha256
@@ -50,6 +51,7 @@ def replay_sim(
     slowdown=1,
     sim_model="legacy",
     start_pose=None,
+    obstacles=None,
 ):
     """Play an episode, returning a reviewable joint plan and simulation metrics."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -65,6 +67,9 @@ def replay_sim(
 
     if not isinstance(slowdown, int) or not 1 <= slowdown <= 10:
         raise ValueError("slowdown must be an integer from 1 to 10")
+    obstacle_scene = [] if obstacles is None else load_obstacles(obstacles)
+    if obstacle_scene and sim_model != "full":
+        raise ValueError("Obstacle scenes require the full MuJoCo model")
     selected_start_pose = start_pose or config["robot"].get("start_pose", "config")
     if selected_start_pose not in ("work", "backwards", "config"):
         raise ValueError("start_pose must be work, backwards or config")
@@ -97,6 +102,9 @@ def replay_sim(
         "start_pose": selected_start_pose,
         "hardware_replay_allowed": sim_model == "legacy",
         "mujoco_model_sha256": _file_hash(full_model_path(config["robot"])) if sim_model == "full" else None,
+        "obstacles": obstacle_scene,
+        "obstacles_sha256": obstacles_sha256(obstacle_scene),
+        "obstacle_count": len(obstacle_scene),
         "urdf_sha256": model_fingerprint(config) if sim_model == "legacy" else None,
         "joint_names": [f"joint{i}" for i in range(7)],
         "gripper_included": False,
@@ -117,7 +125,9 @@ def replay_sim(
     collision_frames = 0
     collision_max_penetration_m = 0.0
     collision_body_pairs = {}
-    simulation = Simulation(robot_config, gui=gui)
+    simulation = Simulation(
+        robot_config, gui=gui, **({"obstacles": obstacle_scene} if sim_model == "full" else {})
+    )
     camera_window = None
     try:
         if gui and show_camera:
@@ -221,7 +231,9 @@ def replay_sim(
     position_tolerance = float(config["robot"]["position_tolerance_m"])
     step_limit = float(config["robot"]["max_joint_step_deg"])
     collision_scope = (
-        "Native MJCF floor and non-adjacent robot bodies; external obstacles are not modeled"
+        "Native MJCF floor, non-adjacent robot bodies, and operator-declared obstacles"
+        if sim_model == "full" and obstacle_scene
+        else "Native MJCF floor and non-adjacent robot bodies; external obstacles are not modeled"
         if sim_model == "full"
         else "Not evaluated by the legacy kinematic preview"
     )
@@ -271,6 +283,8 @@ def replay_sim(
         "hardware_replay_allowed": plan["hardware_replay_allowed"],
         "joint_limit_source": "unmeasured" if sim_model == "full" else "legacy_urdf",
         "mujoco_model_sha256": plan["mujoco_model_sha256"],
+        "obstacles_sha256": plan["obstacles_sha256"],
+        "obstacle_count": plan["obstacle_count"],
         "urdf_sha256": plan["urdf_sha256"],
         "ik_failures": plan["failures"],
         "tracking": {
@@ -297,6 +311,9 @@ def replay_sim(
             "contact_count": collision_contacts if sim_model == "full" else None,
             "max_penetration_m": collision_max_penetration_m if sim_model == "full" else None,
             "body_pairs": collision_body_pairs if sim_model == "full" else None,
+            "obstacle_names": (
+                [obstacle["name"] for obstacle in obstacle_scene] if sim_model == "full" else None
+            ),
             "scope": collision_scope,
         },
         "feasibility": feasibility,

@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from ..obstacles import obstacles_sha256
+
 HUMAN_SCHEMA = "dual_scorpion.mocopi.lerobot.v1"
 JOINT_SCHEMA = "dual_scorpion.mocopi.kinematic_joint_dataset.v1"
 # Position of the left/right hand block inside the 49-value human state.
@@ -68,6 +70,21 @@ def verify_dataset(dataset_path, sample_frames=8):
                 "preview_model_simulation_only",
                 manifest.get("hardware_replay_allowed") is False,
                 manifest.get("hardware_replay_allowed"),
+            )
+            check(
+                "obstacle_scene_present",
+                isinstance(manifest.get("obstacles"), list),
+                manifest.get("obstacles"),
+            )
+            check(
+                "obstacle_scene_hash_matches",
+                manifest.get("obstacles_sha256") == obstacles_sha256(manifest.get("obstacles", [])),
+                manifest.get("obstacles_sha256"),
+            )
+            check(
+                "obstacle_count_matches_scene",
+                manifest.get("obstacle_count") == len(manifest.get("obstacles", [])),
+                manifest.get("obstacle_count"),
             )
 
     dataset = LeRobotDataset(manifest["repo_id"], root=root, video_backend="pyav")

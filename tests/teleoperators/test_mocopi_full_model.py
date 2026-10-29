@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "telegrip_teleopera
 pytest.importorskip("mujoco")
 from telegrip.mocopi.config import load_config
 from telegrip.mocopi.full_mujoco import FullMujocoSimulation, full_model_path
+from telegrip.mocopi.obstacles import load_obstacles, obstacles_sha256
 from telegrip.mocopi.posture import ArmPostureTarget, robot_arm_state
 
 CONFIG = Path(__file__).resolve().parents[2] / "config/mocopi/tracking.yaml"
@@ -131,6 +132,51 @@ def test_full_model_reports_kinematic_collisions_without_stepping_physics():
         assert any("world" in pair for pair in collision["body_pairs"])
     finally:
         simulation.close()
+
+
+def test_operator_declared_obstacles_are_hashed_and_collide(tmp_path):
+    scene_file = tmp_path / "obstacles.yaml"
+    scene_file.write_text(
+        "\n".join(
+            [
+                "schema: dual_scorpion.mocopi.obstacles.v1",
+                "obstacles:",
+                "  - name: test-box",
+                "    center_m: [0.0, 0.0, 0.30]",
+                "    half_size_m: [0.50, 0.50, 0.50]",
+                "    rotation_deg: [0.0, 10.0, -5.0]",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    obstacles = load_obstacles(scene_file)
+    assert len(obstacles) == 1 and obstacles[0]["name"] == "test-box"
+
+    simulation = FullMujocoSimulation(load_config(CONFIG)["robot"], gui=False, obstacles=obstacles)
+    try:
+        assert simulation.obstacles_sha256 == obstacles_sha256(obstacles)
+        report = simulation.collision_report()
+        assert report["obstacle_count"] == 1
+        assert report["obstacle_names"] == ["test-box"]
+        assert report["count"] > 0
+        assert report["max_penetration_m"] > 0
+        assert any("obstacle/test-box" in pair for pair in report["body_pairs"])
+        assert "operator-declared obstacles" in report["scope"]
+    finally:
+        simulation.close()
+
+    invalid = tmp_path / "invalid.yaml"
+    invalid.write_text(
+        "schema: dual_scorpion.mocopi.obstacles.v1\n"
+        "obstacles:\n"
+        "  - name: bad\n"
+        "    center_m: [0, 0, 0]\n"
+        "    half_size_m: [0, 1, 1]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="positive"):
+        load_obstacles(invalid)
 
 
 @pytest.mark.parametrize("side", ["left", "right"])

@@ -11,6 +11,7 @@ from scipy.spatial.transform import Rotation
 from ..full_mujoco import full_model_path
 from ..geometry import pose
 from ..ik import DualSimulation
+from ..obstacles import obstacles_sha256
 from .evaluate import _summary
 from .replay import _file_hash, model_fingerprint
 
@@ -57,6 +58,12 @@ def validate_plan(
             raise ValueError("Full CAD model has unmeasured limits; this plan is simulation-only")
         if plan.get("mujoco_model_sha256") != _file_hash(full_model_path(config["robot"])):
             raise ValueError("Plan MuJoCo model differs from selected model; regenerate the plan")
+        if (
+            plan.get("obstacles") != simulation.obstacles
+            or plan.get("obstacles_sha256") != obstacles_sha256(simulation.obstacles)
+            or plan.get("obstacle_count") != len(simulation.obstacles)
+        ):
+            raise ValueError("Plan obstacle scene differs from the selected model; regenerate the plan")
     elif model_kind == "legacy_urdf":
         if plan.get("urdf_sha256") != model_fingerprint(config):
             raise ValueError("Plan URDF differs from selected URDF; regenerate and review the plan")
@@ -405,7 +412,7 @@ def replay_real(
     if full_model:
         from ..full_mujoco import FullMujocoSimulation
 
-        simulation = FullMujocoSimulation(config["robot"], gui=False)
+        simulation = FullMujocoSimulation(config["robot"], gui=False, obstacles=plan.get("obstacles", []))
     else:
         simulation = DualSimulation(config["robot"], gui=False)
     try:

@@ -56,11 +56,14 @@ def export_joint_dataset(
     if len(model_kinds) != 1:
         raise ValueError("All plans must use the same simulation model")
     full_model = model_kinds == {"full_mujoco"}
+    obstacle_hashes = {plan.get("obstacles_sha256") for plan in plans}
+    if len(obstacle_hashes) != 1:
+        raise ValueError("All plans must use the same obstacle scene")
     episodes, sources, seen = [], set(), set()
     if full_model:
         from ..full_mujoco import FullMujocoSimulation
 
-        simulation = FullMujocoSimulation(config["robot"], gui=False)
+        simulation = FullMujocoSimulation(config["robot"], gui=False, obstacles=plans[0].get("obstacles", []))
     else:
         simulation = DualSimulation(config["robot"], gui=False)
     try:
@@ -164,6 +167,9 @@ def export_joint_dataset(
         "start_pose": plans[0].get("start_pose", "config"),
         "hardware_replay_allowed": not full_model,
         "mujoco_model_sha256": plans[0].get("mujoco_model_sha256"),
+        "obstacles": plans[0].get("obstacles", []),
+        "obstacles_sha256": plans[0].get("obstacles_sha256"),
+        "obstacle_count": plans[0].get("obstacle_count", 0),
         "urdf_sha256": plans[0]["urdf_sha256"],
         "episodes": [],
     }
@@ -191,6 +197,7 @@ def export_joint_dataset(
                 {
                     "source_episode": plan["episode"],
                     "start_pose": plan.get("start_pose", "config"),
+                    "obstacles_sha256": plan.get("obstacles_sha256"),
                     "plan_sha256": plan_hash(plan),
                     "slowdown": plan["slowdown"],
                     "frames": len(plan["frames"]) - 1,

@@ -64,6 +64,10 @@ def parser():
         choices=["work", "backwards", "config"],
         help="Override the configured initial robot pose for this plan",
     )
+    replay.add_argument(
+        "--obstacles",
+        help="Optional YAML with operator-declared box obstacles for the full model",
+    )
     replay.add_argument("--plan", help="Write a new robot joint plan JSON")
     replay.add_argument("--report", help="Write a new simulation metrics JSON")
     joints = sub.add_parser(
@@ -204,6 +208,7 @@ def main():
                 slowdown=args.slowdown,
                 sim_model=sim_model,
                 start_pose=args.start_pose,
+                obstacles=args.obstacles,
             )
             for path, document in ((args.plan, plan), (args.report, result)):
                 if path:
