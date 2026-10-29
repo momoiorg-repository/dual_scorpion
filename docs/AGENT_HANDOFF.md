@@ -100,6 +100,9 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
     （プレビュー範囲の運動学判定。衝突・実機安全を保証しない）
 12. **グリッパー拡張の設計点** — `docs/MOCOPI_DESIGN.md` に収録・変換・IK・実機再生・評価の
     接続点を整理（`GripperEncoderSource` Protocolが既存）。未計測区間は作らない方針を維持
+13. **`doctor` の環境診断** — `mujoco_importable`、新CADモデルの `exists`、メッシュの
+    `mesh_state`（`ok` / `lfs_pointer` / `missing`）、`visual_urdf_exists` を追加。
+    LFS未取得を実行前に検出できる
 
 ## 実装途中の機能
 
@@ -130,8 +133,8 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
 | `tests/teleoperators/test_mocopi_dataset.py` | 14 passed（`metrics-csv`・`verify` の検証を含む） |
-| `tests/teleoperators/test_mocopi_full_model.py` | 3 passed |
-| `tests/teleoperators` 全体 | 81 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators/test_mocopi_full_model.py` | 5 passed（`doctor` の診断を含む） |
+| `tests/teleoperators` 全体 | 82 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加で実行した手動の end-to-end 確認（合成データ、実機非接続）:

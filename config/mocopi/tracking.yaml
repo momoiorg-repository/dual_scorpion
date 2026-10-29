@@ -67,6 +67,9 @@ robot:
     right: ../../telegrip_teleoperation/URDF/dual_scorpion/dual_scorpion_right.urdf
   # Custom angles are used only with --start-pose config; legacy backwards pose below.
   initial_joints_deg:
+    # Interpreted in the joint frames of the selected model (full CAD or legacy
+    # URDF). These are the previous per-arm URDF values; use the work/backwards
+    # presets for the CAD model unless you wrote CAD-frame angles here.
     left: [-20, 0, -80, 0, 0, 0, 0, 0]
     right: [-20, 0, 80, 0, 0, 0, 0, 0]
   max_joint_step_deg: 0.5

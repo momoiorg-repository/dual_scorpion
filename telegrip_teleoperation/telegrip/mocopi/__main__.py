@@ -331,6 +331,16 @@ def run(cfg, args):
 def doctor(cfg):
     import importlib.util
 
+    def mesh_state(model_path):
+        """Detect a missing mesh folder and un-pulled Git LFS pointers."""
+        mesh = Path(model_path).parent / "meshes" / "visual" / "base_link.obj"
+        if not mesh.is_file():
+            return "missing"
+        with mesh.open("rb") as file:
+            return "lfs_pointer" if file.read(64).startswith(b"version https://git-lfs") else "ok"
+
+    full_model = cfg["robot"].get("mujoco_full_model")
+    visual_urdf = cfg["robot"].get("visual_urdf")
     print(
         json.dumps(
             {
@@ -343,6 +353,16 @@ def doctor(cfg):
                 "intrinsics_exists": Path(cfg["slam"]["intrinsics"]).exists(),
                 "head_calibration_exists": Path(cfg["slam"]["head_calibration"]).exists(),
                 "urdf": {k: Path(v).exists() for k, v in cfg["robot"]["urdf"].items()},
+                "visual_urdf_exists": None if visual_urdf is None else Path(visual_urdf).exists(),
+                "mujoco_importable": importlib.util.find_spec("mujoco") is not None,
+                "mujoco_full_model": None
+                if not full_model
+                else {
+                    "path": full_model,
+                    "exists": Path(full_model).is_file(),
+                    "mesh_state": mesh_state(full_model),
+                    "note": "run 'git lfs install && git lfs pull' if meshes are lfs_pointer",
+                },
                 "hardware_control": "disabled",
             },
             indent=2,

@@ -177,6 +177,11 @@ Enterを押した後の最新の手の位置を基準にします。準備中に
 これは実機の校正済み姿勢ではありません。
 以前の後ろ向きの折り畳み姿勢は `--start-pose backwards` で選べます。
 自分で指定した関節角を使う場合は、YAMLの `robot.initial_joints_deg` を編集し、`--start-pose config` を指定します。
+`initial_joints_deg` は、選択中のモデル（新CADモデルまたは `--sim-model legacy` の左右URDF）の
+関節フレームとして解釈されます。同梱の既定値は以前の左右URDF用です。新CADモデルで
+`--start-pose config` を使う場合は、CADのフレームに合わせた値を記入してください。
+書いた値がどちらのモデル向けか分からなくなるのを避けるなら、`work` と `backwards` の
+プリセット（モデルごとに定義済み）を使ってください。
 
 `--alignment body` は、開始時の左右の肩から体の向きを決めます。
 あなたが少し違う方向を向いていても、**手を前へ出す → ロボットの前方、左右 → 同じ左右、上へ上げる → 上方**へ対応します。
@@ -258,6 +263,10 @@ uv run --no-sync --active python -m telegrip.mocopi doctor --camera /dev/video2
 ```
 
 `selected_camera` に指定した値が出ます。これは設定の確認で、映像の取得は次の撮影で確認します。
+同じ出力の `mujoco_importable` と `mujoco_full_model` で、新CADモデルを使う準備ができているかを
+確認できます。`mesh_state` が `lfs_pointer` の場合はメッシュが未取得なので、
+`git lfs install && git lfs pull` を実行してください。`missing` の場合は配置を確認します。
+`hardware_control: disabled` は変更していません。
 
 `--camera 0` のような数値指定や、`--camera /dev/v4l/by-id/...` のパス指定もできます。
 省略した場合は [tracking.yaml](config/mocopi/tracking.yaml) の `camera.device` を使います。

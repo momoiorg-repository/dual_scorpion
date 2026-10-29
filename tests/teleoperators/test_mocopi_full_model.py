@@ -94,3 +94,37 @@ def test_missing_full_model_path_is_a_clear_error():
         full_model_path(robot)
     with pytest.raises(ValueError, match="mujoco_full_model"):
         FullMujocoSimulation(robot, gui=False)
+
+
+def test_doctor_reports_full_model_and_lfs_state(monkeypatch, capsys, tmp_path):
+    import json
+
+    from telegrip.mocopi import __main__ as cli
+
+    # Camera probing is unrelated here and can be slow or unavailable.
+    monkeypatch.setattr(cli, "camera_list", lambda: [])
+    cfg = load_config(CONFIG)
+    cli.doctor(cfg)
+    report = json.loads(capsys.readouterr().out)
+    assert report["mujoco_importable"] is True
+    assert report["mujoco_full_model"]["exists"] is True
+    assert report["mujoco_full_model"]["mesh_state"] == "ok"
+    assert report["visual_urdf_exists"] is True and report["hardware_control"] == "disabled"
+
+    # A config without the key reports the model as absent instead of guessing.
+    cfg["robot"].pop("mujoco_full_model")
+    cli.doctor(cfg)
+    assert json.loads(capsys.readouterr().out)["mujoco_full_model"] is None
+
+    # Un-pulled Git LFS meshes are reported as pointers, not as usable models.
+    model = tmp_path / "model.xml"
+    model.write_text("<mujoco/>")
+    cfg = load_config(CONFIG)
+    cfg["robot"]["mujoco_full_model"] = str(model)
+    cli.doctor(cfg)
+    assert json.loads(capsys.readouterr().out)["mujoco_full_model"]["mesh_state"] == "missing"
+    mesh = tmp_path / "meshes" / "visual" / "base_link.obj"
+    mesh.parent.mkdir(parents=True)
+    mesh.write_bytes(b"version https://git-lfs.github.com/spec/v1\noid sha256:0\n")
+    cli.doctor(cfg)
+    assert json.loads(capsys.readouterr().out)["mujoco_full_model"]["mesh_state"] == "lfs_pointer"
