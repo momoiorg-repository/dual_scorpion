@@ -1,0 +1,22 @@
+[
+  {
+    "part": "joint6_R",
+    "matched_holes": 8,
+    "max_reference_error_mm": 4.508722123988577e-08
+  },
+  {
+    "part": "joint6_L",
+    "matched_holes": 8,
+    "max_reference_error_mm": 4.5087235943277785e-08
+  },
+  {
+    "part": "joint7_R",
+    "matched_holes": 4,
+    "max_reference_error_mm": 3.37139567589821e-08
+  },
+  {
+    "part": "joint7_L",
+    "matched_holes": 4,
+    "max_reference_error_mm": 3.37139567589821e-08
+  }
+]

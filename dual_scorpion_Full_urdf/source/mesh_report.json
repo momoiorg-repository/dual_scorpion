@@ -1,0 +1,427 @@
+{
+  "visuals": [
+    {
+      "body": "base",
+      "source_triangles": 94604,
+      "triangles": 94604,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "body",
+      "source_triangles": 2274,
+      "triangles": 2274,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "Joint0_mount_R",
+      "source_triangles": 6538,
+      "triangles": 6538,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_motor_mount_R",
+      "source_triangles": 28,
+      "triangles": 28,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "Joint0_mount_L",
+      "source_triangles": 6538,
+      "triangles": 6538,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_motor_mount_L",
+      "source_triangles": 28,
+      "triangles": 28,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_motor_case_R",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_motor_case_L",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint1_R",
+      "source_triangles": 45200,
+      "triangles": 45200,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_horn_opposite_R",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint1_motor_case_R",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_new_R",
+      "source_triangles": 13982,
+      "triangles": 13982,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_holder_R",
+      "source_triangles": 19290,
+      "triangles": 19290,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_motor_case_R",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint1_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_under_arm_R",
+      "source_triangles": 25602,
+      "triangles": 25602,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_holder_R",
+      "source_triangles": 19290,
+      "triangles": 19290,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_horn_opposite_R",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_motor_case_R",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint4_R",
+      "source_triangles": 45200,
+      "triangles": 45200,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_horn_opposite_R",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint4_motor_case_R",
+      "source_triangles": 50522,
+      "triangles": 50522,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_new_R",
+      "source_triangles": 13978,
+      "triangles": 13978,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_holder_R",
+      "source_triangles": 18518,
+      "triangles": 18518,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint4_horn_drive_R",
+      "source_triangles": 5432,
+      "triangles": 5432,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_motor_case_R",
+      "source_triangles": 50532,
+      "triangles": 50532,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_horn_opposite_R",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint6_motor_case_R",
+      "source_triangles": 50514,
+      "triangles": 50514,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint6_R",
+      "source_triangles": 45036,
+      "triangles": 45036,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint6_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_motor_case_R",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_R",
+      "source_triangles": 26682,
+      "triangles": 26682,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint8_EE_R",
+      "source_triangles": 26070,
+      "triangles": 26070,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_horn_drive_R",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_horn_opposite_R",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint1_L",
+      "source_triangles": 45200,
+      "triangles": 45200,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint0_horn_opposite_L",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint1_motor_case_L",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_new_L",
+      "source_triangles": 13982,
+      "triangles": 13982,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_holder_L",
+      "source_triangles": 19310,
+      "triangles": 19310,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint1_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_motor_case_L",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_under_arm_L",
+      "source_triangles": 25602,
+      "triangles": 25602,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_holder_L",
+      "source_triangles": 19310,
+      "triangles": 19310,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint2_horn_opposite_L",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_motor_case_L",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint4_L",
+      "source_triangles": 45200,
+      "triangles": 45200,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint3_horn_opposite_L",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint4_motor_case_L",
+      "source_triangles": 50522,
+      "triangles": 50522,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_new_L",
+      "source_triangles": 13978,
+      "triangles": 13978,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_holder_L",
+      "source_triangles": 18518,
+      "triangles": 18518,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint4_horn_drive_L",
+      "source_triangles": 5432,
+      "triangles": 5432,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_motor_case_L",
+      "source_triangles": 50532,
+      "triangles": 50532,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint5_horn_opposite_L",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint6_motor_case_L",
+      "source_triangles": 50514,
+      "triangles": 50514,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint6_L",
+      "source_triangles": 45036,
+      "triangles": 45036,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint6_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_motor_case_L",
+      "source_triangles": 50536,
+      "triangles": 50536,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_L",
+      "source_triangles": 29384,
+      "triangles": 29384,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint8_EE_L",
+      "source_triangles": 24800,
+      "triangles": 24800,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_horn_drive_L",
+      "source_triangles": 5430,
+      "triangles": 5430,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    },
+    {
+      "body": "joint7_horn_opposite_L",
+      "source_triangles": 3732,
+      "triangles": 3732,
+      "source": "Fusion STL ExportManager High; no additional visual simplification"
+    }
+  ],
+  "collision_method": "CoACD compound convex decomposition for each bracket; convex hulls for enclosed motor parts; left and right are generated independently",
+  "collision_parts": 370,
+  "seconds": 183.68936610221863
+}

@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="scorpion">
+  <disable_collisions link1="base_link" link2="r_link_1" reason="Adjacent" />
+  <disable_collisions link1="r_link_1" link2="r_link_2" reason="Adjacent" />
+  <disable_collisions link1="r_link_2" link2="r_link_3" reason="Adjacent" />
+  <disable_collisions link1="r_link_3" link2="r_link_4" reason="Adjacent" />
+  <disable_collisions link1="r_link_4" link2="r_link_5" reason="Adjacent" />
+  <disable_collisions link1="r_link_5" link2="r_link_6" reason="Adjacent" />
+  <disable_collisions link1="r_link_6" link2="r_link_7" reason="Adjacent" />
+  <disable_collisions link1="r_link_7" link2="r_link_8" reason="Adjacent" />
+  <disable_collisions link1="base_link" link2="l_link_1" reason="Adjacent" />
+  <disable_collisions link1="l_link_1" link2="l_link_2" reason="Adjacent" />
+  <disable_collisions link1="l_link_2" link2="l_link_3" reason="Adjacent" />
+  <disable_collisions link1="l_link_3" link2="l_link_4" reason="Adjacent" />
+  <disable_collisions link1="l_link_4" link2="l_link_5" reason="Adjacent" />
+  <disable_collisions link1="l_link_5" link2="l_link_6" reason="Adjacent" />
+  <disable_collisions link1="l_link_6" link2="l_link_7" reason="Adjacent" />
+  <disable_collisions link1="l_link_7" link2="l_link_8" reason="Adjacent" />
+</robot>
