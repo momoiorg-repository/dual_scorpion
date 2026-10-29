@@ -30,7 +30,8 @@ uv run --no-sync --active python -m telegrip.mocopi camera-list
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
-  --fake --output outputs/mocopi/sessions/fake-001 --duration 3 --task 'コップを移動する'
+  --fake --output outputs/mocopi/sessions/fake-001 --duration 3 --task 'コップを移動する' \
+  --reference-id workbench-session-A
 ```
 
 `--fake` は合成画像と合成姿勢を作ります。保存先は毎回、新しいフォルダ名にしてください。
@@ -40,13 +41,16 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
   --camera /dev/video2 --output outputs/mocopi/sessions/episode-001 \
-  --duration 30 --task 'コップを移動する'
+  --duration 30 --task 'コップを移動する' --reference-id workbench-session-A
 ```
 
 `/dev/video2` はカメラ一覧の結果に合わせて変更します。コマンドの起動後、スマホのSENDを
 一度停止して再開します。mocopiのフレーム受信後に記録が始まり、指定秒数で終了します。
 保存先を変えて、作業ごとに繰り返します。途中でカメラ等が故障した場合は `session.json` が
 `aborted` になり、正常な記録として扱いません。
+`--reference-id` は、そのmocopiの基準座標と校正が同じ間に付ける任意の名前です。
+複数回の記録をまとめる場合は同じ名前を指定し、スマホの再校正や座標のリセット後は別の名前にしてください。
+これは人が指定する識別子で、基準座標の一致を自動的に保証するものではありません。
 
 | ファイル | 内容 |
 | --- | --- |
@@ -55,10 +59,44 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
 | `mocopi.jsonl` | 各mocopiフレームのPC受信時刻と頭・両腕を含む骨の姿勢 |
 | `session.json` | 成功状態、作業名、カメラ設定、座標系、データの由来 |
 
-この記録ではmocopiの頭姿勢を保存します。頭カメラのvSLAM姿勢による補正はまだ記録していません。
+このコマンドはmocopiの頭姿勢を保存します。vSLAMで頭を補正する記録は次の手順です。
 カメラ時刻は画像を読み終えたPC時刻、mocopi時刻はUDPを受信したPC時刻であり、
 カメラの露光時刻やセンサーの送信時刻そのものではありません。遅延の実測と評価が必要です。
 画像には周囲の人や部屋が映ります。`outputs/` はGitの対象外です。
+
+### 頭カメラのvSLAMを使って記録する
+
+[MOCOPI_START_GUIDE.md](MOCOPI_START_GUIDE.md) の手順4〜6に従ってC270のレンズ校正、
+stella_vslamの導入、頭とカメラの校正を済ませます。ターミナルAのROS bridgeに
+`--dataset-image-port 12354` を追加して起動します。
+
+```bash
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID=42
+export ROS_LOCALHOST_ONLY=1
+uv run --no-sync --active python -m telegrip.mocopi.ros_bridge \
+  --config config/mocopi/tracking.yaml --camera /dev/video2 --dataset-image-port 12354
+```
+
+ターミナルBでstella_vslamを起動し、Aに `SLAM=OK` が出たことを確認します。
+頭とカメラの校正が済んでいなければ、同じ地図で先に `calibrate-head` を実行します。
+A・Bを動かしたまま、手順1の環境設定をしたターミナルCで記録します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
+  --head-source slam --image-port 12354 --output outputs/mocopi/sessions/episode-slam-001 \
+  --duration 30 --task 'コップを移動する' --reference-id workbench-session-A
+```
+
+画像はAからPC内部のローカル通信で受け取ります。mocopiのSENDを停止→再開すると、
+mocopiと有効なSLAM姿勢の受信を待ってから記録します。カメラを2回開く必要はありません。
+`slam.jsonl` にSLAMカメラ姿勢・追跡状態を、`head_calibration.yaml` に頭への変換を保存します。
+レンズ補正済みの画像を保存し、レンズ校正値も記録フォルダへコピーします。
+異なるSLAM地図やカメラ校正を検出した場合は停止します。
+カメラ・mocopi・SLAM間で同期できない部分やSLAM追跡喪失部分は、変換時に除外します。
+実機のC270・mocopi・SLAMを組み合わせた動作は、まだ未検証です。
+
+機器なしでこの経路を試すには `--fake --head-source slam` を指定します。
 
 ## 記録を定量評価する
 
@@ -70,9 +108,11 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset evaluate \
 
 画像・mocopiそれぞれの実効FPS、時刻差の平均・95パーセンタイル・最大値、許容差を超えた画像数、
 変換に使えるフレーム数、左右の手の移動範囲・移動距離・速度が出ます。
+SLAM使用時は追跡喪失数、画像とSLAMの時刻差、bridgeからの画像連番で分かる欠落数も出ます。
 時刻差は**PC側で測った差**であり、露光・無線遅延や位置精度の実測値ではありません。
 
-テープで囲った範囲を同じmocopi座標系で実測できた場合は、別途YAMLに左右の範囲を記入し、
+テープで囲った範囲をレポートの `hands_coordinate_frame` と同じ座標系で実測できた場合は、
+別途YAMLに左右の範囲を記入し、
 `--workspace 設定ファイル.yaml` を追加すると、手が範囲外だったフレーム数も出せます。
 書式は [workspace.example.yaml](config/mocopi/workspace.example.yaml) を参照してください。
 例の数値は実際のテープ位置ではありません。範囲は自動推定せず、未指定なら範囲外判定を省きます。
@@ -86,6 +126,9 @@ uv pip install --python .venv/bin/python -e '.[dataset]'
 ```
 
 複数の作業を一つのデータセットにまとめる場合は `--input` を繰り返します。
+同じ `--reference-id` を付けた記録を指定します。SLAM使用時は頭の校正値も同じ必要があります。
+一致を検証できない過去の記録をまとめる場合は、座標のずれを確認したうえで
+`--allow-unverified-reference` を指定できます。mocopi頭姿勢とSLAM補正頭姿勢の記録は別々に変換します。
 出力先は新しいフォルダを指定します。既存フォルダには上書きしません。
 
 ```bash
@@ -98,15 +141,21 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset convert \
 画像と姿勢の記録時刻に最も近い値を固定FPSへ対応付けます。既定の許容差は0.08秒で、
 同期できない部分は除外してエピソードを分割します。除外数と重複フレーム数は
 出力先の `meta/mocopi_dataset.json` に保存します。実際の記録時刻も各フレームに残します。
+LeRobot側の動画はH.264で圧縮されます。元のJPEG画像も記録フォルダに残ります。
 
 | LeRobotの項目 | 内容 |
 | --- | --- |
 | `observation.images.head` | 頭カメラの動画 |
 | `observation.state` | 頭、左右の肩・肘・手の位置と回転（49値） |
+| `observation.mocopi.raw_state` | 補正前のmocopi姿勢（49値） |
 | `action` | 次フレームに観測された左右の人間の手の位置と回転（14値） |
-| `observation.capture.*` | 画像・mocopi・固定FPSそれぞれの時刻、mocopiフレーム番号 |
+| `observation.capture.*` | 画像・mocopi・固定FPSそれぞれの時刻、画像とmocopiのフレーム番号 |
+| `observation.slam.camera_pose` | SLAM使用時のみ、SLAM地図上のカメラ姿勢 |
 
-位置はmocopi座標系のメートル、回転は `qx, qy, qz, qw` の順です。
+状態とactionの位置はメートル、回転は `qx, qy, qz, qw` の順です。状態の座標系は、
+mocopiのみの場合はmocopi座標系、SLAM使用時は校正済みの世界座標系です。
+`observation.slam.camera_pose` の位置は単眼SLAMの尺度未補正の地図単位で、メートルではありません。
+尺度と頭・カメラの対応、元のカメラ校正値は `meta/mocopi_dataset.json` に記録します。
 `action` は**人間の手の次の姿勢**であり、実ロボットの関節角やモーター指令ではありません。
 URDFは記録・変換に使わず、後のロボット再生時に選びます。グリッパーの項目はありません。
 `--fake` の記録と実機で取得した記録は、誤って混ぜないよう通常は同じ変換に指定できません。

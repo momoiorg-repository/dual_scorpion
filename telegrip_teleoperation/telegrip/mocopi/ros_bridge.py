@@ -24,6 +24,9 @@ def build_parser():
     parser.add_argument("--config", default="config/mocopi/tracking.yaml")
     parser.add_argument("--camera", type=camera_device, help="Camera index or device path; overrides YAML")
     parser.add_argument("--map-id", help="Unique map identity; same value only for the same saved map")
+    parser.add_argument(
+        "--dataset-image-port", type=int, help="Stream rectified frames locally for dataset capture"
+    )
     return parser
 
 
@@ -51,10 +54,16 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     debug = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     camera = None
+    image_server = None
     try:
         debug.bind(("127.0.0.1", cfg["tracking"]["debug_port"]))
         debug.setblocking(False)
         camera = UvcCamera(cfg["camera"])
+        if args.dataset_image_port is not None:
+            from .dataset.image_stream import HeadFrameServer
+
+            image_server = HeadFrameServer(args.dataset_image_port)
+            node.get_logger().info(f"Local dataset image stream: 127.0.0.1:{image_server.port}")
         node.get_logger().info(f"Head camera: {cfg['camera']['device']}")
         image_pub = node.create_publisher(Image, "/camera/image_raw", qos_profile_sensor_data)
         info_pub = node.create_publisher(CameraInfo, "/camera/camera_info", qos_profile_sensor_data)
@@ -135,6 +144,8 @@ def main():
                 if [image.shape[1], image.shape[0]] != intrinsics["resolution"]:
                     raise ValueError("Camera resolution differs from intrinsic calibration")
                 image = cv2.undistort(image, k, d)
+                if image_server:
+                    image_server.publish(stamp, image)
                 ros_stamp = node.get_clock().now().to_msg()
                 key = ros_stamp.sec * 10**9 + ros_stamp.nanosec
                 acquisition[key] = stamp
@@ -172,13 +183,17 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        if camera:
-            camera.close()
-        sock.close()
-        debug.close()
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        try:
+            if image_server:
+                image_server.close()
+        finally:
+            if camera:
+                camera.close()
+            sock.close()
+            debug.close()
+            node.destroy_node()
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 if __name__ == "__main__":

@@ -86,6 +86,8 @@ def test_quaternion_sign_is_continuous_across_180_degrees():
 
 
 def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
+    import shutil
+
     pytest.importorskip("cv2")
     dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
     from telegrip.mocopi.dataset.convert import convert_sessions
@@ -126,6 +128,18 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
             np.testing.assert_allclose(current["action"], expected, atol=1e-6)
     with pytest.raises(FileExistsError):
         convert_sessions([session], output, "local/mocopi-test", fps=20)
+
+    second = tmp_path / "raw-second"
+    shutil.copytree(session, second)
+    with pytest.raises(ValueError, match="reference-id"):
+        convert_sessions([session, second], tmp_path / "unverified", "local/unverified", fps=20)
+    for folder in (session, second):
+        metadata = json.loads((folder / "session.json").read_text())
+        metadata["mocopi"]["reference_id"] = "same-recording-calibration"
+        (folder / "session.json").write_text(json.dumps(metadata))
+    joined = convert_sessions([session, second], tmp_path / "joined", "local/joined", fps=20)
+    assert joined["coordinate_reference_policy"] == "operator_declared_matching_reference_id"
+    assert len(joined["sessions"]) == 2
 
     pytest.importorskip("pybullet")
     pytest.importorskip("mujoco")
@@ -330,3 +344,180 @@ def test_real_adapter_constructs_existing_driver_with_only_seven_motors(tmp_path
     # The production driver's existing drive-mode calibration is preserved.
     assert robot.left_bus._unnormalize({2: 30.0})[2] < 2047
     assert robot.right_bus._unnormalize({2: 30.0})[2] > 2047
+
+
+def test_head_camera_stream_keeps_image_and_acquisition_timestamp():
+    import time
+
+    pytest.importorskip("cv2")
+    from telegrip.mocopi.dataset.image_stream import HeadFrameClient, HeadFrameServer
+
+    server = HeadFrameServer(0)
+    client = None
+    try:
+        client = HeadFrameClient(server.port)
+        assert server.connected.wait(2)
+        image = np.zeros((40, 80, 3), dtype=np.uint8)
+        image[:, :, 2] = 230
+        stamp = time.monotonic()
+        server.publish(stamp, image)
+        received_stamp, received = client.read()
+        assert received_stamp == pytest.approx(stamp, abs=1e-9)
+        assert received.shape == image.shape and received[:, :, 2].mean() > 200
+        assert client.last_jpeg.startswith(b"\xff\xd8")
+        assert client.last_frame_id == 0
+    finally:
+        if client:
+            client.close()
+        server.close()
+
+
+def test_live_local_image_and_slam_protocols_feed_synchronized_capture(tmp_path):
+    import socket
+    import threading
+    import time
+
+    from scipy.spatial.transform import Rotation
+
+    pytest.importorskip("cv2")
+    from telegrip.mocopi.calibration import HeadCalibration
+    from telegrip.mocopi.dataset.capture import FakeMocopi
+    from telegrip.mocopi.dataset.evaluate import session_metrics
+    from telegrip.mocopi.dataset.image_stream import HeadFrameClient, HeadFrameServer
+    from telegrip.mocopi.geometry import pose
+    from telegrip.mocopi.slam import SlamReceiver
+    from telegrip.mocopi.sources import fake_pair
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    mocopi = FakeMocopi(20)
+    slam = SlamReceiver(0)
+    slam_port = slam.socket.getsockname()[1]
+    server = HeadFrameServer(0)
+    client = HeadFrameClient(server.port)
+    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    stop = threading.Event()
+    producer_errors = []
+    assert server.connected.wait(2)
+
+    def produce():
+        try:
+            while not stop.is_set():
+                stamp = time.monotonic()
+                _, sample = fake_pair(stamp - mocopi.start, stamp)
+                udp.sendto(
+                    json.dumps(
+                        {
+                            "schema": 1,
+                            "convention": "T_S_C_ros",
+                            "timestamp": stamp,
+                            "position": sample.camera[:3, 3].tolist(),
+                            "quaternion": Rotation.from_matrix(sample.camera[:3, :3]).as_quat().tolist(),
+                            "valid": True,
+                            "session": "fake",
+                            "intrinsics_id": "fake",
+                        }
+                    ).encode(),
+                    ("127.0.0.1", slam_port),
+                )
+                server.publish(stamp, np.full((64, 96, 3), 100, dtype=np.uint8))
+                stop.wait(0.05)
+        except Exception as exc:
+            producer_errors.append(exc)
+
+    thread = threading.Thread(target=produce, daemon=True)
+    thread.start()
+    extrinsic = pose([0.035, -0.015, 0.06], Rotation.from_rotvec([0.2, -0.1, 0.15]).as_quat())
+    calibration = HeadCalibration(1.7, pose(), extrinsic, {}, "fake", "fake")
+    root = tmp_path / "streamed"
+    try:
+        capture_session(
+            cfg,
+            root,
+            0.45,
+            "stream test",
+            fake=True,
+            head_source="slam",
+            camera=client,
+            receiver=mocopi,
+            slam_receiver=slam,
+            calibration=calibration,
+        )
+        report = session_metrics(root, fps=20)
+        assert report["usable_dataset_frames"] >= 4
+        assert report["camera_to_slam_abs_offset_ms"]["max"] < 0.001
+        assert report["camera_stream_missing_frames"] >= 0
+        assert not producer_errors
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        udp.close()
+        server.close()
+
+
+def test_slam_head_corrects_dataset_but_keeps_raw_mocopi_and_detects_loss(tmp_path):
+    pytest.importorskip("cv2")
+    dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
+    from telegrip.mocopi.dataset.convert import convert_sessions
+    from telegrip.mocopi.dataset.evaluate import session_metrics
+    from telegrip.mocopi.dataset.session import Session, aligned_segments
+    from telegrip.mocopi.geometry import inverse, validate_pose
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    root = tmp_path / "slam"
+    metadata = capture_session(cfg, root, 0.65, "move cup", fake=True, head_source="slam")
+    assert metadata["head_pose_source"] == "slam" and metadata["slam_frames"] > 0
+    # Add a known global head displacement to every SLAM camera pose. The
+    # corrected head and wrists must shift, while the raw mocopi data remain.
+    slam_path = root / "slam.jsonl"
+    slam = rows(slam_path)
+    for row in slam:
+        row["camera_pose"][0][3] += 0.05 / 1.7
+    slam_path.write_text("".join(json.dumps(row) + "\n" for row in slam))
+    session = Session(root)
+    segments, _ = aligned_segments(session, 20, 0.08)
+    assert segments and len(segments[0]) >= 2
+    first = segments[0][0]
+    raw_head = validate_pose(session.motion[first["motion"]]["bones"]["10"])
+    expected_head = session.calibration.head(session.slam[first["slam"]]["camera_pose"])
+    world_from_mocopi = expected_head @ inverse(raw_head)
+    expected_hand = world_from_mocopi @ validate_pose(session.motion[first["motion"]]["bones"]["14"])
+    output = tmp_path / "slam-dataset"
+    manifest = convert_sessions([root], output, "local/slam-test", fps=20)
+    dataset = dataset_type("local/slam-test", root=output, video_backend="pyav")
+    actual = dataset[0]
+    np.testing.assert_allclose(actual["observation.state"][:3], expected_head[:3, 3], atol=1e-6)
+    np.testing.assert_allclose(actual["observation.state"][21:24], expected_hand[:3, 3], atol=1e-6)
+    np.testing.assert_allclose(actual["observation.mocopi.raw_state"][:3], raw_head[:3, 3], atol=1e-6)
+    assert np.linalg.norm(actual["observation.state"][:3] - actual["observation.mocopi.raw_state"][:3]) > 0.03
+    assert "observation.slam.camera_pose" in dataset.meta.features
+    assert (
+        manifest["head_pose_source"] == "slam" and manifest["sessions"][0]["head_calibration"]["scale"] == 1.7
+    )
+    report = session_metrics(root, fps=20)
+    assert report["slam_frames"] == metadata["slam_frames"]
+    assert report["camera_frames_without_valid_slam"] == 0
+    assert report["hands_coordinate_frame"].startswith("calibrated_world")
+    # An explicitly invalid SLAM pose is never treated as a valid aligned frame.
+    lost_index = segments[0][len(segments[0]) // 2]["slam"]
+    session.slam[lost_index]["valid"] = False
+    _, quality = aligned_segments(session, 20, 0.08)
+    assert quality["unsynchronized_samples"] >= 1
+    session.calibration.world_from_map[0, 3] += 1.0
+    with pytest.raises(ValueError, match="alignment inconsistent"):
+        aligned_segments(session, 20, 0.08)
+
+
+def test_slam_map_mismatch_aborts_recording_before_camera_capture(tmp_path):
+    from telegrip.mocopi.calibration import HeadCalibration
+    from telegrip.mocopi.geometry import pose
+
+    calibration = HeadCalibration(1.7, pose(), pose(), {}, "wrong-map", "fake")
+    root = tmp_path / "map-mismatch"
+    with pytest.raises(RuntimeError, match="map or intrinsics changed"):
+        capture_session(
+            load_config(CONFIG), root, 0.1, "test", fake=True, head_source="slam", calibration=calibration
+        )
+    meta = json.loads((root / "session.json").read_text())
+    assert meta["status"] == "aborted" and meta["camera_frames"] == 0

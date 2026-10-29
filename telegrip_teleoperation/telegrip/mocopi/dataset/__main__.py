@@ -21,6 +21,9 @@ def parser():
     capture.add_argument("--task", required=True, help="Description of the demonstrated task")
     capture.add_argument("--camera", type=camera_device, help="Camera index or device path")
     capture.add_argument("--fake", action="store_true", help="Use visibly synthetic camera and motion")
+    capture.add_argument("--head-source", choices=["mocopi", "slam"], default="mocopi")
+    capture.add_argument("--image-port", type=int, default=12354, help="Local rectified image stream port")
+    capture.add_argument("--reference-id", help="Identifier for this mocopi coordinate/calibration epoch")
     convert = sub.add_parser("convert", help="Create a local LeRobot v3 dataset")
     convert.add_argument(
         "--input", action="append", required=True, help="Raw session folder; repeat for each"
@@ -30,6 +33,7 @@ def parser():
     convert.add_argument("--fps", type=int, default=30)
     convert.add_argument("--max-sync-s", type=float, default=0.08)
     convert.add_argument("--allow-mixed-sources", action="store_true")
+    convert.add_argument("--allow-unverified-reference", action="store_true")
     evaluate = sub.add_parser("evaluate", help="Quantify raw recording quality and wrist movement")
     evaluate.add_argument("--input", required=True, help="Raw session folder")
     evaluate.add_argument("--output", help="Optional JSON report")
@@ -69,7 +73,16 @@ def main():
     try:
         config = load_config(args.config, camera=getattr(args, "camera", None))
         if args.command == "capture":
-            result = capture_session(config, args.output, args.duration, args.task, fake=args.fake)
+            result = capture_session(
+                config,
+                args.output,
+                args.duration,
+                args.task,
+                fake=args.fake,
+                head_source=args.head_source,
+                image_port=args.image_port,
+                reference_id=args.reference_id,
+            )
         elif args.command == "convert":
             from .convert import convert_sessions
 
@@ -80,6 +93,7 @@ def main():
                 fps=args.fps,
                 max_sync_s=args.max_sync_s,
                 allow_mixed_sources=args.allow_mixed_sources,
+                allow_unverified_reference=args.allow_unverified_reference,
             )
         elif args.command == "evaluate":
             from .evaluate import session_metrics
