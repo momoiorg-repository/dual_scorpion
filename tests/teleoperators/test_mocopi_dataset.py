@@ -276,6 +276,11 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     assert full_plan["urdf_sha256"] is None and full_report["joint_limit_source"] == "unmeasured"
     assert full_report["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
     assert full_report["feasibility"]["ik_failures"] == len(full_report["ik_failures"])
+    assert full_report["collision_check"]["measured"] is True
+    assert full_report["collision_check"]["frames_with_collisions"] == 0
+    assert full_report["collision_check"]["max_penetration_m"] == 0.0
+    assert full_report["feasibility"]["modeled_collision_frames"] == 0
+    assert all(frame["collision"]["count"] == 0 for frame in full_plan["frames"])
     assert isinstance(full_report["feasibility"]["within_preview_tolerance"], bool)
     assert full_report["workspace_clamp_measured"] is False
     assert full_report["workspace_clamped_frames"] is None
@@ -286,6 +291,12 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     assert preview["mode"] == "validation_only" and not preview["hardware_replay_allowed"]
     with pytest.raises(ValueError, match="simulation-only"):
         replay_real(cfg, full_file, execute=True, allow_synthetic=True, max_sim_error_m=0.1)
+    collision_plan = json.loads(full_file.read_text())
+    collision_plan["frames"][0]["collision"]["count"] = 1
+    collision_file = tmp_path / "collision-plan.json"
+    collision_file.write_text(json.dumps(collision_plan))
+    with pytest.raises(ValueError, match="modeled collisions"):
+        replay_real(cfg, collision_file, allow_synthetic=True, max_sim_error_m=0.1)
     full_joints = export_joint_dataset(
         cfg,
         stationary_output,
@@ -309,6 +320,8 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     )
     assert backwards_plan["start_pose"] == backwards_report["start_pose"] == "backwards"
     assert backwards_plan["model_kind"] == "full_mujoco"
+    assert backwards_report["collision_check"]["measured"] is True
+    assert backwards_report["collision_check"]["frames_with_collisions"] == 0
     assert len(backwards_plan["frames"]) == len(full_plan["frames"])
     # The two experiments intentionally start from different robot poses. Their
     # saved start_pose and numeric reports make the dependency reproducible.

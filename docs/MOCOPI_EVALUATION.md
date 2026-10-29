@@ -58,7 +58,11 @@
 | `retarget_clamped_frames` | 手の目標が相対動作の上限を超えたフレーム数 | フレーム | 人の動作がロボットの作業領域を超えた量の代理指標（両モデルで計算） |
 | `frames` / `requested_frames` / `source_frames` | 生成フレーム数 / 要求フレーム数 / 元フレーム数 | フレーム | `--slowdown` 倍で保持 |
 | `start_pose` | MuJoCo IKを開始した設定 (`work` / `backwards` / `config`) | — | 初期姿勢依存の比較に必要な実験条件。開始姿勢そのものの良し悪しを示さない |
-| `feasibility` | `ik_failures`・`max_position_error_m`・`max_joint_step_observed_deg` と各上限をまとめた判定 | — | `within_preview_tolerance` は「IK失敗0・位置誤差≤`position_tolerance_m`・関節ステップ≤`max_joint_step_limit_deg`」のとき true。プレビュー範囲内の運動学判定であり、衝突や実機の安全を保証しない |
+| `collision_check.contact_count` | MuJoCo接触判定で `contact.dist < 0` となった接触の総数 | 件 | **新CAD MJCFのみ**。床と親子関係にないロボットリンク間を対象 |
+| `collision_check.frames_with_collisions` | 1フレームでも接触があった更新回数 | フレーム | 同上。`--slowdown` の繰り返しフレームも1更新として数える |
+| `collision_check.max_penetration_m` | max(−contact.dist) | m | モデル上の最大めり込み深さ。0は「同梱モデル内では接触なし」 |
+| `collision_check.body_pairs` | ボディ名ペアごとの接触数 | 件 | どの部分が接触したかを特定するための内訳 |
+| `feasibility` | `ik_failures`・`max_position_error_m`・`max_joint_step_observed_deg` と各上限をまとめた判定 | — | `within_preview_tolerance` は「IK失敗0・位置誤差≤`position_tolerance_m`・関節ステップ≤`max_joint_step_limit_deg`」のとき true。新CADでは「モデル上の衝突0」も条件に加わる。プレビュー判定であり、実機の安全を保証しない |
 
 評価条件: `--slowdown N` は各元フレームをN更新保持します（速度を落とすほどIKが改善しやすい）。
 レポートの `model_kind`、`hardware_replay_allowed`、`mujoco_model_sha256`（または
@@ -70,6 +74,12 @@
 実機の可動範囲・原点・回転方向の対応も未確認です。このため計算上の±180度を仮置きし、
 実機再生を拒否します（`hardware_replay_allowed: false`）。実機の可動範囲に基づく
 違反率は、限界値を実測して設定するまで算出できません（架空の値を入れない方針）。
+
+新CADモデルの接触判定は、MuJoCoの kinematic state から `mj_forward` の接触リストを読み、
+物理シミュレーションを1ステップも実行しません。同梱MJCFは親リンクと子リンクの接触を
+除外しているため、報告される接触は床または親子関係にないリンク同士です。このモデルに
+テーブル・人・工具などの外部障害物は含まれないため、`collision_check` の0は
+「同梱モデル内では接触なし」を意味し、実機作業空間の衝突安全を示しません。
 
 ## C. 実機再生の誤差（`replay-real` → `dual_scorpion.mocopi.real_metrics.v1`）
 

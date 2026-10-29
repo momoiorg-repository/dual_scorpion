@@ -30,10 +30,11 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `141fb51 feat: check the native model and LFS meshes in doctor` に続き、
-  この文書の更新を含む今回のIK安全性修正コミットが最新になる
+- 最新コミット: `b9c4164 fix: verify bounded full-model IK results` に続き、
+  この文書の更新を含む今回のFull CAD衝突評価コミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
-  `141fb51`（doctorのLFS診断）→ 今回（full-model IKの実返り値検証とstart-pose記録）
+  `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
+  → 今回（Full CADのモデル内衝突評価）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -112,6 +113,14 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
     で同一データの初期姿勢依存実験を再現でき、選択した `start_pose` は計画・評価レポート・
     関節角データセットのメタデータに保存する。速い合成動作はIK失敗として明示され、
     `replay-real` と `convert-joints` の検証で拒否される
+15. **Full CADのモデル内衝突評価** — `replay-sim` は同梱MJCFの床と親子関係にない
+    リンク間のMuJoCo接触を物理ステップなしで評価する。レポートの `collision_check`
+    に接触数・接触フレーム数・最大めり込み深さ（m）・ボディ組合せ内訳を保存し、
+    計画JSONの各フレームにも接触数と最大めり込みを保存する。接触があったFull CAD
+    計画、および接触結果のない旧いFull CAD計画は `replay-real` / `convert-joints`
+    で拒否する。検証時は計画の関節角から接触結果を再計算し、JSONの接触数・最大めり込みと
+    照合する。同梱モデルにテーブル・人・工具などの外部障害物は含まれないため、
+    この判定は実機作業空間の衝突安全を保証しない
 
 ## 実装途中の機能
 
@@ -121,12 +130,13 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
   実データに近い長時間記録・ドロップ・ジッタを含む系統的な評価は未実施
 - **実機 `--execute` 再生**: コードは完成。安全確認ができるまで実行しない。新CADモデルでは
   設計上拒否される
+- **外部障害物を含む衝突シーン**: モデル内の床・ロボットリンク衝突は測定できるが、
+  実作業環境のテーブル・人・工具はMJCFに含まれていない。実環境ジオメトリの追加と検証は未実施
 
 ## 未着手の機能
 
 - グリッパー開閉の収録・変換（設計上の拡張点: `joint7` を固定、`gripper_recorded: false` を
   メタデータに記録済み。将来 `action` の拡張が必要）
-- 衝突判定付きの実機再生計画（現状は運動学のみ）
 - RL/模倣学習向けのポリシー学習（本システムはデータ生成まで）
 
 ## 実行済みテストと結果（2026-10-29）
@@ -144,8 +154,8 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
 | `tests/teleoperators/test_mocopi_dataset.py` | 13 passed（`metrics-csv`・`verify`・start-pose記録を含む） |
-| `tests/teleoperators/test_mocopi_full_model.py` | 6 passed（IK実返り値検証・`doctor` を含む） |
-| `tests/teleoperators` 全体 | 83 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators/test_mocopi_full_model.py` | 7 passed（IK実返り値検証・モデル内衝突評価・`doctor` を含む） |
+| `tests/teleoperators` 全体 | 84 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加の合成end-to-end確認はテストで実施: `capture --fake` → `evaluate` → `convert` →
@@ -168,7 +178,7 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 1. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界）
 2. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
-3. 新CADモデルのIKの初期姿勢依存性と長時間記録の確認（実機なしで可能な範囲）
+3. 長時間・ノイズ・ドロップを含む記録と変換・再生の確認（実機なしで可能な範囲）
 
 ## 必要な実行コマンド（環境設定）
 

@@ -74,6 +74,11 @@ def validate_plan(
         or len(frames) != plan.get("expected_frames")
     ):
         raise ValueError("Plan needs an integer fps and at least two frames")
+    if model_kind == "full_mujoco":
+        if any(frame.get("collision") is None for frame in frames):
+            raise ValueError("Plan lacks modeled-collision results; regenerate the plan")
+        if any(frame["collision"].get("count", 0) for frame in frames):
+            raise ValueError("Plan contains modeled collisions")
     if not np.isfinite(max_sim_error_m) or not 0 < max_sim_error_m <= 0.10:
         raise ValueError("max_sim_error_m must be in (0, 0.10]")
     if max_sim_orientation_error_deg is not None and (
@@ -136,6 +141,17 @@ def validate_plan(
                 )
             positions[side].append(error)
             orientations[side].append(orientation_error)
+        if model_kind == "full_mujoco":
+            for side in SIDES:
+                simulation.data.qpos[simulation.qpos_indices[side][:7]] = np.deg2rad(joints[side])
+                simulation.data.qpos[simulation.qpos_indices[side][7]] = 0
+            simulation.mujoco.mj_forward(simulation.model, simulation.data)
+            collision = simulation.collision_report()
+            if (
+                collision["count"] != frame["collision"]["count"]
+                or abs(collision["max_penetration_m"] - frame["collision"]["max_penetration_m"]) > 1e-9
+            ):
+                raise ValueError(f"Plan collision results differ from the selected model at frame {index}")
         previous = joints
     return {
         "frames": len(frames),

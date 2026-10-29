@@ -282,6 +282,47 @@ class FullMujocoSimulation:
         if self.viewer:
             self.viewer.sync()
 
+    @staticmethod
+    def _model_name(model, prefix, index):
+        address = int(getattr(model, f"name_{prefix}adr")[int(index)])
+        return model.names[address:].split(b"\0", 1)[0].decode("utf-8")
+
+    def collision_report(self):
+        """Return contacts implied by the current kinematic state, without stepping.
+
+        MuJoCo's contact list is rebuilt by ``mj_forward`` in ``_sync_state``.
+        The model excludes adjacent links, so these contacts are with the floor
+        or non-adjacent robot bodies. This does not model external obstacles.
+        """
+        contacts = []
+        for index in range(self.data.ncon):
+            contact = self.data.contact[index]
+            if float(contact.dist) >= -1e-9:
+                continue
+            first_id, second_id = int(contact.geom1), int(contact.geom2)
+            first_body = self._model_name(self.model, "body", int(self.model.geom_bodyid[first_id]))
+            second_body = self._model_name(self.model, "body", int(self.model.geom_bodyid[second_id]))
+            contacts.append(
+                {
+                    "distance_m": float(contact.dist),
+                    "penetration_m": float(-contact.dist),
+                    "geom_1": self._model_name(self.model, "geom", first_id),
+                    "geom_2": self._model_name(self.model, "geom", second_id),
+                    "body_1": first_body,
+                    "body_2": second_body,
+                }
+            )
+        body_pairs = {}
+        for contact in contacts:
+            pair = tuple(sorted((contact["body_1"], contact["body_2"])))
+            body_pairs["|".join(pair)] = body_pairs.get("|".join(pair), 0) + 1
+        return {
+            "count": len(contacts),
+            "max_penetration_m": max((contact["penetration_m"] for contact in contacts), default=0.0),
+            "body_pairs": body_pairs,
+            "scope": "Native MJCF floor and non-adjacent robot bodies; external obstacles are not modeled",
+        }
+
     def update(self, targets, valid=True, postures=None):
         for side, arm in self.arms.items():
             if valid:

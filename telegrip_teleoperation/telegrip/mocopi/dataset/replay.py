@@ -113,6 +113,10 @@ def replay_sim(
         }
         for side in ("left", "right")
     }
+    collision_contacts = 0
+    collision_frames = 0
+    collision_max_penetration_m = 0.0
+    collision_body_pairs = {}
     simulation = Simulation(robot_config, gui=gui)
     camera_window = None
     try:
@@ -142,6 +146,20 @@ def replay_sim(
             previous_joints = {side: arm.last_valid_target.copy() for side, arm in simulation.arms.items()}
             simulation.update(targets, True, postures)
             frame = {"time_s": step / dataset.fps, "source_frame": index - start, "arms": {}}
+            collision = simulation.collision_report() if sim_model == "full" else None
+            if collision is not None:
+                collision_contacts += collision["count"]
+                if collision["count"]:
+                    collision_frames += 1
+                    collision_max_penetration_m = max(
+                        collision_max_penetration_m, collision["max_penetration_m"]
+                    )
+                    for pair, count in collision["body_pairs"].items():
+                        collision_body_pairs[pair] = collision_body_pairs.get(pair, 0) + count
+                frame["collision"] = {
+                    "count": collision["count"],
+                    "max_penetration_m": collision["max_penetration_m"],
+                }
             for side, arm in simulation.arms.items():
                 position, quaternion = arm.solver.fk_solver.compute(arm.last_valid_target)
                 actual = pose(position, quaternion)
@@ -202,10 +220,15 @@ def replay_sim(
 
     position_tolerance = float(config["robot"]["position_tolerance_m"])
     step_limit = float(config["robot"]["max_joint_step_deg"])
+    collision_scope = (
+        "Native MJCF floor and non-adjacent robot bodies; external obstacles are not modeled"
+        if sim_model == "full"
+        else "Not evaluated by the legacy kinematic preview"
+    )
     feasibility = {
         "criteria": (
             "no IK failures, position error <= robot.position_tolerance_m, and joint step <= "
-            "robot.max_joint_step_deg"
+            "robot.max_joint_step_deg" + (", and no modeled collisions" if sim_model == "full" else "")
         ),
         "position_tolerance_m": position_tolerance,
         "max_joint_step_limit_deg": step_limit,
@@ -217,7 +240,13 @@ def replay_sim(
         "max_joint_step_observed_deg": worst(
             [value for side in errors for value in errors[side]["max_joint_step_deg"]]
         ),
-        "scope": "Model-based kinematic check; not a collision or hardware safety check",
+        "modeled_collision_frames": collision_frames if sim_model == "full" else None,
+        "scope": (
+            "Model-based kinematic check; not a collision or hardware safety check"
+            if sim_model == "legacy"
+            else "Model-based kinematic and native-collision check; not an external-obstacle or "
+            "hardware safety check"
+        ),
     }
     feasibility["within_preview_tolerance"] = bool(
         not plan["failures"]
@@ -225,6 +254,7 @@ def replay_sim(
         and feasibility["max_position_error_m"] <= position_tolerance
         and feasibility["max_joint_step_observed_deg"] is not None
         and feasibility["max_joint_step_observed_deg"] <= step_limit + 1e-6
+        and (sim_model == "legacy" or collision_frames == 0)
     )
     report = {
         "schema": "dual_scorpion.mocopi.simulation_metrics.v1",
@@ -261,7 +291,20 @@ def replay_sim(
             side: sum(frame["arms"][side]["retarget_clamped"] for frame in plan["frames"])
             for side in ("left", "right")
         },
+        "collision_check": {
+            "measured": sim_model == "full",
+            "frames_with_collisions": collision_frames if sim_model == "full" else None,
+            "contact_count": collision_contacts if sim_model == "full" else None,
+            "max_penetration_m": collision_max_penetration_m if sim_model == "full" else None,
+            "body_pairs": collision_body_pairs if sim_model == "full" else None,
+            "scope": collision_scope,
+        },
         "feasibility": feasibility,
-        "limits": "Kinematic FK comparison only; does not measure physical robot error or collisions",
+        "limits": (
+            "Kinematic FK comparison only; does not measure physical robot error or collisions"
+            if sim_model == "legacy"
+            else "Kinematic FK and modeled-collision comparison; does not measure physical robot error, "
+            "external obstacles, or hardware safety"
+        ),
     }
     return plan, report

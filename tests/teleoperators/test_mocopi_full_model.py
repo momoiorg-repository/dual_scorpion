@@ -109,6 +109,30 @@ def test_full_model_ik_rejects_a_clipped_unreachable_candidate():
         backwards.close()
 
 
+def test_full_model_reports_kinematic_collisions_without_stepping_physics():
+    simulation = FullMujocoSimulation(load_config(CONFIG)["robot"], gui=False)
+    try:
+        clean = simulation.collision_report()
+        assert clean["count"] == 0
+        assert clean["max_penetration_m"] == 0.0 and clean["body_pairs"] == {}
+        assert "external obstacles" in clean["scope"]
+
+        # Deterministic pose known to intersect the MJCF floor with the native
+        # collision meshes. This is a query only; physics is not stepped.
+        colliding_right = np.array(
+            [-41.1255684, 81.3671083, -9.9939223, 86.4710552, 2.7940804, 3.8099032, 71.3772943]
+        )
+        simulation.data.qpos[simulation.qpos_indices["right"][:7]] = np.deg2rad(colliding_right)
+        simulation.data.qpos[simulation.qpos_indices["right"][7]] = 0
+        simulation.mujoco.mj_forward(simulation.model, simulation.data)
+        collision = simulation.collision_report()
+        assert collision["count"] > 0
+        assert collision["max_penetration_m"] > 0
+        assert any("world" in pair for pair in collision["body_pairs"])
+    finally:
+        simulation.close()
+
+
 @pytest.mark.parametrize("side", ["left", "right"])
 def test_full_model_jacobian_matches_mujoco_finite_difference(side):
     simulation = FullMujocoSimulation(load_config(CONFIG)["robot"], gui=False)
