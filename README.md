@@ -29,6 +29,8 @@ and motion measurements without a robot connection, IK, or gripper measurements.
 Raw sessions can be evaluated for timing and converted into local LeRobot datasets;
 their actions describe measured human hand poses, not robot joint commands. The
 dataset can be replayed against selected arm URDFs in MuJoCo with tracking metrics.
+Validated seven-joint plans can also be replayed through the existing follower
+driver, with encoder-based metrics; physical playback has not yet been verified.
 
 ## Contents
 - [Highlights](#highlights)

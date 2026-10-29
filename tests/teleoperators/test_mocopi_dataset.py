@@ -157,3 +157,176 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     assert changed["urdf_sha256"]["left"] != original_hash["left"]
     assert changed["urdf_sha256"]["right"] == original_hash["right"]
     assert not changed_report["ik_failures"]
+
+
+def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    pytest.importorskip("pybullet")
+    from telegrip.mocopi.dataset.real import JOINTS, execute_plan, validate_plan
+    from telegrip.mocopi.dataset.replay import _pose_vector, model_fingerprint
+    from telegrip.mocopi.geometry import pose
+    from telegrip.mocopi.ik import DualSimulation
+
+    cfg = load_config(CONFIG)
+    simulation = DualSimulation(cfg["robot"], gui=False)
+    try:
+        initial = {side: arm.last_valid_target.copy() for side, arm in simulation.arms.items()}
+        plan = {
+            "schema": "dual_scorpion.mocopi.robot_plan.v1",
+            "source": "fake",
+            "fps": 30,
+            "expected_frames": 4,
+            "urdf_sha256": model_fingerprint(cfg),
+            "joint_names": list(JOINTS),
+            "gripper_included": False,
+            "frames": [],
+            "failures": [],
+        }
+        for index in range(4):
+            frame = {"time_s": index / 30, "arms": {}}
+            for side, arm in simulation.arms.items():
+                joint = initial[side].copy()
+                joint[0] += 0.2 * index
+                position, quaternion = arm.solver.fk_solver.compute(joint)
+                target = _pose_vector(pose(position, quaternion))
+                frame["arms"][side] = {
+                    "joint_deg": joint[:7].tolist(),
+                    "target_pose": target,
+                    "simulated_pose": target,
+                    "valid": True,
+                    "workspace_clamped": False,
+                    "retarget_clamped": False,
+                }
+            plan["frames"].append(frame)
+        with pytest.raises(ValueError, match="Synthetic"):
+            validate_plan(plan, cfg, simulation)
+        assert validate_plan(plan, cfg, simulation, allow_synthetic=True)["frames"] == 4
+        bad = deepcopy(plan)
+        bad["frames"][1]["arms"]["left"]["joint_deg"][0] += 30
+        with pytest.raises(ValueError, match="limit"):
+            validate_plan(bad, cfg, simulation, allow_synthetic=True)
+        bad = deepcopy(plan)
+        bad["urdf_sha256"]["left"] = "changed"
+        with pytest.raises(ValueError, match="URDF differs"):
+            validate_plan(bad, cfg, simulation, allow_synthetic=True)
+        bad = deepcopy(plan)
+        del bad["frames"][1]["arms"]["left"]["retarget_clamped"]
+        with pytest.raises(ValueError, match="Unsafe"):
+            validate_plan(bad, cfg, simulation, allow_synthetic=True)
+
+        class FakeBus:
+            def __init__(self):
+                self.is_connected = False
+                self.calibration = {name: SimpleNamespace(range_min=0, range_max=4095) for name in JOINTS}
+                self.motors = {name: SimpleNamespace(model="sts3215") for name in JOINTS}
+                self.model_resolution_table = {"sts3215": 4096}
+                self.enabled = []
+
+            def connect(self):
+                self.is_connected = True
+
+            def read(self, field, name, normalize=False):
+                assert field == "Operating_Mode" and name in JOINTS and not normalize
+                return 0
+
+            def enable_torque(self, names):
+                self.enabled.extend(names)
+
+            def disconnect(self, disable_torque):
+                assert not disable_torque
+                self.is_connected = False
+
+        class FakeRobot:
+            is_calibrated = True
+
+            def __init__(self, stalled=False):
+                self.left_bus, self.right_bus = FakeBus(), FakeBus()
+                self.config = SimpleNamespace(max_relative_target=0.5, use_degrees=True)
+                self.current = {
+                    f"{side}_{name}.pos": plan["frames"][0]["arms"][side]["joint_deg"][i]
+                    for side in ("left", "right")
+                    for i, name in enumerate(JOINTS)
+                }
+                self.stalled, self.commands = stalled, []
+
+            @property
+            def is_connected(self):
+                return self.left_bus.is_connected and self.right_bus.is_connected
+
+            def get_observation(self):
+                return dict(self.current)
+
+            def send_action(self, action):
+                self.commands.append(dict(action))
+                if not self.stalled:
+                    self.current.update(action)
+                return dict(action)
+
+        robot = FakeRobot()
+        report = execute_plan(
+            plan, cfg, simulation, robot, tmp_path / "real-report.json", realtime=False, allow_synthetic=True
+        )
+        assert report["status"] == "complete" and len(report["frames"]) == len(plan["frames"])
+        assert not report["gripper_commanded"]
+        assert robot.left_bus.enabled == list(JOINTS) and robot.right_bus.enabled == list(JOINTS)
+        assert all(
+            len(command) == 14 and all("gripper" not in key for key in command) for command in robot.commands
+        )
+        stalled = FakeRobot(stalled=True)
+        with pytest.raises(RuntimeError, match="fell behind"):
+            execute_plan(
+                plan,
+                cfg,
+                simulation,
+                stalled,
+                tmp_path / "stalled.json",
+                max_tracking_error_deg=0.1,
+                allow_synthetic=True,
+                realtime=False,
+            )
+        assert json.loads((tmp_path / "stalled.json").read_text())["status"] == "aborted"
+        wrong_start = FakeRobot()
+        wrong_start.current["left_joint0.pos"] += 3
+        with pytest.raises(RuntimeError, match="start pose"):
+            execute_plan(
+                plan,
+                cfg,
+                simulation,
+                wrong_start,
+                tmp_path / "wrong-start.json",
+                allow_synthetic=True,
+                realtime=False,
+            )
+        assert not wrong_start.left_bus.enabled and not wrong_start.commands
+    finally:
+        simulation.close()
+
+
+def test_real_adapter_constructs_existing_driver_with_only_seven_motors(tmp_path):
+    pytest.importorskip("scservo_sdk")
+    pytest.importorskip("serial")
+    pytest.importorskip("deepdiff")
+    from telegrip.mocopi.dataset.real import JOINTS, arm_only_follower
+
+    calibration = {}
+    for side in ("left", "right"):
+        for index, name in enumerate((*JOINTS, "gripper"), start=1):
+            calibration[f"{side}_{name}"] = {
+                "id": index,
+                "drive_mode": int(side == "left" and name == "joint1"),
+                "homing_offset": 0,
+                "range_min": 0,
+                "range_max": 4095,
+            }
+    (tmp_path / "robot-test.json").write_text(json.dumps(calibration))
+    robot = arm_only_follower("/dev/not-open-left", "/dev/not-open-right", "robot-test", 0.5, tmp_path)
+    for bus in (robot.left_bus, robot.right_bus):
+        assert set(bus.motors) == set(JOINTS)
+        assert set(bus.calibration) == set(JOINTS)
+        assert bus.ids == list(range(1, 8))
+        assert not bus.is_connected
+    # The production driver's existing drive-mode calibration is preserved.
+    assert robot.left_bus._unnormalize({2: 30.0})[2] < 2047
+    assert robot.right_bus._unnormalize({2: 30.0})[2] > 2047

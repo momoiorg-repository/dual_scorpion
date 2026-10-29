@@ -2,7 +2,8 @@
 
 この作業では、頭に装着したC270の映像と、mocopiの頭・左右の腕の姿勢を記録します。
 記録した素材は、LeRobot形式へ変換して、同期や動作範囲を数値で評価できます。
-MuJoCoでの再生にも対応しています。実機での再生はこのブランチで続けて実装します。
+MuJoCoでの再生と、検証した関節計画を実機へ再生する機能を用意しています。
+実機での動作はまだ未検証です。
 
 手首のmocopi姿勢は記録します。グリッパーの開閉量や実ロボットの関節角は記録しません。
 記録時にロボットへ接続したり、IKを計算したりしません。人が作業するときは、実機の腕が届く
@@ -127,9 +128,54 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
 関節可動範囲までの余裕、IK失敗、手の目標が制限されたフレーム数が入ります。
 これはシミュレーション上の比較で、実機の追従誤差や衝突の有無を測ったものではありません。
 計画JSONにはグリッパーを含まない左右7関節ずつの角度を記録します。
+位置誤差が大きい場合は、再生をゆっくりにして計画し直せます。例えば `--slowdown 3` は
+各記録フレームを3更新保持し、再生時間を3倍にします。出力ファイルは新しい名前にしてください。
 
 URDFを更新したら、`--left-urdf 新しい左腕.urdf --right-urdf 新しい右腕.urdf` を追加します。
 変更したURDFのSHA-256が計画と評価結果に保存されます。既存実装に合わせて関節名
 `joint0`〜`joint6`、`gripper`、手先リンク名 `tcp_link` が必要です。
 新しいURDFに外観が含まれない場合、リンク間を簡略な線で表示します。
 同梱のassembly CAD外観が見つからない環境でも、簡略表示で姿勢を確認できます。
+
+## 実機の再生計画を検証する
+
+まずMuJoCoで映像と腕の動き、生成された計画とレポートを確認し、次を実行します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
+  --plan outputs/mocopi/plans/episode-001.json
+```
+
+このコマンドはモーターを接続せず、URDFのハッシュ、各関節の可動範囲・速度、
+シミュレーション上の目標との差を検証します。記録が `--fake` の場合は、検証時に
+`--allow-synthetic` が必要です。位置誤差の既定上限は25mmです。超えた場合は、
+MuJoCoの再生で `--slowdown 3` などを指定して計画を作り直してください。
+別のURDFを使った計画では、検証にも同じ `--left-urdf` / `--right-urdf` を指定します。
+
+## 実機で再生する
+
+実機の左右ポート、校正済みrobot ID、使用したURDF、モーター回転方向を先に確認します。
+記録時のテープ範囲は自動検出されず、再生計画は衝突判定を行いません。
+人・障害物との距離、可動範囲、緊急停止手段を確認し、近くで停止できる状態で実行してください。
+本機能は実機未検証です。通常の [AGENT_GUIDE.md](AGENT_GUIDE.md) に従って先に実機を校正してください。
+
+```bash
+export LEFT_FOLLOWER_PORT=/dev/ttyACM0   # 実際の左腕ポートへ変更
+export RIGHT_FOLLOWER_PORT=/dev/ttyACM1  # 実際の右腕ポートへ変更
+export ROBOT_ID=my_robot                 # 実際の校正IDへ変更
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
+  --plan outputs/mocopi/plans/episode-001.json --execute \
+  --left-port "$LEFT_FOLLOWER_PORT" --right-port "$RIGHT_FOLLOWER_PORT" --robot-id "$ROBOT_ID" \
+  --report outputs/mocopi/reports/episode-001-real.json
+```
+
+実行時は既存の校正ファイルとモーター側の設定を照合し、関節の現在位置が計画の開始位置から
+各2度以内であることを確認します。位置モードの左右 `joint0`〜`joint6` だけを使用し、
+グリッパーの読み取り・指令は行いません。関節の指令差は1更新0.5度・毎秒15度以内です。
+計画から5度を超えて遅れた場合は停止し、取得できた範囲のレポートを保存します。
+終了時は実機の現在位置を保持する指令を出し、トルクは有効のまま接続を閉じます。
+途中停止は **Ctrl+C** です。通信が失われた場合はソフトから停止指令を届けられないことがあります。
+
+レポートの `measured_fps` と `tracking` に、実際の関節角と目標の差、URDFとエンコーダーから
+計算した手先位置・向きの差が出ます。後者は独立した外部計測ではなく、
+URDFの誤差やたわみを含む実際の手先位置精度を直接測った値ではありません。

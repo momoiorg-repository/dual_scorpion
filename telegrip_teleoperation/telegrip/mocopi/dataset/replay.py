@@ -42,13 +42,15 @@ def _pose_vector(frame):
     return np.r_[frame[:3, 3], Rotation.from_matrix(frame[:3, :3]).as_quat()].tolist()
 
 
-def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show_camera=True):
+def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show_camera=True, slowdown=1):
     """Play an episode, returning a reviewable joint plan and simulation metrics."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     from ..__main__ import anchors
     from ..mujoco_sim import MujocoSimulation
 
+    if not isinstance(slowdown, int) or not 1 <= slowdown <= 10:
+        raise ValueError("slowdown must be an integer from 1 to 10")
     root = Path(dataset_path)
     manifest_path = root / "meta" / "mocopi_dataset.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -66,6 +68,8 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         "episode": episode,
         "source": source,
         "fps": dataset.fps,
+        "slowdown": slowdown,
+        "expected_frames": (end - start) * slowdown,
         "urdf_sha256": model_fingerprint(config),
         "joint_names": [f"joint{i}" for i in range(7)],
         "gripper_included": False,
@@ -94,7 +98,8 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         mappings = anchors(config, simulation, world_hands(head, first), head, first)
         gate = TrackingGate(config["tracking"])
         start_wall = time.monotonic()
-        for index in range(start, end):
+        for step in range((end - start) * slowdown):
+            index = start + step // slowdown
             if not simulation.is_running():
                 plan["failures"].append({"frame": index - start, "reason": "viewer closed"})
                 break
@@ -109,7 +114,7 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
             postures = {side: mapping.posture_target(landmarks, side) for side, mapping in mappings.items()}
             previous_joints = {side: arm.last_valid_target.copy() for side, arm in simulation.arms.items()}
             simulation.update(targets, True, postures)
-            frame = {"time_s": (index - start) / dataset.fps, "arms": {}}
+            frame = {"time_s": step / dataset.fps, "source_frame": index - start, "arms": {}}
             for side, arm in simulation.arms.items():
                 position, quaternion = arm.solver.fk_solver.compute(arm.last_valid_target)
                 actual = pose(position, quaternion)
@@ -156,7 +161,7 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
                     plan["failures"].append({"frame": index - start, "reason": "user stopped playback"})
                     break
             if realtime:
-                time.sleep(max(0, start_wall + (index - start + 1) / dataset.fps - time.monotonic()))
+                time.sleep(max(0, start_wall + (step + 1) / dataset.fps - time.monotonic()))
     finally:
         if camera_window:
             camera_window.close()
@@ -164,7 +169,9 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
     report = {
         "schema": "dual_scorpion.mocopi.simulation_metrics.v1",
         "frames": len(plan["frames"]),
-        "requested_frames": end - start,
+        "requested_frames": (end - start) * slowdown,
+        "source_frames": end - start,
+        "slowdown": slowdown,
         "fps": dataset.fps,
         "source": source,
         "urdf_sha256": plan["urdf_sha256"],

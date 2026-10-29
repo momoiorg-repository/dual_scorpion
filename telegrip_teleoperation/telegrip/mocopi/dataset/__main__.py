@@ -41,12 +41,25 @@ def parser():
     replay.add_argument("--episode", type=int, default=0)
     replay.add_argument("--headless", action="store_true")
     replay.add_argument("--fast", action="store_true", help="Do not wait for recorded frame times")
+    replay.add_argument("--slowdown", type=int, default=1, help="Hold each frame for 1..10 simulation ticks")
     replay.add_argument("--no-camera", action="store_true", help="Do not open the recorded camera window")
     replay.add_argument("--left-urdf", help="Override the left-arm URDF for this replay")
     replay.add_argument("--right-urdf", help="Override the right-arm URDF for this replay")
     replay.add_argument("--visual-urdf", help="Optional compatible assembly URDF for CAD visuals")
     replay.add_argument("--plan", help="Write a new robot joint plan JSON")
     replay.add_argument("--report", help="Write a new simulation metrics JSON")
+    real = sub.add_parser("replay-real", help="Validate or explicitly replay a plan on the real follower")
+    real.add_argument("--plan", required=True)
+    real.add_argument("--execute", action="store_true", help="Connect and move the real arm joints")
+    real.add_argument("--left-port", help="Left follower serial device")
+    real.add_argument("--right-port", help="Right follower serial device")
+    real.add_argument("--robot-id", help="ID used for the existing robot motor calibration")
+    real.add_argument("--calibration-dir", help="Override the existing robot calibration directory")
+    real.add_argument("--report", help="New JSON output for measured real-robot results")
+    real.add_argument("--allow-synthetic", action="store_true", help="Permit a plan sourced from --fake")
+    real.add_argument("--max-sim-error-m", type=float, default=0.025)
+    real.add_argument("--left-urdf", help="Left-arm URDF used to create the plan")
+    real.add_argument("--right-urdf", help="Right-arm URDF used to create the plan")
     return result
 
 
@@ -105,6 +118,7 @@ def main():
                 gui=not args.headless,
                 realtime=not args.fast,
                 show_camera=not args.no_camera,
+                slowdown=args.slowdown,
             )
             for path, document in ((args.plan, plan), (args.report, result)):
                 if path:
@@ -112,6 +126,36 @@ def main():
                     output.parent.mkdir(parents=True, exist_ok=True)
                     with output.open("x", encoding="utf-8") as file:
                         file.write(json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+        elif args.command == "replay-real":
+            from .real import replay_real
+
+            for side in ("left", "right"):
+                path = getattr(args, f"{side}_urdf")
+                if path:
+                    config["robot"]["urdf"][side] = str(Path(path).resolve())
+            real_result = replay_real(
+                config,
+                args.plan,
+                execute=args.execute,
+                left_port=args.left_port,
+                right_port=args.right_port,
+                robot_id=args.robot_id,
+                calibration_dir=args.calibration_dir,
+                report=args.report,
+                allow_synthetic=args.allow_synthetic,
+                max_sim_error_m=args.max_sim_error_m,
+            )
+            if args.execute:
+                result = {
+                    "mode": "real",
+                    "status": real_result["status"],
+                    "frames": len(real_result["frames"]),
+                    "measured_fps": real_result["measured_fps"],
+                    "tracking": real_result["tracking"],
+                    "report": args.report,
+                }
+            else:
+                result = real_result
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     except (ValueError, RuntimeError, OSError) as exc:
         parser().exit(1, f"Error: {exc}\n")
