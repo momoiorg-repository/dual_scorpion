@@ -30,11 +30,12 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `4dd4b60 feat: evaluate full-model collisions` に続き、
-  この文書の更新を含む今回のjitter/dropout境界テストコミットが最新になる
+- 最新コミット: `aad68b5 docs: refresh mocopi agent handoff` に続き、
+  この文書の更新を含む今回の120秒ストレステストコミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
   `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
-  → `4dd4b60`（Full CADのモデル内衝突評価）→ 今回（jitter/dropout境界テスト）
+  → `4dd4b60`（Full CADのモデル内衝突評価）→ `bb6bc2c`（jitter/dropout境界テスト）
+  → `aad68b5`（ハンドオフ整理）→ 今回（120秒ストレステスト）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -61,7 +62,7 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
   - `real.py` / `real_dataset.py` — 実機検証ゲート・実行・フィードバック変換
 - 設定: `config/mocopi/tracking.yaml`（`robot.mujoco_full_model` を含む）
 - テスト: `tests/teleoperators/test_mocopi_tracking.py`（61件）、`test_mocopi_dataset.py`（14件）、
-  `test_mocopi_full_model.py`（7件）
+  `test_mocopi_full_model.py`（7件）、`test_mocopi_stress.py`（1件）
 
 ## 完成した機能（実装・検証済み）
 
@@ -125,14 +126,17 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
     ジッタと4フレーム連続のmocopiドロップを注入し、品質評価・LeRobot変換・
     エピソード分割を通して検証する。各エピソードの固定FPS格子が保存され、
     ドロップ区間が時間圧縮されないことをテストで確認している
+17. **120秒ストレス確認** — `test_mocopi_stress.py` が論理時間120秒・5 FPSの
+    合成セッションに±12 msのジッタと、3箇所の4フレーム連続mocopiドロップを注入する。
+    12件の不良/ドロップを記録し、4エピソードへ分割したLeRobot Datasetを生成・検証する。
+    各エピソードは0.2秒の固定格子を維持し、ドロップ境界は1.2秒として保存される
 
 ## 実装途中の機能
 
 - **実機でのmocopi/C270/SLAM収録**: コードは完成。実機パケット・取り付け校正・レイテンシの
   実測検証が未実施
-- **長時間・ノイズ耐性の系統実験**: 短い合成セッションでのジッタ・ドロップ・
-  エピソード境界は検証済み。実データに近い分数単位の長時間記録や、より多様な
-  ノイズ条件の系統評価は未実施
+- **長時間・ノイズ耐性の系統実験**: 論理120秒の合成ストレスは検証済み。
+  実機由来の長時間記録・露出や無線遅延を含む実測条件は未検証
 - **実機 `--execute` 再生**: コードは完成。安全確認ができるまで実行しない。新CADモデルでは
   設計上拒否される
 - **外部障害物を含む衝突シーン**: モデル内の床・ロボットリンク衝突は測定できるが、
@@ -160,7 +164,8 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
 | `tests/teleoperators/test_mocopi_dataset.py` | 14 passed（`metrics-csv`・`verify`・start-pose記録・jitter/dropout境界を含む） |
 | `tests/teleoperators/test_mocopi_full_model.py` | 7 passed（IK実返り値検証・モデル内衝突評価・`doctor` を含む） |
-| `tests/teleoperators` 全体 | 85 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators/test_mocopi_stress.py` | 1 passed（論理120秒・ジッタ・3箇所のドロップ） |
+| `tests/teleoperators` 全体 | 86 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加の合成end-to-end確認はテストで実施: `capture --fake` → `evaluate` → `convert` →
@@ -180,9 +185,9 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## 次に実行するべき具体的な作業
 
-1. 実機なしで可能な残り検証（分数単位の長時間記録、より多様なノイズ・ドロップ条件）
-2. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
+1. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
+2. 実機由来の長時間記録が取得できたら、同じ評価・変換・検証コマンドで結果を記録する
 
 ## 必要な実行コマンド（環境設定）
 

@@ -148,6 +148,24 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset metrics-csv \
 各指標の計算式・単位・入力・評価条件・限界と、内部整合性の評価と外部Ground Truthを
 必要とする評価の区別は [MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md) にまとめています。
 
+## 長時間・ノイズのストレス確認（機器なし）
+
+機器を使わずに、長時間記録と同期乱れへの耐性を確認できます。このテストは
+**論理時間で120秒・5 FPS**の合成セッションを作り、カメラとmocopiの受信時刻に
+±12 msのジッタを与え、30秒・60秒・90秒付近にそれぞれ4フレーム連続のmocopi
+ドロップを挿入します。品質評価・LeRobot変換・データセット検証・エピソード境界まで
+確認するため、実際に120秒待つ必要はありません。
+
+```bash
+cd /home/syun/open_pj/dual_scorpion
+env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
+  .venv/bin/python -m pytest tests/teleoperators/test_mocopi_stress.py -q
+```
+
+この結果は合成データに対するパイプライン確認であり、実機のmocopi・C270・SLAMの
+レイテンシや精度の実測値ではありません。ドロップ区間は圧縮されず、4つのエピソードに
+分割されることを確認します。
+
 ## LeRobot形式へ変換する
 
 LeRobotのdataset依存関係を用意します。
