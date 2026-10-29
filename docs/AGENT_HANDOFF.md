@@ -30,8 +30,8 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `860e520 test: stress long mocopi sessions` に続き、
-  この文書の更新を含む今回の実機診断記録コミットが最新になる
+- 最新コミット: `44b8582 docs: record mocopi hardware diagnostics` に続き、
+  この文書の更新を含む今回のブロック状態記録コミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
   `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
   → `4dd4b60`（Full CADのモデル内衝突評価）→ `bb6bc2c`（jitter/dropout境界テスト）
@@ -201,6 +201,8 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
   したがってSLAM/頭校正を使う実機収録前にROS 2環境と頭校正の準備が必要
 - `mocopi-check --duration 2`: UDP 12351でmocopiフレームなし。カメラは読み取れるが、
   現在mocopi実パケット受信まで到達していない
+- 再確認 `mocopi-check --duration 5`: 2026-10-29に再実行してもUDP 12351で
+  mocopiフレームなし（終了コード2）。同一の外部ブロックが継続している
 
 ## 次に実行するべき具体的な作業
 
@@ -209,6 +211,13 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
    現在の接続ではC270に `--camera /dev/video0` を指定する。安全確認が取れるまで
    モーターを動かさない。実施したら本ドキュメントへ結果を記録
 2. 実機由来の長時間記録が取得できたら、同じ評価・変換・検証コマンドで結果を記録する
+
+## 現在のブロック状態
+
+実機mocopiパケットが受信できないため、実機収録・実機レイテンシ評価・実機再生検証に
+進めない。ソフトウェア側の実機非依存検証、C270読み取り、MuJoCoモデル診断は完了している。
+ユーザーまたは現場担当者がスマホのmocopi SENDを開始し、UDP 12351でPCが受信できるように
+したあと、このGoalを再開すること。
 
 ## 必要な実行コマンド（環境設定）
 
