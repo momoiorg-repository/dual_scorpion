@@ -30,14 +30,15 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `780150b feat: validate declared obstacle scenes` に続き、
-  この文書の更新を含む今回のSVG比較グラフ機能コミットが最新になる
+- 最新コミット: `e51a360 feat: render mocopi metric comparison plots` に続き、
+  この文書の更新を含む今回のキャプチャ時刻検証コミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
   `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
   → `4dd4b60`（Full CADのモデル内衝突評価）→ `bb6bc2c`（jitter/dropout境界テスト）
   → `aad68b5`（ハンドオフ整理）→ `860e520`（120秒ストレステスト）
   → `44b8582`（実機診断の記録）→ `a773ed2`（実機状態の記録）
-  → `780150b`（operator-declared obstacle scene）→ 今回（metrics SVG）
+  → `780150b`（operator-declared obstacle scene）→ `e51a360`（metrics SVG）
+  → 今回（Human Datasetのキャプチャ時刻検証）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -143,6 +144,10 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
     棒グラフSVGを出力する。CSVと同じドット区切り指標名を使い、未取得値は
     `missing` と明示する。数値は平滑化・補間せず、SVGのメタデータにレポートパスと
     指標名を保存する。Matplotlibなどの追加依存は不要
+20. **Human Datasetのキャプチャ時刻検証** — `verify` が人の姿勢データについて
+    カメラ/mocopi/固定FPS格子時刻の有限性、エピソード内相対格子とLeRobot timestampの一致、
+    カメラ/mocopi時刻差が `max_sync_s` 以内であること、フレーム番号の単調性を確認する。
+    レポートに格子誤差とカメラ/mocopi誤差の最大値を保存する
 
 ## 実装途中の機能
 
@@ -176,7 +181,7 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 | テスト | 結果 |
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
-| `tests/teleoperators/test_mocopi_dataset.py` | 15 passed（`metrics-csv`・`metrics-plot`・`verify`・start-pose記録・jitter/dropout境界を含む） |
+| `tests/teleoperators/test_mocopi_dataset.py` | 15 passed（`metrics-csv`・`metrics-plot`・`verify`・キャプチャ時刻検証・start-pose記録・jitter/dropout境界を含む） |
 | `tests/teleoperators/test_mocopi_full_model.py` | 8 passed（IK実返り値検証・モデル内衝突評価・障害物シーン・`doctor` を含む） |
 | `tests/teleoperators/test_mocopi_stress.py` | 1 passed（論理120秒・ジッタ・3箇所のドロップ） |
 | `tests/teleoperators` 全体 | 88 passed, 2 skipped（skip は追加依存が必要な既存テスト） |

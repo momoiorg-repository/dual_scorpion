@@ -1104,10 +1104,28 @@ def test_verify_dataset_reads_human_dataset_and_rejects_wrong_claims(tmp_path):
     assert report["status"] == "ok" and not report["errors"]
     assert report["dataset_kind"] == "human" and report["frames"] >= 4
     assert report["sampled_pairs"] >= 1
+    assert report["capture_grid_error_s"] <= 1e-5
+    assert report["camera_mocopi_error_s"] <= report["max_sync_s"]
     checks = {item["check"]: item["ok"] for item in report["checks"]}
     assert checks["gripper_not_recorded"] and checks["no_gripper_feature"]
     assert checks["raw_mocopi_state_present"] and checks["action_is_next_measured_state"]
     assert checks["head_video_decodable"] and checks["timestamps_are_episode_grid"]
+    assert checks["capture_features_present"] and checks["capture_times_finite"]
+    assert checks["capture_grid_matches_episode_timestamp"]
+    assert checks["camera_mocopi_sync_within_manifest"]
+    assert checks["capture_frame_ids_nondecreasing"]
+
+    import shutil
+
+    tight_sync = tmp_path / "tight-sync"
+    shutil.copytree(output, tight_sync)
+    tight_meta_path = tight_sync / "meta" / "mocopi_dataset.json"
+    tight_meta = json.loads(tight_meta_path.read_text(encoding="utf-8"))
+    tight_meta["max_sync_s"] = 1e-9
+    tight_meta_path.write_text(json.dumps(tight_meta), encoding="utf-8")
+    tight_report = verify_dataset(tight_sync, sample_frames=1)
+    assert tight_report["status"] == "failed"
+    assert "camera_mocopi_sync_within_manifest" in tight_report["errors"]
 
     with pytest.raises(ValueError, match="sample_frames"):
         verify_dataset(output, sample_frames=0)

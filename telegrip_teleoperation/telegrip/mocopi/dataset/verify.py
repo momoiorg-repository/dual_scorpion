@@ -17,6 +17,7 @@ HUMAN_SCHEMA = "dual_scorpion.mocopi.lerobot.v1"
 JOINT_SCHEMA = "dual_scorpion.mocopi.kinematic_joint_dataset.v1"
 # Position of the left/right hand block inside the 49-value human state.
 HAND_SLICES = {"left": slice(21, 28), "right": slice(42, 49)}
+CAPTURE_GRID_TOLERANCE_S = 1e-5
 
 
 def _sample_positions(span, count):
@@ -168,6 +169,71 @@ def verify_dataset(dataset_path, sample_frames=8):
         f"max abs difference {difference:g}",
     )
 
+    capture_grid_error_s = camera_mocopi_error_s = None
+    if kind == "human":
+        capture_features = {
+            "camera": "observation.capture.camera_time_s",
+            "mocopi": "observation.capture.mocopi_time_s",
+            "grid": "observation.capture.grid_time_s",
+            "camera_id": "observation.capture.camera_frame_id",
+            "mocopi_id": "observation.capture.mocopi_frame_id",
+        }
+        check(
+            "capture_features_present",
+            all(name in features for name in capture_features.values()),
+            sorted(set(capture_features.values()) - set(features)),
+        )
+        if all(name in features for name in capture_features.values()):
+            max_sync_s = manifest.get("max_sync_s")
+            check(
+                "max_sync_s_positive",
+                isinstance(max_sync_s, (int, float))
+                and not isinstance(max_sync_s, bool)
+                and np.isfinite(max_sync_s)
+                and max_sync_s > 0,
+                max_sync_s,
+            )
+            capture_grid_error_s = camera_mocopi_error_s = 0.0
+            finite, frame_ids_ordered = True, True
+            for start, end in bounds:
+                episode = dataset.hf_dataset[start:end]
+                camera = np.asarray(episode[capture_features["camera"]], dtype=float).reshape(-1)
+                mocopi = np.asarray(episode[capture_features["mocopi"]], dtype=float).reshape(-1)
+                grid = np.asarray(episode[capture_features["grid"]], dtype=float).reshape(-1)
+                timestamp = np.asarray(episode["timestamp"], dtype=float).reshape(-1)
+                camera_id = np.asarray(episode[capture_features["camera_id"]], dtype=np.int64).reshape(-1)
+                mocopi_id = np.asarray(episode[capture_features["mocopi_id"]], dtype=np.int64).reshape(-1)
+                if not (
+                    np.isfinite(camera).all()
+                    and np.isfinite(mocopi).all()
+                    and np.isfinite(grid).all()
+                    and np.isfinite(timestamp).all()
+                ):
+                    finite = False
+                    continue
+                capture_grid_error_s = max(
+                    capture_grid_error_s,
+                    float(np.max(np.abs((grid - grid[0]) - (timestamp - timestamp[0])))),
+                )
+                camera_mocopi_error_s = max(camera_mocopi_error_s, float(np.max(np.abs(camera - mocopi))))
+                frame_ids_ordered = frame_ids_ordered and np.all(np.diff(camera_id) >= 0)
+                frame_ids_ordered = frame_ids_ordered and np.all(np.diff(mocopi_id) >= 0)
+            check("capture_times_finite", finite)
+            check(
+                "capture_grid_matches_episode_timestamp",
+                finite and capture_grid_error_s <= CAPTURE_GRID_TOLERANCE_S,
+                f"max grid error {capture_grid_error_s:g} s",
+            )
+            check(
+                "camera_mocopi_sync_within_manifest",
+                finite
+                and isinstance(max_sync_s, (int, float))
+                and not isinstance(max_sync_s, bool)
+                and camera_mocopi_error_s <= float(max_sync_s),
+                f"max camera/mocopi error {camera_mocopi_error_s:g} s, limit {max_sync_s}",
+            )
+            check("capture_frame_ids_nondecreasing", finite and frame_ids_ordered)
+
     return {
         "schema": "dual_scorpion.mocopi.verify.v1",
         "dataset": str(root),
@@ -176,6 +242,9 @@ def verify_dataset(dataset_path, sample_frames=8):
         "frames": len(dataset),
         "sampled_frames": len(sampled),
         "sampled_pairs": len(pairs),
+        "max_sync_s": manifest.get("max_sync_s") if kind == "human" else None,
+        "capture_grid_error_s": capture_grid_error_s,
+        "camera_mocopi_error_s": camera_mocopi_error_s,
         "status": "ok" if all(item["ok"] for item in checks) else "failed",
         "checks": checks,
         "errors": [item["check"] for item in checks if not item["ok"]],
