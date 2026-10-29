@@ -87,6 +87,7 @@ def test_quaternion_sign_is_continuous_across_180_degrees():
 
 def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     import shutil
+    from copy import deepcopy
 
     pytest.importorskip("cv2")
     dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
@@ -237,6 +238,46 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     for episode in range(2):
         first = int(combined_data.meta.episodes[episode]["dataset_from_index"])
         np.testing.assert_array_equal(combined_data[first]["observation.sim.frame"], [0, 0])
+
+    from telegrip.mocopi.dataset.real import replay_real, validate_plan
+    from telegrip.mocopi.full_mujoco import FullMujocoSimulation
+
+    full_plan, full_report = replay_sim(cfg, output, gui=False, realtime=False, slowdown=2, sim_model="full")
+    assert full_plan["model_kind"] == "full_mujoco" and not full_plan["hardware_replay_allowed"]
+    assert full_plan["urdf_sha256"] is None and full_report["joint_limit_source"] == "unmeasured"
+    assert full_report["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
+    assert not full_report["ik_failures"]
+    full_file = tmp_path / "full-plan.json"
+    full_file.write_text(json.dumps(full_plan))
+    preview = replay_real(cfg, full_file, allow_synthetic=True, max_sim_error_m=0.1)
+    assert preview["mode"] == "validation_only" and not preview["hardware_replay_allowed"]
+    with pytest.raises(ValueError, match="simulation-only"):
+        replay_real(cfg, full_file, execute=True, allow_synthetic=True, max_sim_error_m=0.1)
+    full_joints = export_joint_dataset(
+        cfg, output, [full_file], tmp_path / "full-joints", "local/full-joints", max_sim_error_m=0.1
+    )
+    assert full_joints["model_kind"] == "full_mujoco" and not full_joints["hardware_replay_allowed"]
+    full_data = dataset_type("local/full-joints", root=tmp_path / "full-joints", video_backend="pyav")
+    assert len(full_data) == len(full_plan["frames"]) - 1
+    np.testing.assert_allclose(
+        full_data[0]["observation.state"],
+        np.concatenate([full_plan["frames"][0]["arms"][side]["joint_deg"] for side in ("right", "left")]),
+        atol=1e-5,
+    )
+    alternate_xml = tmp_path / "changed-model.xml"
+    alternate_xml.write_bytes(Path(cfg["robot"]["mujoco_full_model"]).read_bytes() + b"\n")
+    changed_cfg = deepcopy(cfg)
+    changed_cfg["robot"]["mujoco_full_model"] = str(alternate_xml)
+    full_simulation = FullMujocoSimulation(cfg["robot"], gui=False)
+    try:
+        with pytest.raises(ValueError, match="MuJoCo model differs"):
+            validate_plan(
+                full_plan, changed_cfg, full_simulation, allow_synthetic=True, allow_preview_model=True
+            )
+        with pytest.raises(ValueError, match="simulation-only"):
+            validate_plan(full_plan, cfg, full_simulation, allow_synthetic=True)
+    finally:
+        full_simulation.close()
 
     # An independently selected/updated URDF is detected and used; no assembly
     # CAD meshes are needed to show the fallback kinematic skeleton.

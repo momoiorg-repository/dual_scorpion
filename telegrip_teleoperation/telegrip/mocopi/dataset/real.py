@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 from ..geometry import pose
 from ..ik import DualSimulation
 from .evaluate import _summary
-from .replay import model_fingerprint
+from .replay import _file_hash, model_fingerprint
 
 SIDES = ("left", "right")
 JOINTS = tuple(f"joint{i}" for i in range(7))
@@ -40,6 +40,7 @@ def validate_plan(
     allow_synthetic=False,
     max_sim_error_m=0.025,
     max_sim_orientation_error_deg=None,
+    allow_preview_model=False,
 ):
     """Check every command against the selected URDF before opening motor ports."""
     if (
@@ -49,8 +50,17 @@ def validate_plan(
         raise ValueError("Unsupported plan or unexpected gripper commands")
     if plan.get("source") not in ("real", "fake") or (plan["source"] == "fake" and not allow_synthetic):
         raise ValueError("Synthetic plans require --allow-synthetic")
-    if plan.get("urdf_sha256") != model_fingerprint(config):
-        raise ValueError("Plan URDF differs from selected URDF; regenerate and review the plan")
+    model_kind = plan.get("model_kind", "legacy_urdf")
+    if model_kind == "full_mujoco":
+        if not allow_preview_model or plan.get("hardware_replay_allowed") is not False:
+            raise ValueError("Full CAD model has unmeasured limits; this plan is simulation-only")
+        if plan.get("mujoco_model_sha256") != _file_hash(config["robot"]["mujoco_full_model"]):
+            raise ValueError("Plan MuJoCo model differs from selected model; regenerate the plan")
+    elif model_kind == "legacy_urdf":
+        if plan.get("urdf_sha256") != model_fingerprint(config):
+            raise ValueError("Plan URDF differs from selected URDF; regenerate and review the plan")
+    else:
+        raise ValueError("Unsupported plan model")
     if plan.get("joint_names") != list(JOINTS) or plan.get("failures") != []:
         raise ValueError("Plan contains missing joints or simulation failures")
     fps = plan.get("fps")
@@ -370,7 +380,15 @@ def replay_real(
     max_sim_orientation_error_deg=None,
 ):
     plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
-    simulation = DualSimulation(config["robot"], gui=False)
+    full_model = plan.get("model_kind") == "full_mujoco"
+    if full_model and execute:
+        raise ValueError("Full CAD model has unmeasured limits; this plan is simulation-only")
+    if full_model:
+        from ..full_mujoco import FullMujocoSimulation
+
+        simulation = FullMujocoSimulation(config["robot"], gui=False)
+    else:
+        simulation = DualSimulation(config["robot"], gui=False)
     try:
         result = validate_plan(
             plan,
@@ -379,9 +397,10 @@ def replay_real(
             allow_synthetic=allow_synthetic,
             max_sim_error_m=max_sim_error_m,
             max_sim_orientation_error_deg=max_sim_orientation_error_deg,
+            allow_preview_model=full_model,
         )
         if not execute:
-            return {"mode": "validation_only", **result}
+            return {"mode": "validation_only", "hardware_replay_allowed": not full_model, **result}
         if not left_port or not right_port or not robot_id or not report:
             raise ValueError("--execute requires --left-port, --right-port, --robot-id and --report")
         robot = arm_only_follower(

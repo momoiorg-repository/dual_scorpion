@@ -170,9 +170,18 @@ def debug_frames(head, hands, targets, simulation, pair, calibration, postures=N
 
 
 def run(cfg, args):
+    if args.mujoco_model:
+        if args.sim_backend != "mujoco" or args.sim_model == "legacy":
+            raise ValueError("--mujoco-model requires the full MuJoCo simulation model")
+        cfg["robot"]["mujoco_full_model"] = str(Path(args.mujoco_model).resolve())
     if args.sim_backend == "mujoco":
-        from .mujoco_sim import MujocoSimulation as Simulation
+        if args.sim_model != "legacy":
+            from .full_mujoco import FullMujocoSimulation as Simulation
+        else:
+            from .mujoco_sim import MujocoSimulation as Simulation
     else:
+        if args.sim_model == "full":
+            raise ValueError("The full CAD model requires --sim-backend mujoco")
         from .ik import DualSimulation as Simulation
 
     if args.start_pose is not None:
@@ -202,7 +211,8 @@ def run(cfg, args):
         if mode in ("live", "mocopi-only"):
             print(mounting_summary(cfg, camera=mode == "live"))
         print(
-            f"Simulation backend: {args.sim_backend} (kinematic preview), "
+            f"Simulation backend: {args.sim_backend}, "
+            f"model={args.sim_model or ('full' if args.sim_backend == 'mujoco' else 'legacy')} (kinematic preview), "
             f"start_pose={cfg['robot']['start_pose']}, alignment={cfg['retarget']['alignment_mode']}\n"
             f"Arm posture: {cfg['retarget']['arm_posture']} (手先優先・上腕/肘を補助目標に使用)\n"
             "追従中もEnterで現在の手とロボット姿勢を再基準化できます"
@@ -385,6 +395,12 @@ def build_parser():
         default="mujoco",
         help="Simulation viewer (default: mujoco)",
     )
+    execute.add_argument(
+        "--sim-model",
+        choices=["full", "legacy"],
+        help="Full native CAD model (default with MuJoCo), or previous per-arm URDF model",
+    )
+    execute.add_argument("--mujoco-model", help="Override the full MuJoCo XML model path")
     source = execute.add_mutually_exclusive_group()
     source.add_argument("--fake", action="store_true")
     source.add_argument("--replay")

@@ -30,6 +30,8 @@ class ArmPostureTarget:
 
 def robot_arm_state(solver, joints):
     """Use the existing FK and URDF joint frames, never CAD mesh centroids."""
+    if hasattr(solver, "arm_state"):
+        return solver.arm_state(joints)
     import pybullet as p
 
     points = solver.fk_solver.compute_joint_positions(joints)

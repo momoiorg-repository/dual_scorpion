@@ -28,7 +28,9 @@ in [MOCOPI_DATASET_GUIDE.md](MOCOPI_DATASET_GUIDE.md). Capture stores real camer
 and motion measurements without a robot connection, IK, or gripper measurements.
 Raw sessions can be evaluated for timing and converted into local LeRobot datasets;
 their actions describe measured human hand poses, not robot joint commands. The
-dataset can be replayed against selected arm URDFs in MuJoCo with tracking metrics.
+dataset can be replayed in the updated native MuJoCo model with tracking metrics.
+Its joint limits and physical motor mapping are unverified, so plans from this
+model are restricted to simulation; the previous per-arm URDFs remain optional.
 Reviewed plans can produce a separate 14-joint LeRobot dataset labelled as
 kinematic simulation, paired with the recorded human head-camera video.
 Optionally, the head-camera SLAM stream aligns the head and both arms while

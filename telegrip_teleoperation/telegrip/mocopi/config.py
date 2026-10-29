@@ -48,6 +48,8 @@ def load_config(path, *, camera=None):
     }
     if cfg["robot"].get("visual_urdf"):
         cfg["robot"]["visual_urdf"] = str((path.parent / cfg["robot"]["visual_urdf"]).resolve())
+    if cfg["robot"].get("mujoco_full_model"):
+        cfg["robot"]["mujoco_full_model"] = str((path.parent / cfg["robot"]["mujoco_full_model"]).resolve())
     limits = [
         (
             cfg["tracking"],

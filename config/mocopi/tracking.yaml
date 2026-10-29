@@ -57,6 +57,8 @@ retarget:
 robot:
   # Hands forward with bent elbows, matching the operator's requested neutral pose.
   start_pose: work
+  # Native full CAD model. Joint 7 on each side is the gripper and remains fixed.
+  mujoco_full_model: ../../dual_scorpion_Full_urdf/mujoco/scorpion.xml
   # CAD visuals/meshes from the full assembly; FK/IK use the corrected per-arm trees below.
   visual_urdf: ../../DS_URDF_IK/assembly_1/urdf/assembly_1.urdf
   # Relative to THIS yaml file, not the shell working directory.

@@ -50,6 +50,8 @@ def parser():
     replay.add_argument("--left-urdf", help="Override the left-arm URDF for this replay")
     replay.add_argument("--right-urdf", help="Override the right-arm URDF for this replay")
     replay.add_argument("--visual-urdf", help="Optional compatible assembly URDF for CAD visuals")
+    replay.add_argument("--sim-model", choices=["full", "legacy"], help="Full native CAD or legacy arm URDFs")
+    replay.add_argument("--mujoco-model", help="Override the full MuJoCo XML model path")
     replay.add_argument("--plan", help="Write a new robot joint plan JSON")
     replay.add_argument("--report", help="Write a new simulation metrics JSON")
     joints = sub.add_parser(
@@ -61,6 +63,7 @@ def parser():
     joints.add_argument("--repo-id", required=True)
     joints.add_argument("--left-urdf", help="Left-arm URDF used by the plans")
     joints.add_argument("--right-urdf", help="Right-arm URDF used by the plans")
+    joints.add_argument("--mujoco-model", help="Full MuJoCo XML used by the plans")
     joints.add_argument("--max-sim-error-m", type=float, default=0.025)
     joints.add_argument("--max-sim-orientation-error-deg", type=float)
     feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
@@ -86,6 +89,7 @@ def parser():
     )
     real.add_argument("--left-urdf", help="Left-arm URDF used to create the plan")
     real.add_argument("--right-urdf", help="Right-arm URDF used to create the plan")
+    real.add_argument("--mujoco-model", help="Full MuJoCo XML used for simulation-only validation")
     compare = sub.add_parser(
         "compare-real", help="Compare real feedback with simulation and measured TCP points"
     )
@@ -145,6 +149,12 @@ def main():
         elif args.command == "replay-sim":
             from .replay import replay_sim
 
+            custom_urdf = bool(args.left_urdf or args.right_urdf or args.visual_urdf)
+            sim_model = args.sim_model or ("legacy" if custom_urdf else "full")
+            if (sim_model == "full" and custom_urdf) or (sim_model == "legacy" and args.mujoco_model):
+                raise ValueError("Select either the full MuJoCo XML or the legacy arm URDFs")
+            if args.mujoco_model:
+                config["robot"]["mujoco_full_model"] = str(Path(args.mujoco_model).resolve())
             for side in ("left", "right"):
                 path = getattr(args, f"{side}_urdf")
                 if path:
@@ -164,6 +174,7 @@ def main():
                 realtime=not args.fast,
                 show_camera=not args.no_camera,
                 slowdown=args.slowdown,
+                sim_model=sim_model,
             )
             for path, document in ((args.plan, plan), (args.report, result)):
                 if path:
@@ -174,6 +185,8 @@ def main():
         elif args.command == "convert-joints":
             from .joint_dataset import export_joint_dataset
 
+            if args.mujoco_model:
+                config["robot"]["mujoco_full_model"] = str(Path(args.mujoco_model).resolve())
             for side in ("left", "right"):
                 path = getattr(args, f"{side}_urdf")
                 if path:
@@ -194,6 +207,8 @@ def main():
         elif args.command == "replay-real":
             from .real import replay_real
 
+            if args.mujoco_model:
+                config["robot"]["mujoco_full_model"] = str(Path(args.mujoco_model).resolve())
             for side in ("left", "right"):
                 path = getattr(args, f"{side}_urdf")
                 if path:

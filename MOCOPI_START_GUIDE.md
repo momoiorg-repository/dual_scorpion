@@ -41,6 +41,7 @@ Python 3.12とuvが必要です。
 ```bash
 uv sync --locked
 uv pip install --python .venv/bin/python -e './telegrip_teleoperation[mujoco]' pytest
+git lfs install && git lfs pull
 ```
 
 すでに実行環境がある場合も、MuJoCoをまだ入れていなければ次の1行だけ実行してください。
@@ -61,15 +62,17 @@ uv run --no-sync --active python -m telegrip.mocopi run --fake --sim
 ```
 
 画面内の左右の腕が動けば、シミュレーション側の準備はできています。
-MuJoCoでは台座・腕・グリッパーの実際のSTL形状を表示します。
+MuJoCoでは新しいCADモデルの台座・腕・グリッパーの形状を表示します。
 手先と目標は、位置・向きを同時に示すXYZ座標軸で表示します。
 上腕追従中は、小さい青・オレンジの球が肘の目標、ピンクの点が実際の肘位置です。
 手先には向きを示す赤(X)・緑(Y)・青(Z)の矢印を表示します。
 短い濃い軸が実際の向き、長い半透明の軸が目標の向きです。
-外観は `DS_URDF_IK/assembly_1/urdf/assembly_1.urdf` と同梱メッシュを使用します。
-関節軸と可動範囲は、既存IKと一致するTelegripの左右URDFを使用します。
-関節姿勢を追従させるプレビューで、重力や接触の動力学は実行しません。
-IKの計算は、従来のPyBulletを画面なしで使用しています。
+既定では [新しいMuJoCoモデル](dual_scorpion_Full_urdf/mujoco/scorpion.xml) を使い、
+IKと順運動学もMuJoCoで計算します。mocopiの左腕はCADの `L`、右腕は `R` に対応します。
+左右の `joint0`〜`joint6` を追従させ、グリッパーに対応する `joint7` は0で固定します。
+元モデルには実測の関節限界がなく、プレビュー計算用の±180度は実機の可動範囲ではありません。
+関節姿勢を追従させるプレビューで、重力・接触の動力学や衝突判定は実行しません。
+以前の左右URDFモデルで確認する場合は `--sim-model legacy` を追加します。
 `--fake` は、実際のセンサーの代わりにデモ用の動きを入力する指定です。
 終了は **Ctrl+C** です。
 
@@ -170,7 +173,8 @@ Enterを押した後の最新の手の位置を基準にします。準備中に
 
 ### 人間とロボットの開始姿勢を合わせる
 
-既定の `work` は、ロボットの手先が台座の前に来る初期姿勢です。
+既定の `work` は、新CADモデルで両肘を曲げ、手先が台座の前に来るプレビュー用の初期姿勢です。
+これは実機の校正済み姿勢ではありません。
 以前の後ろ向きの折り畳み姿勢は `--start-pose backwards` で選べます。
 自分で指定した関節角を使う場合は、YAMLの `robot.initial_joints_deg` を編集し、`--start-pose config` を指定します。
 

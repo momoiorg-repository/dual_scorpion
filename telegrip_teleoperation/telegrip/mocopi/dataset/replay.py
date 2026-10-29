@@ -38,12 +38,28 @@ def _pose_vector(frame):
     return np.r_[frame[:3, 3], Rotation.from_matrix(frame[:3, :3]).as_quat()].tolist()
 
 
-def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show_camera=True, slowdown=1):
+def replay_sim(
+    config,
+    dataset_path,
+    episode=0,
+    *,
+    gui=True,
+    realtime=True,
+    show_camera=True,
+    slowdown=1,
+    sim_model="legacy",
+):
     """Play an episode, returning a reviewable joint plan and simulation metrics."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     from ..__main__ import anchors
-    from ..mujoco_sim import MujocoSimulation
+
+    if sim_model == "full":
+        from ..full_mujoco import FullMujocoSimulation as Simulation
+    elif sim_model == "legacy":
+        from ..mujoco_sim import MujocoSimulation as Simulation
+    else:
+        raise ValueError("sim_model must be full or legacy")
 
     if not isinstance(slowdown, int) or not 1 <= slowdown <= 10:
         raise ValueError("slowdown must be an integer from 1 to 10")
@@ -69,7 +85,12 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         "fps": dataset.fps,
         "slowdown": slowdown,
         "expected_frames": (end - start) * slowdown,
-        "urdf_sha256": model_fingerprint(config),
+        "model_kind": "full_mujoco" if sim_model == "full" else "legacy_urdf",
+        "hardware_replay_allowed": sim_model == "legacy",
+        "mujoco_model_sha256": _file_hash(config["robot"]["mujoco_full_model"])
+        if sim_model == "full"
+        else None,
+        "urdf_sha256": model_fingerprint(config) if sim_model == "legacy" else None,
         "joint_names": [f"joint{i}" for i in range(7)],
         "gripper_included": False,
         "max_joint_step_deg": float(config["robot"]["max_joint_step_deg"]),
@@ -85,7 +106,7 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         }
         for side in ("left", "right")
     }
-    simulation = MujocoSimulation(config["robot"], gui=gui)
+    simulation = Simulation(config["robot"], gui=gui)
     camera_window = None
     try:
         if gui and show_camera:
@@ -126,16 +147,17 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
                 errors[side]["max_joint_step_deg"].append(
                     float(np.max(np.abs(arm.last_valid_target[:7] - previous_joints[side][:7])))
                 )
-                errors[side]["joint_limit_margin_deg"].append(
-                    float(
-                        np.min(
-                            np.r_[
-                                arm.last_valid_target[:7] - arm.lower[:7],
-                                arm.upper[:7] - arm.last_valid_target[:7],
-                            ]
+                if sim_model == "legacy":
+                    errors[side]["joint_limit_margin_deg"].append(
+                        float(
+                            np.min(
+                                np.r_[
+                                    arm.last_valid_target[:7] - arm.lower[:7],
+                                    arm.upper[:7] - arm.last_valid_target[:7],
+                                ]
+                            )
                         )
                     )
-                )
                 if not arm.valid:
                     plan["failures"].append({"frame": index - start, "side": side, "reason": arm.status})
                 frame["arms"][side] = {
@@ -175,6 +197,10 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         "slowdown": slowdown,
         "fps": dataset.fps,
         "source": source,
+        "model_kind": plan["model_kind"],
+        "hardware_replay_allowed": plan["hardware_replay_allowed"],
+        "joint_limit_source": "unmeasured" if sim_model == "full" else "legacy_urdf",
+        "mujoco_model_sha256": plan["mujoco_model_sha256"],
         "urdf_sha256": plan["urdf_sha256"],
         "ik_failures": plan["failures"],
         "tracking": {

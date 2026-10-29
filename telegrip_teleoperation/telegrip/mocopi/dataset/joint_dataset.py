@@ -52,8 +52,17 @@ def export_joint_dataset(
     manifest_hash = file_sha256(manifest_path)
     source = LeRobotDataset(manifest["repo_id"], root=source_root, video_backend="pyav")
     plans = [json.loads(Path(path).read_text(encoding="utf-8")) for path in plan_paths]
+    model_kinds = {plan.get("model_kind", "legacy_urdf") for plan in plans}
+    if len(model_kinds) != 1:
+        raise ValueError("All plans must use the same simulation model")
+    full_model = model_kinds == {"full_mujoco"}
     episodes, sources, seen = [], set(), set()
-    simulation = DualSimulation(config["robot"], gui=False)
+    if full_model:
+        from ..full_mujoco import FullMujocoSimulation
+
+        simulation = FullMujocoSimulation(config["robot"], gui=False)
+    else:
+        simulation = DualSimulation(config["robot"], gui=False)
     try:
         for plan in plans:
             if (
@@ -94,6 +103,7 @@ def export_joint_dataset(
                 allow_synthetic=True,
                 max_sim_error_m=max_sim_error_m,
                 max_sim_orientation_error_deg=max_sim_orientation_error_deg,
+                allow_preview_model=full_model,
             )
             if any(
                 frame.get("source_frame") != index // slowdown for index, frame in enumerate(plan["frames"])
@@ -150,6 +160,9 @@ def export_joint_dataset(
         "image_semantics": "human head camera at the plan source frame, not a robot camera",
         "fps": source.fps,
         "gripper_recorded": False,
+        "model_kind": plans[0].get("model_kind", "legacy_urdf"),
+        "hardware_replay_allowed": not full_model,
+        "mujoco_model_sha256": plans[0].get("mujoco_model_sha256"),
         "urdf_sha256": plans[0]["urdf_sha256"],
         "episodes": [],
     }
