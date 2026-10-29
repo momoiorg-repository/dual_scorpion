@@ -52,6 +52,17 @@ def parser():
     replay.add_argument("--visual-urdf", help="Optional compatible assembly URDF for CAD visuals")
     replay.add_argument("--plan", help="Write a new robot joint plan JSON")
     replay.add_argument("--report", help="Write a new simulation metrics JSON")
+    joints = sub.add_parser(
+        "convert-joints", help="Create a separate dataset of simulated joint trajectories"
+    )
+    joints.add_argument("--dataset", required=True, help="Source human mocopi LeRobot dataset")
+    joints.add_argument("--plan", action="append", required=True, help="Plan for a source episode; repeat")
+    joints.add_argument("--output", required=True, help="New local dataset folder")
+    joints.add_argument("--repo-id", required=True)
+    joints.add_argument("--left-urdf", help="Left-arm URDF used by the plans")
+    joints.add_argument("--right-urdf", help="Right-arm URDF used by the plans")
+    joints.add_argument("--max-sim-error-m", type=float, default=0.025)
+    joints.add_argument("--max-sim-orientation-error-deg", type=float)
     real = sub.add_parser("replay-real", help="Validate or explicitly replay a plan on the real follower")
     real.add_argument("--plan", required=True)
     real.add_argument("--execute", action="store_true", help="Connect and move the real arm joints")
@@ -154,6 +165,22 @@ def main():
                     output.parent.mkdir(parents=True, exist_ok=True)
                     with output.open("x", encoding="utf-8") as file:
                         file.write(json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+        elif args.command == "convert-joints":
+            from .joint_dataset import export_joint_dataset
+
+            for side in ("left", "right"):
+                path = getattr(args, f"{side}_urdf")
+                if path:
+                    config["robot"]["urdf"][side] = str(Path(path).resolve())
+            result = export_joint_dataset(
+                config,
+                args.dataset,
+                args.plan,
+                args.output,
+                args.repo_id,
+                max_sim_error_m=args.max_sim_error_m,
+                max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
+            )
         elif args.command == "replay-real":
             from .real import replay_real
 

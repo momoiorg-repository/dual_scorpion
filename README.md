@@ -29,6 +29,8 @@ and motion measurements without a robot connection, IK, or gripper measurements.
 Raw sessions can be evaluated for timing and converted into local LeRobot datasets;
 their actions describe measured human hand poses, not robot joint commands. The
 dataset can be replayed against selected arm URDFs in MuJoCo with tracking metrics.
+Reviewed plans can produce a separate 14-joint LeRobot dataset labelled as
+kinematic simulation, paired with the recorded human head-camera video.
 Optionally, the head-camera SLAM stream aligns the head and both arms while
 preserving the original mocopi poses and timestamps.
 Validated seven-joint plans can also be replayed through the existing follower

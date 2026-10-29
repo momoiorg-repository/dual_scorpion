@@ -226,6 +226,43 @@ URDFを更新したら、`--left-urdf 新しい左腕.urdf --right-urdf 新し�
 新しいURDFに外観が含まれない場合、リンク間を簡略な線で表示します。
 同梱のassembly CAD外観が見つからない環境でも、簡略表示で姿勢を確認できます。
 
+### 計画から関節角のLeRobotデータを作る
+
+人の姿勢を保存した元データはそのまま残し、MuJoCoで確認した計画から、別のデータセットを作れます。
+先ほどの `replay-sim` で計画を生成した後、次を実行します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset convert-joints \
+  --dataset outputs/mocopi/datasets/demo-001 \
+  --plan outputs/mocopi/plans/episode-001.json \
+  --output outputs/mocopi/datasets/demo-001-joints --repo-id local/mocopi-joints
+```
+
+複数エピソードをまとめるには、それぞれ `replay-sim --episode 番号` で計画を作り、
+`--plan` を繰り返して指定します。異なるURDFの計画や、合成・実際の人の記録を混在できません。
+別のURDFを使った場合は `--left-urdf` / `--right-urdf` を変換時にも指定します。
+IK失敗や制限があった計画、位置誤差が既定の25 mmを超える計画は変換できません。
+必要なら `--max-sim-orientation-error-deg` で回転誤差の上限も指定できます。
+計画には元データとURDFのハッシュを保存し、変換時に照合します。古い計画に元データの
+ハッシュがない場合は、`replay-sim` から計画を作り直してください。大きなデータでは照合に時間がかかります。
+
+| 項目 | 関節角データの内容 |
+| --- | --- |
+| `observation.state` | そのフレームのシミュレーション上の左右7関節角、合計14値 |
+| `action` | 次のフレームのシミュレーション上の左右7関節角、合計14値 |
+| `observation.images.head` | 対応する人の頭カメラ映像 |
+| `observation.mocopi.state` / `raw_state` | 対応する補正後・補正前の人の姿勢 |
+| `observation.sim.frame` | 計画フレーム番号と元の人の記録フレーム番号 |
+
+関節の並びは右 `joint0`〜`joint6`、次に左 `joint0`〜`joint6` で、単位は度です。
+グリッパー値は含みません。`--slowdown` を使った計画では、元の人の画像・姿勢が複数フレームに
+繰り返され、画像は再度H.264で保存されます。エピソード末尾は次の関節角がないため除外します。
+
+これらの関節角は**URDFとIKによる運動学上の計画**であり、実機のエンコーダー観測ではありません。
+映像も実機カメラではなく、記録時の人の頭カメラです。実機での学習・制御に使う前に、
+関節の原点・回転方向・単位、実機側のカメラ配置と観測の対応、実際の追従結果を確認する必要があります。
+由来は出力の `meta/mocopi_joint_dataset.json` に保存されます。
+
 ## 実機の再生計画を検証する
 
 まずMuJoCoで映像と腕の動き、生成された計画とレポートを確認し、次を実行します。

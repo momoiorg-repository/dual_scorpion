@@ -158,6 +158,86 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
         <= cfg["robot"]["max_joint_step_deg"] + 1e-6
     )
 
+    from telegrip.mocopi.dataset.joint_dataset import JOINT_NAMES, export_joint_dataset
+
+    slowed, _ = replay_sim(cfg, output, gui=False, realtime=False, slowdown=2)
+    plan_file = tmp_path / "plan.json"
+    plan_file.write_text(json.dumps(slowed))
+    joint_root = tmp_path / "kinematic-joints"
+    joint_meta = export_joint_dataset(
+        cfg, output, [plan_file], joint_root, "local/mocopi-joints", max_sim_error_m=0.1
+    )
+    assert joint_meta["robot_state_source"] == "kinematic_simulation_not_real_encoders"
+    assert joint_meta["capture_source"] == "fake" and not joint_meta["gripper_recorded"]
+    assert joint_meta["urdf_sha256"] == slowed["urdf_sha256"]
+    joint_data = dataset_type("local/mocopi-joints", root=joint_root, video_backend="pyav")
+    assert joint_data.meta.robot_type == "dual_scorpion_kinematic"
+    assert len(joint_data) == len(slowed["frames"]) - 1
+    assert joint_data.meta.features["action"]["names"] == JOINT_NAMES
+    assert not any("gripper" in name for name in JOINT_NAMES)
+    for index in (0, 1, len(joint_data) - 1):
+        current, following = slowed["frames"][index : index + 2]
+        row = joint_data[index]
+        expected_state = np.concatenate([current["arms"][side]["joint_deg"] for side in ("right", "left")])
+        expected_action = np.concatenate([following["arms"][side]["joint_deg"] for side in ("right", "left")])
+        np.testing.assert_allclose(row["observation.state"], expected_state, atol=1e-5)
+        np.testing.assert_allclose(row["action"], expected_action, atol=1e-5)
+        np.testing.assert_array_equal(row["observation.sim.frame"], [index, current["source_frame"]])
+        np.testing.assert_allclose(
+            row["observation.mocopi.state"], dataset[current["source_frame"]]["observation.state"]
+        )
+    assert (
+        float((joint_data[0]["observation.images.head"] - dataset[0]["observation.images.head"]).abs().mean())
+        < 0.05
+    )
+    with pytest.raises(ValueError, match="appears more than once"):
+        export_joint_dataset(
+            cfg,
+            output,
+            [plan_file, plan_file],
+            tmp_path / "duplicate",
+            "local/duplicate",
+            max_sim_error_m=0.1,
+        )
+    altered_plan = json.loads(plan_file.read_text())
+    altered_plan["frames"][1]["source_frame"] = 999
+    bad_plan = tmp_path / "bad-plan.json"
+    bad_plan.write_text(json.dumps(altered_plan))
+    with pytest.raises(ValueError, match="source frame mapping"):
+        export_joint_dataset(
+            cfg, output, [bad_plan], tmp_path / "bad-frames", "local/bad-frames", max_sim_error_m=0.1
+        )
+    stats_file = output / "meta" / "stats.json"
+    previous_stats = stats_file.read_text()
+    stats_file.write_text(previous_stats + " ")
+    with pytest.raises(ValueError, match="does not match dataset content"):
+        export_joint_dataset(cfg, output, [plan_file], tmp_path / "changed-source", "local/changed-source")
+    stats_file.write_text(previous_stats)
+
+    joined_root = tmp_path / "joined"
+    joined_plans = []
+    for episode in (0, 1):
+        joined_plan, _ = replay_sim(cfg, joined_root, episode=episode, gui=False, realtime=False, slowdown=2)
+        path = tmp_path / f"joined-plan-{episode}.json"
+        path.write_text(json.dumps(joined_plan))
+        joined_plans.append(path)
+    combined = export_joint_dataset(
+        cfg,
+        joined_root,
+        joined_plans,
+        tmp_path / "combined-joints",
+        "local/combined-joints",
+        max_sim_error_m=0.1,
+    )
+    combined_data = dataset_type(
+        "local/combined-joints", root=tmp_path / "combined-joints", video_backend="pyav"
+    )
+    assert combined_data.num_episodes == 2
+    assert [episode["source_episode"] for episode in combined["episodes"]] == [0, 1]
+    for episode in range(2):
+        first = int(combined_data.meta.episodes[episode]["dataset_from_index"])
+        np.testing.assert_array_equal(combined_data[first]["observation.sim.frame"], [0, 0])
+
     # An independently selected/updated URDF is detected and used; no assembly
     # CAD meshes are needed to show the fallback kinematic skeleton.
     original_hash = model_fingerprint(cfg)

@@ -1,6 +1,5 @@
 """Replay human-pose datasets using a selected robot model, with metrics."""
 
-import hashlib
 import json
 import time
 from pathlib import Path
@@ -11,15 +10,12 @@ from scipy.spatial.transform import Rotation
 from ..geometry import MocopiSample, pose, world_arm_landmarks, world_hands
 from ..runtime import TrackingGate
 from .evaluate import _summary
+from .fingerprint import dataset_fingerprint, file_sha256
 from .session import POSE_BONES
 
 
 def _file_hash(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as file:
-        for block in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    return file_sha256(path)
 
 
 def model_fingerprint(config):
@@ -56,6 +52,7 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != "dual_scorpion.mocopi.lerobot.v1" or manifest.get("gripper_recorded"):
         raise ValueError("Unsupported mocopi dataset schema")
+    content_hash = dataset_fingerprint(root)
     dataset = LeRobotDataset(manifest["repo_id"], root=root, video_backend="pyav")
     if not 0 <= episode < dataset.num_episodes:
         raise ValueError(f"Episode must be between 0 and {dataset.num_episodes - 1}")
@@ -65,6 +62,7 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
     plan = {
         "schema": "dual_scorpion.mocopi.robot_plan.v1",
         "dataset_manifest_sha256": _file_hash(manifest_path),
+        "dataset_content_sha256": content_hash,
         "episode": episode,
         "source": source,
         "fps": dataset.fps,
@@ -166,6 +164,8 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         if camera_window:
             camera_window.close()
         simulation.close()
+    if dataset_fingerprint(root) != content_hash:
+        raise ValueError("Source dataset changed during replay; create a new plan")
     report = {
         "schema": "dual_scorpion.mocopi.simulation_metrics.v1",
         "frames": len(plan["frames"]),
