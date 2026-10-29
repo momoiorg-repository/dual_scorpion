@@ -1,8 +1,8 @@
 # mocopiと頭カメラのデータを記録する
 
 この作業では、頭に装着したC270の映像と、mocopiの頭・左右の腕の姿勢を記録します。
-現在はまず素材を保存する段階です。LeRobot形式への変換、定量評価、MuJoCoと実機での再生は
-このブランチで続けて実装します。
+記録した素材は、LeRobot形式へ変換して、同期や動作範囲を数値で評価できます。
+MuJoCoと実機での再生はこのブランチで続けて実装します。
 
 手首のmocopi姿勢は記録します。グリッパーの開閉量や実ロボットの関節角は記録しません。
 記録時にロボットへ接続したり、IKを計算したりしません。人が作業するときは、実機の腕が届く
@@ -58,3 +58,54 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
 カメラ時刻は画像を読み終えたPC時刻、mocopi時刻はUDPを受信したPC時刻であり、
 カメラの露光時刻やセンサーの送信時刻そのものではありません。遅延の実測と評価が必要です。
 画像には周囲の人や部屋が映ります。`outputs/` はGitの対象外です。
+
+## 記録を定量評価する
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset evaluate \
+  --input outputs/mocopi/sessions/episode-001 \
+  --output outputs/mocopi/reports/episode-001.json
+```
+
+画像・mocopiそれぞれの実効FPS、時刻差の平均・95パーセンタイル・最大値、許容差を超えた画像数、
+変換に使えるフレーム数、左右の手の移動範囲・移動距離・速度が出ます。
+時刻差は**PC側で測った差**であり、露光・無線遅延や位置精度の実測値ではありません。
+
+テープで囲った範囲を同じmocopi座標系で実測できた場合は、別途YAMLに左右の範囲を記入し、
+`--workspace 設定ファイル.yaml` を追加すると、手が範囲外だったフレーム数も出せます。
+書式は [workspace.example.yaml](config/mocopi/workspace.example.yaml) を参照してください。
+例の数値は実際のテープ位置ではありません。範囲は自動推定せず、未指定なら範囲外判定を省きます。
+
+## LeRobot形式へ変換する
+
+LeRobotのdataset依存関係を用意します。
+
+```bash
+uv pip install --python .venv/bin/python -e '.[dataset]'
+```
+
+複数の作業を一つのデータセットにまとめる場合は `--input` を繰り返します。
+出力先は新しいフォルダを指定します。既存フォルダには上書きしません。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset convert \
+  --input outputs/mocopi/sessions/episode-001 \
+  --output outputs/mocopi/datasets/demo-001 \
+  --repo-id local/mocopi-demo --fps 30
+```
+
+画像と姿勢の記録時刻に最も近い値を固定FPSへ対応付けます。既定の許容差は0.08秒で、
+同期できない部分は除外してエピソードを分割します。除外数と重複フレーム数は
+出力先の `meta/mocopi_dataset.json` に保存します。実際の記録時刻も各フレームに残します。
+
+| LeRobotの項目 | 内容 |
+| --- | --- |
+| `observation.images.head` | 頭カメラの動画 |
+| `observation.state` | 頭、左右の肩・肘・手の位置と回転（49値） |
+| `action` | 次フレームに観測された左右の人間の手の位置と回転（14値） |
+| `observation.capture.*` | 画像・mocopi・固定FPSそれぞれの時刻、mocopiフレーム番号 |
+
+位置はmocopi座標系のメートル、回転は `qx, qy, qz, qw` の順です。
+`action` は**人間の手の次の姿勢**であり、実ロボットの関節角やモーター指令ではありません。
+URDFは記録・変換に使わず、後のロボット再生時に選びます。グリッパーの項目はありません。
+`--fake` の記録と実機で取得した記録は、誤って混ぜないよう通常は同じ変換に指定できません。

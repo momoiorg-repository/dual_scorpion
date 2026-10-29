@@ -1,0 +1,8 @@
+# EXAMPLE ONLY: measure the taped area in the same mocopi global coordinates.
+# These placeholder bounds are not the user's robot reach or taped area.
+left:
+  min_m: [-0.5, -0.5, 0.5]
+  max_m: [0.5, 0.5, 1.8]
+right:
+  min_m: [-0.5, -0.5, 0.5]
+  max_m: [0.5, 0.5, 1.8]

@@ -26,6 +26,8 @@ Scorpion follower driver.
 The in-progress head-camera and mocopi demonstration capture workflow is documented
 in [MOCOPI_DATASET_GUIDE.md](MOCOPI_DATASET_GUIDE.md). Capture stores real camera
 and motion measurements without a robot connection, IK, or gripper measurements.
+Raw sessions can be evaluated for timing and converted into local LeRobot datasets;
+their actions describe measured human hand poses, not robot joint commands.
 
 ## Contents
 - [Highlights](#highlights)
