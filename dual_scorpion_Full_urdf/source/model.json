@@ -1,0 +1,1666 @@
+{
+  "name": "scorpion",
+  "source_document": "scorpion v11",
+  "units": "m, kg, s, rad",
+  "links": [
+    {
+      "name": "base_link",
+      "origin_m": [
+        0,
+        0,
+        0
+      ],
+      "mass_kg": 11.411849248400108,
+      "com_m": [
+        -0.0014647725336217915,
+        -0.0014629590721946591,
+        0.1406323364116957
+      ],
+      "inertia": [
+        [
+          0.4396869233393579,
+          -3.6686506600571403e-06,
+          0.0025824754165703723
+        ],
+        [
+          -3.6686506600571403e-06,
+          0.5196221993084679,
+          -0.0003606830071143149
+        ],
+        [
+          0.0025824754165703723,
+          -0.0003606830071143149,
+          0.10165517428649888
+        ]
+      ],
+      "visual": "meshes/visual/base_link.stl",
+      "collision": [
+        "meshes/collision/Joint0_mount_L_0.obj",
+        "meshes/collision/Joint0_mount_L_1.obj",
+        "meshes/collision/Joint0_mount_L_10.obj",
+        "meshes/collision/Joint0_mount_L_11.obj",
+        "meshes/collision/Joint0_mount_L_2.obj",
+        "meshes/collision/Joint0_mount_L_3.obj",
+        "meshes/collision/Joint0_mount_L_4.obj",
+        "meshes/collision/Joint0_mount_L_5.obj",
+        "meshes/collision/Joint0_mount_L_6.obj",
+        "meshes/collision/Joint0_mount_L_7.obj",
+        "meshes/collision/Joint0_mount_L_8.obj",
+        "meshes/collision/Joint0_mount_L_9.obj",
+        "meshes/collision/Joint0_mount_R_0.obj",
+        "meshes/collision/Joint0_mount_R_1.obj",
+        "meshes/collision/Joint0_mount_R_10.obj",
+        "meshes/collision/Joint0_mount_R_11.obj",
+        "meshes/collision/Joint0_mount_R_2.obj",
+        "meshes/collision/Joint0_mount_R_3.obj",
+        "meshes/collision/Joint0_mount_R_4.obj",
+        "meshes/collision/Joint0_mount_R_5.obj",
+        "meshes/collision/Joint0_mount_R_6.obj",
+        "meshes/collision/Joint0_mount_R_7.obj",
+        "meshes/collision/Joint0_mount_R_8.obj",
+        "meshes/collision/Joint0_mount_R_9.obj",
+        "meshes/collision/base_0.obj",
+        "meshes/collision/base_1.obj",
+        "meshes/collision/base_10.obj",
+        "meshes/collision/base_11.obj",
+        "meshes/collision/base_2.obj",
+        "meshes/collision/base_3.obj",
+        "meshes/collision/base_4.obj",
+        "meshes/collision/base_5.obj",
+        "meshes/collision/base_6.obj",
+        "meshes/collision/base_7.obj",
+        "meshes/collision/base_8.obj",
+        "meshes/collision/base_9.obj",
+        "meshes/collision/body_0.obj",
+        "meshes/collision/body_1.obj",
+        "meshes/collision/body_2.obj",
+        "meshes/collision/body_3.obj",
+        "meshes/collision/joint0_motor_case_L_0.obj",
+        "meshes/collision/joint0_motor_case_R_0.obj",
+        "meshes/collision/joint0_motor_mount_L_0.obj",
+        "meshes/collision/joint0_motor_mount_L_1.obj",
+        "meshes/collision/joint0_motor_mount_L_10.obj",
+        "meshes/collision/joint0_motor_mount_L_11.obj",
+        "meshes/collision/joint0_motor_mount_L_2.obj",
+        "meshes/collision/joint0_motor_mount_L_3.obj",
+        "meshes/collision/joint0_motor_mount_L_4.obj",
+        "meshes/collision/joint0_motor_mount_L_5.obj",
+        "meshes/collision/joint0_motor_mount_L_6.obj",
+        "meshes/collision/joint0_motor_mount_L_7.obj",
+        "meshes/collision/joint0_motor_mount_L_8.obj",
+        "meshes/collision/joint0_motor_mount_L_9.obj",
+        "meshes/collision/joint0_motor_mount_R_0.obj",
+        "meshes/collision/joint0_motor_mount_R_1.obj",
+        "meshes/collision/joint0_motor_mount_R_10.obj",
+        "meshes/collision/joint0_motor_mount_R_11.obj",
+        "meshes/collision/joint0_motor_mount_R_2.obj",
+        "meshes/collision/joint0_motor_mount_R_3.obj",
+        "meshes/collision/joint0_motor_mount_R_4.obj",
+        "meshes/collision/joint0_motor_mount_R_5.obj",
+        "meshes/collision/joint0_motor_mount_R_6.obj",
+        "meshes/collision/joint0_motor_mount_R_7.obj",
+        "meshes/collision/joint0_motor_mount_R_8.obj",
+        "meshes/collision/joint0_motor_mount_R_9.obj"
+      ],
+      "bodies": [
+        "base",
+        "body",
+        "Joint0_mount_R",
+        "joint0_motor_mount_R",
+        "Joint0_mount_L",
+        "joint0_motor_mount_L",
+        "joint0_motor_case_R",
+        "joint0_motor_case_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_1",
+      "origin_m": [
+        0.2399078549440818,
+        -0.0015476469329689913,
+        0.37131249159276963
+      ],
+      "mass_kg": 0.30933879814119597,
+      "com_m": [
+        0.006600140573917723,
+        5.227752730544832e-05,
+        -0.039196884353177974
+      ],
+      "inertia": [
+        [
+          7.557021974953504e-05,
+          -1.0402339242854904e-07,
+          -1.2084761318611331e-05
+        ],
+        [
+          -1.0402339242854904e-07,
+          0.00012702875539507413,
+          -6.124176628495505e-08
+        ],
+        [
+          -1.2084761318611331e-05,
+          -6.124176628495505e-08,
+          8.495522788760923e-05
+        ]
+      ],
+      "visual": "meshes/visual/r_link_1.stl",
+      "collision": [
+        "meshes/collision/joint0_horn_drive_R_0.obj",
+        "meshes/collision/joint0_horn_opposite_R_0.obj",
+        "meshes/collision/joint1_R_0.obj",
+        "meshes/collision/joint1_R_1.obj",
+        "meshes/collision/joint1_R_10.obj",
+        "meshes/collision/joint1_R_11.obj",
+        "meshes/collision/joint1_R_2.obj",
+        "meshes/collision/joint1_R_3.obj",
+        "meshes/collision/joint1_R_4.obj",
+        "meshes/collision/joint1_R_5.obj",
+        "meshes/collision/joint1_R_6.obj",
+        "meshes/collision/joint1_R_7.obj",
+        "meshes/collision/joint1_R_8.obj",
+        "meshes/collision/joint1_R_9.obj",
+        "meshes/collision/joint1_motor_case_R_0.obj"
+      ],
+      "bodies": [
+        "joint1_R",
+        "joint0_horn_drive_R",
+        "joint0_horn_opposite_R",
+        "joint1_motor_case_R"
+      ],
+      "display_transform_cm": [
+        0.9999997910808176,
+        0.00064596068649933,
+        -2.393976708581185e-05,
+        0.00099389749928916,
+        -0.0006459606864993308,
+        0.9972565654860406,
+        -0.07401976310268735,
+        2.7635187839430375,
+        -2.3939767085797218e-05,
+        0.07401976310268733,
+        0.9972567744052228,
+        0.11388937281119327,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_2",
+      "origin_m": [
+        0.25744954407082343,
+        -0.0015476469329694044,
+        0.31090711303050184
+      ],
+      "mass_kg": 0.3184424215427711,
+      "com_m": [
+        0.0002621248319339964,
+        -0.003578158219282467,
+        -0.04263708775554331
+      ],
+      "inertia": [
+        [
+          0.00010913955037981232,
+          8.216018294919742e-08,
+          -2.2978312922902755e-07
+        ],
+        [
+          8.216018294919742e-08,
+          0.00012361585783043916,
+          -5.36142350589415e-07
+        ],
+        [
+          -2.2978312922902755e-07,
+          -5.36142350589415e-07,
+          5.496338615277804e-05
+        ]
+      ],
+      "visual": "meshes/visual/r_link_2.stl",
+      "collision": [
+        "meshes/collision/joint1_horn_drive_R_0.obj",
+        "meshes/collision/joint2_holder_R_0.obj",
+        "meshes/collision/joint2_holder_R_1.obj",
+        "meshes/collision/joint2_holder_R_10.obj",
+        "meshes/collision/joint2_holder_R_11.obj",
+        "meshes/collision/joint2_holder_R_2.obj",
+        "meshes/collision/joint2_holder_R_3.obj",
+        "meshes/collision/joint2_holder_R_4.obj",
+        "meshes/collision/joint2_holder_R_5.obj",
+        "meshes/collision/joint2_holder_R_6.obj",
+        "meshes/collision/joint2_holder_R_7.obj",
+        "meshes/collision/joint2_holder_R_8.obj",
+        "meshes/collision/joint2_holder_R_9.obj",
+        "meshes/collision/joint2_motor_case_R_0.obj",
+        "meshes/collision/joint2_new_R_0.obj",
+        "meshes/collision/joint2_new_R_1.obj",
+        "meshes/collision/joint2_new_R_10.obj",
+        "meshes/collision/joint2_new_R_11.obj",
+        "meshes/collision/joint2_new_R_2.obj",
+        "meshes/collision/joint2_new_R_3.obj",
+        "meshes/collision/joint2_new_R_4.obj",
+        "meshes/collision/joint2_new_R_5.obj",
+        "meshes/collision/joint2_new_R_6.obj",
+        "meshes/collision/joint2_new_R_7.obj",
+        "meshes/collision/joint2_new_R_8.obj",
+        "meshes/collision/joint2_new_R_9.obj"
+      ],
+      "bodies": [
+        "joint2_new_R",
+        "joint2_holder_R",
+        "joint2_motor_case_R",
+        "joint1_horn_drive_R"
+      ],
+      "display_transform_cm": [
+        0.999942396142251,
+        -0.01073330554453661,
+        -2.3438889045206287e-05,
+        0.0006948462731399774,
+        0.010702045561348805,
+        0.9971919927234504,
+        -0.07411879565290228,
+        2.47443387932544,
+        0.0008189127528098833,
+        0.07411427528028246,
+        0.9972494189427147,
+        0.09243348682411001,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_3",
+      "origin_m": [
+        0.27546856065681485,
+        -0.004876940569886781,
+        0.25052048907969515
+      ],
+      "mass_kg": 0.4018066549169879,
+      "com_m": [
+        -0.016045230243640463,
+        -0.0031410824396903144,
+        -0.09865731249878523
+      ],
+      "inertia": [
+        [
+          0.0006124406916897685,
+          2.310654672083197e-07,
+          5.68730775233478e-06
+        ],
+        [
+          2.310654672083197e-07,
+          0.0006590372512425072,
+          -2.7467007281305157e-05
+        ],
+        [
+          5.68730775233478e-06,
+          -2.7467007281305157e-05,
+          9.383229773438084e-05
+        ]
+      ],
+      "visual": "meshes/visual/r_link_3.stl",
+      "collision": [
+        "meshes/collision/joint2_horn_drive_R_0.obj",
+        "meshes/collision/joint2_horn_opposite_R_0.obj",
+        "meshes/collision/joint3_holder_R_0.obj",
+        "meshes/collision/joint3_holder_R_1.obj",
+        "meshes/collision/joint3_holder_R_10.obj",
+        "meshes/collision/joint3_holder_R_11.obj",
+        "meshes/collision/joint3_holder_R_2.obj",
+        "meshes/collision/joint3_holder_R_3.obj",
+        "meshes/collision/joint3_holder_R_4.obj",
+        "meshes/collision/joint3_holder_R_5.obj",
+        "meshes/collision/joint3_holder_R_6.obj",
+        "meshes/collision/joint3_holder_R_7.obj",
+        "meshes/collision/joint3_holder_R_8.obj",
+        "meshes/collision/joint3_holder_R_9.obj",
+        "meshes/collision/joint3_motor_case_R_0.obj",
+        "meshes/collision/joint3_under_arm_R_0.obj",
+        "meshes/collision/joint3_under_arm_R_1.obj",
+        "meshes/collision/joint3_under_arm_R_10.obj",
+        "meshes/collision/joint3_under_arm_R_11.obj",
+        "meshes/collision/joint3_under_arm_R_2.obj",
+        "meshes/collision/joint3_under_arm_R_3.obj",
+        "meshes/collision/joint3_under_arm_R_4.obj",
+        "meshes/collision/joint3_under_arm_R_5.obj",
+        "meshes/collision/joint3_under_arm_R_6.obj",
+        "meshes/collision/joint3_under_arm_R_7.obj",
+        "meshes/collision/joint3_under_arm_R_8.obj",
+        "meshes/collision/joint3_under_arm_R_9.obj"
+      ],
+      "bodies": [
+        "joint3_under_arm_R",
+        "joint3_holder_R",
+        "joint2_horn_drive_R",
+        "joint2_horn_opposite_R",
+        "joint3_motor_case_R"
+      ],
+      "display_transform_cm": [
+        0.9999421050710151,
+        -0.010760409282938,
+        9.914576000934802e-06,
+        -0.00014592659913956023,
+        0.010729050640086188,
+        0.9969568687899119,
+        -0.07721327117201154,
+        2.5510982578126136,
+        0.0008209619952401065,
+        0.07720890728914831,
+        0.9970145990189034,
+        0.0997689904930173,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_4",
+      "origin_m": [
+        0.24189226479002252,
+        -0.009616386074358375,
+        0.11675263226310847
+      ],
+      "mass_kg": 0.3093388666229555,
+      "com_m": [
+        0.006094835842251706,
+        0.03913784654319892,
+        -8.890003102279831e-07
+      ],
+      "inertia": [
+        [
+          7.578901978370651e-05,
+          1.241808843410264e-05,
+          3.483402118472506e-07
+        ],
+        [
+          1.241808843410264e-05,
+          8.474828932234987e-05,
+          -4.606215002088063e-08
+        ],
+        [
+          3.483402118472506e-07,
+          -4.606215002088063e-08,
+          0.00012703768902693965
+        ]
+      ],
+      "visual": "meshes/visual/r_link_4.stl",
+      "collision": [
+        "meshes/collision/joint3_horn_drive_R_0.obj",
+        "meshes/collision/joint3_horn_opposite_R_0.obj",
+        "meshes/collision/joint4_R_0.obj",
+        "meshes/collision/joint4_R_1.obj",
+        "meshes/collision/joint4_R_10.obj",
+        "meshes/collision/joint4_R_11.obj",
+        "meshes/collision/joint4_R_2.obj",
+        "meshes/collision/joint4_R_3.obj",
+        "meshes/collision/joint4_R_4.obj",
+        "meshes/collision/joint4_R_5.obj",
+        "meshes/collision/joint4_R_6.obj",
+        "meshes/collision/joint4_R_7.obj",
+        "meshes/collision/joint4_R_8.obj",
+        "meshes/collision/joint4_R_9.obj",
+        "meshes/collision/joint4_motor_case_R_0.obj"
+      ],
+      "bodies": [
+        "joint4_R",
+        "joint3_horn_drive_R",
+        "joint3_horn_opposite_R",
+        "joint4_motor_case_R"
+      ],
+      "display_transform_cm": [
+        0.9999421050710151,
+        -0.010760409282938,
+        9.914576000934802e-06,
+        -0.00014592659913956023,
+        0.010729050640086188,
+        0.9969568687899119,
+        -0.07721327117201154,
+        2.5510982578126136,
+        0.0008209619952401065,
+        0.07720890728914831,
+        0.9970145990189034,
+        0.0997689904930173,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_5",
+      "origin_m": [
+        0.2591097600488855,
+        0.05063361426332211,
+        0.11660237745829483
+      ],
+      "mass_kg": 0.3184425294294969,
+      "com_m": [
+        0.00018729409517803663,
+        0.04364852822329697,
+        -0.003207655167731166
+      ],
+      "inertia": [
+        [
+          0.0001127884905600049,
+          7.65142675498813e-07,
+          3.7818664402888835e-07
+        ],
+        [
+          7.65142675498813e-07,
+          5.504938611261556e-05,
+          -1.9398421361631682e-07
+        ],
+        [
+          3.7818664402888835e-07,
+          -1.9398421361631682e-07,
+          0.00012719622253340446
+        ]
+      ],
+      "visual": "meshes/visual/r_link_5.stl",
+      "collision": [
+        "meshes/collision/joint4_horn_drive_R_0.obj",
+        "meshes/collision/joint5_holder_R_0.obj",
+        "meshes/collision/joint5_holder_R_1.obj",
+        "meshes/collision/joint5_holder_R_10.obj",
+        "meshes/collision/joint5_holder_R_11.obj",
+        "meshes/collision/joint5_holder_R_2.obj",
+        "meshes/collision/joint5_holder_R_3.obj",
+        "meshes/collision/joint5_holder_R_4.obj",
+        "meshes/collision/joint5_holder_R_5.obj",
+        "meshes/collision/joint5_holder_R_6.obj",
+        "meshes/collision/joint5_holder_R_7.obj",
+        "meshes/collision/joint5_holder_R_8.obj",
+        "meshes/collision/joint5_holder_R_9.obj",
+        "meshes/collision/joint5_motor_case_R_0.obj",
+        "meshes/collision/joint5_new_R_0.obj",
+        "meshes/collision/joint5_new_R_1.obj",
+        "meshes/collision/joint5_new_R_10.obj",
+        "meshes/collision/joint5_new_R_11.obj",
+        "meshes/collision/joint5_new_R_2.obj",
+        "meshes/collision/joint5_new_R_3.obj",
+        "meshes/collision/joint5_new_R_4.obj",
+        "meshes/collision/joint5_new_R_5.obj",
+        "meshes/collision/joint5_new_R_6.obj",
+        "meshes/collision/joint5_new_R_7.obj",
+        "meshes/collision/joint5_new_R_8.obj",
+        "meshes/collision/joint5_new_R_9.obj"
+      ],
+      "bodies": [
+        "joint5_new_R",
+        "joint5_holder_R",
+        "joint4_horn_drive_R",
+        "joint5_motor_case_R"
+      ],
+      "display_transform_cm": [
+        0.9999421050710151,
+        -0.010760409282938,
+        9.914576000934802e-06,
+        -0.00014592659913956023,
+        0.010729050640086188,
+        0.9969568687899119,
+        -0.07721327117201154,
+        2.5510982578126136,
+        0.0008209619952401065,
+        0.07720890728914831,
+        0.9970145990189034,
+        0.0997689904930173,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_6",
+      "origin_m": [
+        0.2768987803648172,
+        0.112442833825861,
+        0.11342213272872932
+      ],
+      "mass_kg": 0.3093387791715362,
+      "com_m": [
+        -0.008706041187670988,
+        0.03897987849407765,
+        0.00019438629713058875
+      ],
+      "inertia": [
+        [
+          7.596674131231211e-05,
+          -1.1679935831605467e-05,
+          4.72758940430959e-07
+        ],
+        [
+          -1.1679935831605467e-05,
+          8.40119023969195e-05,
+          3.087023500627367e-08
+        ],
+        [
+          4.72758940430959e-07,
+          3.087023500627367e-08,
+          0.00012647029213726582
+        ]
+      ],
+      "visual": "meshes/visual/r_link_6.stl",
+      "collision": [
+        "meshes/collision/joint5_horn_drive_R_0.obj",
+        "meshes/collision/joint5_horn_opposite_R_0.obj",
+        "meshes/collision/joint6_R_0.obj",
+        "meshes/collision/joint6_R_1.obj",
+        "meshes/collision/joint6_R_10.obj",
+        "meshes/collision/joint6_R_11.obj",
+        "meshes/collision/joint6_R_2.obj",
+        "meshes/collision/joint6_R_3.obj",
+        "meshes/collision/joint6_R_4.obj",
+        "meshes/collision/joint6_R_5.obj",
+        "meshes/collision/joint6_R_6.obj",
+        "meshes/collision/joint6_R_7.obj",
+        "meshes/collision/joint6_R_8.obj",
+        "meshes/collision/joint6_R_9.obj",
+        "meshes/collision/joint6_motor_case_R_0.obj"
+      ],
+      "bodies": [
+        "joint5_horn_drive_R",
+        "joint5_horn_opposite_R",
+        "joint6_motor_case_R",
+        "joint6_R"
+      ],
+      "display_transform_cm": [
+        0.9999421050710151,
+        -0.010760409282938,
+        9.914576000934802e-06,
+        -0.00014592659913956023,
+        0.010729050640086188,
+        0.9969568687899119,
+        -0.07721327117201154,
+        2.5510982578126136,
+        0.0008209619952401065,
+        0.07720890728914831,
+        0.9970145990189034,
+        0.0997689904930173,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_7",
+      "origin_m": [
+        0.25663741702131077,
+        0.17232716487021185,
+        0.11377644868318257
+      ],
+      "mass_kg": 0.3350908007469756,
+      "com_m": [
+        0.0024184106618765355,
+        0.025358286888343656,
+        0.0001455071287883719
+      ],
+      "inertia": [
+        [
+          8.425215369083777e-05,
+          1.4312040587029229e-05,
+          1.1415283923121855e-06
+        ],
+        [
+          1.4312040587029229e-05,
+          0.00011356172255868116,
+          -2.47427573661467e-07
+        ],
+        [
+          1.1415283923121855e-06,
+          -2.47427573661467e-07,
+          0.00013773488848816545
+        ]
+      ],
+      "visual": "meshes/visual/r_link_7.stl",
+      "collision": [
+        "meshes/collision/joint6_horn_drive_R_0.obj",
+        "meshes/collision/joint7_R_0.obj",
+        "meshes/collision/joint7_R_1.obj",
+        "meshes/collision/joint7_R_10.obj",
+        "meshes/collision/joint7_R_11.obj",
+        "meshes/collision/joint7_R_2.obj",
+        "meshes/collision/joint7_R_3.obj",
+        "meshes/collision/joint7_R_4.obj",
+        "meshes/collision/joint7_R_5.obj",
+        "meshes/collision/joint7_R_6.obj",
+        "meshes/collision/joint7_R_7.obj",
+        "meshes/collision/joint7_R_8.obj",
+        "meshes/collision/joint7_R_9.obj",
+        "meshes/collision/joint7_motor_case_R_0.obj"
+      ],
+      "bodies": [
+        "joint6_horn_drive_R",
+        "joint7_motor_case_R",
+        "joint7_R"
+      ],
+      "display_transform_cm": [
+        0.9999421050710151,
+        -0.010760409282938,
+        9.914576000934802e-06,
+        -0.00014592659913956023,
+        0.010729050640086188,
+        0.9969568687899119,
+        -0.07721327117201154,
+        2.5510982578126136,
+        0.0008209619952401065,
+        0.07720890728914831,
+        0.9970145990189034,
+        0.0997689904930173,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "r_link_8",
+      "origin_m": [
+        0.2766415135478379,
+        0.19701926160251496,
+        0.13153234358873298
+      ],
+      "mass_kg": 0.0360479390995609,
+      "com_m": [
+        -0.0012800049889077347,
+        0.021369661912853083,
+        -0.018233452357156135
+      ],
+      "inertia": [
+        [
+          2.4211781529455412e-05,
+          1.0397034854794929e-06,
+          -8.935577901734992e-08
+        ],
+        [
+          1.0397034854794929e-06,
+          7.466207131648448e-06,
+          7.431651767764343e-07
+        ],
+        [
+          -8.935577901734992e-08,
+          7.431651767764343e-07,
+          1.846013336313703e-05
+        ]
+      ],
+      "visual": "meshes/visual/r_link_8.stl",
+      "collision": [
+        "meshes/collision/joint7_horn_drive_R_0.obj",
+        "meshes/collision/joint7_horn_opposite_R_0.obj",
+        "meshes/collision/joint8_EE_R_0.obj",
+        "meshes/collision/joint8_EE_R_1.obj",
+        "meshes/collision/joint8_EE_R_10.obj",
+        "meshes/collision/joint8_EE_R_11.obj",
+        "meshes/collision/joint8_EE_R_2.obj",
+        "meshes/collision/joint8_EE_R_3.obj",
+        "meshes/collision/joint8_EE_R_4.obj",
+        "meshes/collision/joint8_EE_R_5.obj",
+        "meshes/collision/joint8_EE_R_6.obj",
+        "meshes/collision/joint8_EE_R_7.obj",
+        "meshes/collision/joint8_EE_R_8.obj",
+        "meshes/collision/joint8_EE_R_9.obj"
+      ],
+      "bodies": [
+        "joint8_EE_R",
+        "joint7_horn_drive_R",
+        "joint7_horn_opposite_R"
+      ],
+      "display_transform_cm": [
+        0.9999421050710151,
+        -0.010760409282938,
+        9.914576000934802e-06,
+        -0.00014592659913956023,
+        0.010729050640086188,
+        0.9969568687899119,
+        -0.07721327117201154,
+        2.5510982578126136,
+        0.0008209619952401065,
+        0.07720890728914831,
+        0.9970145990189034,
+        0.0997689904930173,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_1",
+      "origin_m": [
+        -0.23990785494408187,
+        -0.001547646932969009,
+        0.3713124915927699
+      ],
+      "mass_kg": 0.3093388785021015,
+      "com_m": [
+        -0.006600128210991457,
+        5.2278207887151724e-05,
+        -0.03919688000265514
+      ],
+      "inertia": [
+        [
+          7.557025329838624e-05,
+          1.0401395134262872e-07,
+          1.208464226143749e-05
+        ],
+        [
+          1.0401395134262872e-07,
+          0.00012702883122829578,
+          -6.124363880773533e-08
+        ],
+        [
+          1.208464226143749e-05,
+          -6.124363880773533e-08,
+          8.495528246955583e-05
+        ]
+      ],
+      "visual": "meshes/visual/l_link_1.stl",
+      "collision": [
+        "meshes/collision/joint0_horn_drive_L_0.obj",
+        "meshes/collision/joint0_horn_opposite_L_0.obj",
+        "meshes/collision/joint1_L_0.obj",
+        "meshes/collision/joint1_L_1.obj",
+        "meshes/collision/joint1_L_10.obj",
+        "meshes/collision/joint1_L_11.obj",
+        "meshes/collision/joint1_L_2.obj",
+        "meshes/collision/joint1_L_3.obj",
+        "meshes/collision/joint1_L_4.obj",
+        "meshes/collision/joint1_L_5.obj",
+        "meshes/collision/joint1_L_6.obj",
+        "meshes/collision/joint1_L_7.obj",
+        "meshes/collision/joint1_L_8.obj",
+        "meshes/collision/joint1_L_9.obj",
+        "meshes/collision/joint1_motor_case_L_0.obj"
+      ],
+      "bodies": [
+        "joint1_L",
+        "joint0_horn_drive_L",
+        "joint0_horn_opposite_L",
+        "joint1_motor_case_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_2",
+      "origin_m": [
+        -0.2574495440708233,
+        -0.0015476469329693916,
+        0.3109071130305017
+      ],
+      "mass_kg": 0.3184423943997431,
+      "com_m": [
+        -0.0002621253123983869,
+        -0.003578157520652548,
+        -0.04263708763688112
+      ],
+      "inertia": [
+        [
+          0.00010913954297996076,
+          -8.216451902371986e-08,
+          2.2978950723132052e-07
+        ],
+        [
+          -8.216451902371986e-08,
+          0.00012361584275927262,
+          -5.361438259709182e-07
+        ],
+        [
+          2.2978950723132052e-07,
+          -5.361438259709182e-07,
+          5.4963373022708095e-05
+        ]
+      ],
+      "visual": "meshes/visual/l_link_2.stl",
+      "collision": [
+        "meshes/collision/joint1_horn_drive_L_0.obj",
+        "meshes/collision/joint2_holder_L_0.obj",
+        "meshes/collision/joint2_holder_L_1.obj",
+        "meshes/collision/joint2_holder_L_10.obj",
+        "meshes/collision/joint2_holder_L_11.obj",
+        "meshes/collision/joint2_holder_L_2.obj",
+        "meshes/collision/joint2_holder_L_3.obj",
+        "meshes/collision/joint2_holder_L_4.obj",
+        "meshes/collision/joint2_holder_L_5.obj",
+        "meshes/collision/joint2_holder_L_6.obj",
+        "meshes/collision/joint2_holder_L_7.obj",
+        "meshes/collision/joint2_holder_L_8.obj",
+        "meshes/collision/joint2_holder_L_9.obj",
+        "meshes/collision/joint2_motor_case_L_0.obj",
+        "meshes/collision/joint2_new_L_0.obj",
+        "meshes/collision/joint2_new_L_1.obj",
+        "meshes/collision/joint2_new_L_10.obj",
+        "meshes/collision/joint2_new_L_11.obj",
+        "meshes/collision/joint2_new_L_2.obj",
+        "meshes/collision/joint2_new_L_3.obj",
+        "meshes/collision/joint2_new_L_4.obj",
+        "meshes/collision/joint2_new_L_5.obj",
+        "meshes/collision/joint2_new_L_6.obj",
+        "meshes/collision/joint2_new_L_7.obj",
+        "meshes/collision/joint2_new_L_8.obj",
+        "meshes/collision/joint2_new_L_9.obj"
+      ],
+      "bodies": [
+        "joint2_new_L",
+        "joint2_holder_L",
+        "joint1_horn_drive_L",
+        "joint2_motor_case_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_3",
+      "origin_m": [
+        -0.2754685606568148,
+        -0.004876940569886763,
+        0.25052048907969515
+      ],
+      "mass_kg": 0.4018065707499335,
+      "com_m": [
+        0.01604522614201026,
+        -0.0031410834250737334,
+        -0.09865732697582175
+      ],
+      "inertia": [
+        [
+          0.0006124400475977457,
+          -2.3106309455080219e-07,
+          -5.687121600213285e-06
+        ],
+        [
+          -2.3106309455080219e-07,
+          0.0006590365449996444,
+          -2.7466987543371918e-05
+        ],
+        [
+          -5.687121600213285e-06,
+          -2.7466987543371918e-05,
+          9.383222781651421e-05
+        ]
+      ],
+      "visual": "meshes/visual/l_link_3.stl",
+      "collision": [
+        "meshes/collision/joint2_horn_drive_L_0.obj",
+        "meshes/collision/joint2_horn_opposite_L_0.obj",
+        "meshes/collision/joint3_holder_L_0.obj",
+        "meshes/collision/joint3_holder_L_1.obj",
+        "meshes/collision/joint3_holder_L_10.obj",
+        "meshes/collision/joint3_holder_L_11.obj",
+        "meshes/collision/joint3_holder_L_2.obj",
+        "meshes/collision/joint3_holder_L_3.obj",
+        "meshes/collision/joint3_holder_L_4.obj",
+        "meshes/collision/joint3_holder_L_5.obj",
+        "meshes/collision/joint3_holder_L_6.obj",
+        "meshes/collision/joint3_holder_L_7.obj",
+        "meshes/collision/joint3_holder_L_8.obj",
+        "meshes/collision/joint3_holder_L_9.obj",
+        "meshes/collision/joint3_motor_case_L_0.obj",
+        "meshes/collision/joint3_under_arm_L_0.obj",
+        "meshes/collision/joint3_under_arm_L_1.obj",
+        "meshes/collision/joint3_under_arm_L_10.obj",
+        "meshes/collision/joint3_under_arm_L_11.obj",
+        "meshes/collision/joint3_under_arm_L_2.obj",
+        "meshes/collision/joint3_under_arm_L_3.obj",
+        "meshes/collision/joint3_under_arm_L_4.obj",
+        "meshes/collision/joint3_under_arm_L_5.obj",
+        "meshes/collision/joint3_under_arm_L_6.obj",
+        "meshes/collision/joint3_under_arm_L_7.obj",
+        "meshes/collision/joint3_under_arm_L_8.obj",
+        "meshes/collision/joint3_under_arm_L_9.obj"
+      ],
+      "bodies": [
+        "joint3_under_arm_L",
+        "joint3_holder_L",
+        "joint2_horn_drive_L",
+        "joint2_horn_opposite_L",
+        "joint3_motor_case_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_4",
+      "origin_m": [
+        -0.24189226479002243,
+        -0.009616386074358383,
+        0.11675263226310843
+      ],
+      "mass_kg": 0.30933887238954577,
+      "com_m": [
+        -0.006094827941621667,
+        0.039137850357483,
+        -8.888148335800539e-07
+      ],
+      "inertia": [
+        [
+          7.578895307108757e-05,
+          -1.2418024203056377e-05,
+          -3.4833098519135297e-07
+        ],
+        [
+          -1.2418024203056377e-05,
+          8.474833871490242e-05,
+          -4.606789304716086e-08
+        ],
+        [
+          -3.4833098519135297e-07,
+          -4.606789304716086e-08,
+          0.0001270376509637898
+        ]
+      ],
+      "visual": "meshes/visual/l_link_4.stl",
+      "collision": [
+        "meshes/collision/joint3_horn_drive_L_0.obj",
+        "meshes/collision/joint3_horn_opposite_L_0.obj",
+        "meshes/collision/joint4_L_0.obj",
+        "meshes/collision/joint4_L_1.obj",
+        "meshes/collision/joint4_L_10.obj",
+        "meshes/collision/joint4_L_11.obj",
+        "meshes/collision/joint4_L_2.obj",
+        "meshes/collision/joint4_L_3.obj",
+        "meshes/collision/joint4_L_4.obj",
+        "meshes/collision/joint4_L_5.obj",
+        "meshes/collision/joint4_L_6.obj",
+        "meshes/collision/joint4_L_7.obj",
+        "meshes/collision/joint4_L_8.obj",
+        "meshes/collision/joint4_L_9.obj",
+        "meshes/collision/joint4_motor_case_L_0.obj"
+      ],
+      "bodies": [
+        "joint4_L",
+        "joint3_horn_drive_L",
+        "joint3_horn_opposite_L",
+        "joint4_motor_case_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_5",
+      "origin_m": [
+        -0.2591097600488855,
+        0.05063361426332213,
+        0.11660237745829484
+      ],
+      "mass_kg": 0.31844249823067866,
+      "com_m": [
+        -0.000187294106370417,
+        0.0436486036633145,
+        -0.0032076544415694935
+      ],
+      "inertia": [
+        [
+          0.00011278673934338266,
+          -7.646540420612816e-07,
+          -3.781901913683938e-07
+        ],
+        [
+          -7.646540420612816e-07,
+          5.504937254179748e-05,
+          -1.9357727490572352e-07
+        ],
+        [
+          -3.781901913683938e-07,
+          -1.9357727490572352e-07,
+          0.00012719446395363307
+        ]
+      ],
+      "visual": "meshes/visual/l_link_5.stl",
+      "collision": [
+        "meshes/collision/joint4_horn_drive_L_0.obj",
+        "meshes/collision/joint5_holder_L_0.obj",
+        "meshes/collision/joint5_holder_L_1.obj",
+        "meshes/collision/joint5_holder_L_10.obj",
+        "meshes/collision/joint5_holder_L_11.obj",
+        "meshes/collision/joint5_holder_L_2.obj",
+        "meshes/collision/joint5_holder_L_3.obj",
+        "meshes/collision/joint5_holder_L_4.obj",
+        "meshes/collision/joint5_holder_L_5.obj",
+        "meshes/collision/joint5_holder_L_6.obj",
+        "meshes/collision/joint5_holder_L_7.obj",
+        "meshes/collision/joint5_holder_L_8.obj",
+        "meshes/collision/joint5_holder_L_9.obj",
+        "meshes/collision/joint5_motor_case_L_0.obj",
+        "meshes/collision/joint5_new_L_0.obj",
+        "meshes/collision/joint5_new_L_1.obj",
+        "meshes/collision/joint5_new_L_10.obj",
+        "meshes/collision/joint5_new_L_11.obj",
+        "meshes/collision/joint5_new_L_2.obj",
+        "meshes/collision/joint5_new_L_3.obj",
+        "meshes/collision/joint5_new_L_4.obj",
+        "meshes/collision/joint5_new_L_5.obj",
+        "meshes/collision/joint5_new_L_6.obj",
+        "meshes/collision/joint5_new_L_7.obj",
+        "meshes/collision/joint5_new_L_8.obj",
+        "meshes/collision/joint5_new_L_9.obj"
+      ],
+      "bodies": [
+        "joint5_new_L",
+        "joint5_holder_L",
+        "joint4_horn_drive_L",
+        "joint5_motor_case_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_6",
+      "origin_m": [
+        -0.2768987803648172,
+        0.11244283382586097,
+        0.11342213272872932
+      ],
+      "mass_kg": 0.30933880955021625,
+      "com_m": [
+        0.008706030368123063,
+        0.038979880271093906,
+        0.00019438520294551287
+      ],
+      "inertia": [
+        [
+          7.596667966467373e-05,
+          1.1679846467917143e-05,
+          -4.7276550193056655e-07
+        ],
+        [
+          1.1679846467917143e-05,
+          8.401191261345198e-05,
+          3.0868008592775664e-08
+        ],
+        [
+          -4.7276550193056655e-07,
+          3.0868008592775664e-08,
+          0.00012647023103374774
+        ]
+      ],
+      "visual": "meshes/visual/l_link_6.stl",
+      "collision": [
+        "meshes/collision/joint5_horn_drive_L_0.obj",
+        "meshes/collision/joint5_horn_opposite_L_0.obj",
+        "meshes/collision/joint6_L_0.obj",
+        "meshes/collision/joint6_L_1.obj",
+        "meshes/collision/joint6_L_10.obj",
+        "meshes/collision/joint6_L_11.obj",
+        "meshes/collision/joint6_L_2.obj",
+        "meshes/collision/joint6_L_3.obj",
+        "meshes/collision/joint6_L_4.obj",
+        "meshes/collision/joint6_L_5.obj",
+        "meshes/collision/joint6_L_6.obj",
+        "meshes/collision/joint6_L_7.obj",
+        "meshes/collision/joint6_L_8.obj",
+        "meshes/collision/joint6_L_9.obj",
+        "meshes/collision/joint6_motor_case_L_0.obj"
+      ],
+      "bodies": [
+        "joint5_horn_drive_L",
+        "joint5_horn_opposite_L",
+        "joint6_motor_case_L",
+        "joint6_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_7",
+      "origin_m": [
+        -0.25663741702131077,
+        0.17232716487021185,
+        0.11377644868318262
+      ],
+      "mass_kg": 0.33509079344137466,
+      "com_m": [
+        -0.002418410222756906,
+        0.02535828696652817,
+        0.00014550645676271456
+      ],
+      "inertia": [
+        [
+          8.425215127914887e-05,
+          -1.43120408823659e-05,
+          -1.1415327024200117e-06
+        ],
+        [
+          -1.43120408823659e-05,
+          0.00011356171715264443,
+          -2.47427296609648e-07
+        ],
+        [
+          -1.1415327024200117e-06,
+          -2.47427296609648e-07,
+          0.00013773488492625774
+        ]
+      ],
+      "visual": "meshes/visual/l_link_7.stl",
+      "collision": [
+        "meshes/collision/joint6_horn_drive_L_0.obj",
+        "meshes/collision/joint7_L_0.obj",
+        "meshes/collision/joint7_L_1.obj",
+        "meshes/collision/joint7_L_10.obj",
+        "meshes/collision/joint7_L_11.obj",
+        "meshes/collision/joint7_L_2.obj",
+        "meshes/collision/joint7_L_3.obj",
+        "meshes/collision/joint7_L_4.obj",
+        "meshes/collision/joint7_L_5.obj",
+        "meshes/collision/joint7_L_6.obj",
+        "meshes/collision/joint7_L_7.obj",
+        "meshes/collision/joint7_L_8.obj",
+        "meshes/collision/joint7_L_9.obj",
+        "meshes/collision/joint7_motor_case_L_0.obj"
+      ],
+      "bodies": [
+        "joint6_horn_drive_L",
+        "joint7_motor_case_L",
+        "joint7_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "name": "l_link_8",
+      "origin_m": [
+        -0.2766415135478379,
+        0.19701926160251507,
+        0.13153234358873303
+      ],
+      "mass_kg": 0.036047940040737705,
+      "com_m": [
+        0.0012800049598616914,
+        0.02136966124557116,
+        -0.018233452384103663
+      ],
+      "inertia": [
+        [
+          2.421178266404176e-05,
+          -1.039703512270996e-06,
+          8.935578249481997e-08
+        ],
+        [
+          -1.039703512270996e-06,
+          7.4662076693693576e-06,
+          7.431651516890802e-07
+        ],
+        [
+          8.935578249481997e-08,
+          7.431651516890802e-07,
+          1.8460134009514947e-05
+        ]
+      ],
+      "visual": "meshes/visual/l_link_8.stl",
+      "collision": [
+        "meshes/collision/joint7_horn_drive_L_0.obj",
+        "meshes/collision/joint7_horn_opposite_L_0.obj",
+        "meshes/collision/joint8_EE_L_0.obj",
+        "meshes/collision/joint8_EE_L_1.obj",
+        "meshes/collision/joint8_EE_L_10.obj",
+        "meshes/collision/joint8_EE_L_11.obj",
+        "meshes/collision/joint8_EE_L_2.obj",
+        "meshes/collision/joint8_EE_L_3.obj",
+        "meshes/collision/joint8_EE_L_4.obj",
+        "meshes/collision/joint8_EE_L_5.obj",
+        "meshes/collision/joint8_EE_L_6.obj",
+        "meshes/collision/joint8_EE_L_7.obj",
+        "meshes/collision/joint8_EE_L_8.obj",
+        "meshes/collision/joint8_EE_L_9.obj"
+      ],
+      "bodies": [
+        "joint8_EE_L",
+        "joint7_horn_drive_L",
+        "joint7_horn_opposite_L"
+      ],
+      "display_transform_cm": [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "joints": [
+    {
+      "name": "joint0_R",
+      "parent": "base_link",
+      "child": "r_link_1",
+      "origin_m": [
+        0.2399078549440818,
+        -0.0015476469329689913,
+        0.37131249159276963
+      ],
+      "axis": [
+        -0.9999619230641713,
+        1.3877787807814435e-16,
+        0.008726535498374
+      ],
+      "angle_rad": 6.209094959117786,
+      "health": 0
+    },
+    {
+      "name": "joint1_R",
+      "parent": "r_link_1",
+      "child": "r_link_2",
+      "origin_m": [
+        0.25744954407082343,
+        -0.0015476469329694044,
+        0.31090711303050184
+      ],
+      "axis": [
+        -0.008726535498482879,
+        -1.5196204263398693e-16,
+        -0.9999619230641704
+      ],
+      "angle_rad": 6.271805403853446,
+      "health": 0
+    },
+    {
+      "name": "joint2_R",
+      "parent": "r_link_2",
+      "child": "r_link_3",
+      "origin_m": [
+        0.27546856065681485,
+        -0.004876940569886781,
+        0.25052048907969515
+      ],
+      "axis": [
+        0.9999619230641713,
+        -1.9254257912602137e-16,
+        0.008726535498373671
+      ],
+      "angle_rad": 0.0031036708716285586,
+      "health": 0
+    },
+    {
+      "name": "joint3_R",
+      "parent": "r_link_3",
+      "child": "r_link_4",
+      "origin_m": [
+        0.24189226479002252,
+        -0.009616386074358375,
+        0.11675263226310847
+      ],
+      "axis": [
+        -0.9999619230641713,
+        3.150025959609983e-16,
+        0.008726535498373664
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint4_R",
+      "parent": "r_link_4",
+      "child": "r_link_5",
+      "origin_m": [
+        0.2591097600488855,
+        0.05063361426332211,
+        0.11660237745829483
+      ],
+      "axis": [
+        -1.0932757893314984e-13,
+        1.0,
+        6.796569084484056e-16
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint5_R",
+      "parent": "r_link_5",
+      "child": "r_link_6",
+      "origin_m": [
+        0.2768987803648172,
+        0.112442833825861,
+        0.11342213272872932
+      ],
+      "axis": [
+        0.9998474153410569,
+        -1.7365682766120846e-05,
+        -0.01746842105747304
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint6_R",
+      "parent": "r_link_6",
+      "child": "r_link_7",
+      "origin_m": [
+        0.25663741702131077,
+        0.17232716487021185,
+        0.11377644868318257
+      ],
+      "axis": [
+        -0.01741502268036793,
+        0.9998483006992956,
+        0.0003042593848015456
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint7_R",
+      "parent": "r_link_7",
+      "child": "r_link_8",
+      "origin_m": [
+        0.2766415135478379,
+        0.19701926160251496,
+        0.13153234358873298
+      ],
+      "axis": [
+        0.008726535498373952,
+        5.2382117623690926e-17,
+        0.9999619230641713
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint0_L",
+      "parent": "base_link",
+      "child": "l_link_1",
+      "origin_m": [
+        -0.23990785494408187,
+        -0.001547646932969009,
+        0.3713124915927699
+      ],
+      "axis": [
+        -0.9999619230641713,
+        -7.008256229104441e-17,
+        -0.008726535498373676
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint1_L",
+      "parent": "l_link_1",
+      "child": "l_link_2",
+      "origin_m": [
+        -0.2574495440708233,
+        -0.0015476469329693916,
+        0.3109071130305017
+      ],
+      "axis": [
+        -0.008726535498482879,
+        1.5196204263398697e-16,
+        0.9999619230641704
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint2_L",
+      "parent": "l_link_2",
+      "child": "l_link_3",
+      "origin_m": [
+        -0.2754685606568148,
+        -0.004876940569886763,
+        0.25052048907969515
+      ],
+      "axis": [
+        0.9999619230641713,
+        1.9254257912602137e-16,
+        -0.008726535498373671
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint3_L",
+      "parent": "l_link_3",
+      "child": "l_link_4",
+      "origin_m": [
+        -0.24189226479002243,
+        -0.009616386074358383,
+        0.11675263226310843
+      ],
+      "axis": [
+        -0.9999619230641713,
+        -3.150025959609983e-16,
+        -0.008726535498373664
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint4_L",
+      "parent": "l_link_4",
+      "child": "l_link_5",
+      "origin_m": [
+        -0.2591097600488855,
+        0.05063361426332213,
+        0.11660237745829484
+      ],
+      "axis": [
+        -1.0932757893314986e-13,
+        -1.0,
+        -6.796569084484057e-16
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint5_L",
+      "parent": "l_link_5",
+      "child": "l_link_6",
+      "origin_m": [
+        -0.2768987803648172,
+        0.11244283382586097,
+        0.11342213272872932
+      ],
+      "axis": [
+        0.9998474153410569,
+        1.7365682766120846e-05,
+        0.017468421057473038
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint6_L",
+      "parent": "l_link_6",
+      "child": "l_link_7",
+      "origin_m": [
+        -0.25663741702131077,
+        0.17232716487021185,
+        0.11377644868318262
+      ],
+      "axis": [
+        -0.017415022680367927,
+        -0.9998483006992955,
+        -0.00030425938480154553
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    },
+    {
+      "name": "joint7_L",
+      "parent": "l_link_7",
+      "child": "l_link_8",
+      "origin_m": [
+        -0.2766415135478379,
+        0.19701926160251507,
+        0.13153234358873303
+      ],
+      "axis": [
+        0.008726535498373952,
+        -5.238211762369095e-17,
+        -0.9999619230641713
+      ],
+      "angle_rad": 0.0,
+      "health": 0
+    }
+  ],
+  "initial_positions": {
+    "joint0_R": -0.07409034806180007,
+    "joint1_R": -0.011379903326140162,
+    "joint2_R": 0.003103670871628558,
+    "joint3_R": 0.0,
+    "joint4_R": 0.0,
+    "joint5_R": 0.0,
+    "joint6_R": 0.0,
+    "joint7_R": 0.0,
+    "joint0_L": 0.0,
+    "joint1_L": 0.0,
+    "joint2_L": 0.0,
+    "joint3_L": 0.0,
+    "joint4_L": 0.0,
+    "joint5_L": 0.0,
+    "joint6_L": 0.0,
+    "joint7_L": 0.0
+  },
+  "physics_status": "Printed brackets use solid PLA 1240 kg/m3; frame and motor parts retain Fusion CAD density; masses and actuator parameters are provisional",
+  "provisional": {
+    "effort_Nm": 1.0,
+    "velocity_rad_s": 2.0,
+    "damping_Nm_s_rad": 0.05,
+    "kp_Nm_rad": 10.0,
+    "kd_Nm_s_rad": 0.5,
+    "joint_limits": null
+  }
+}

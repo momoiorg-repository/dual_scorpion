@@ -23,3 +23,10 @@ tests/artifacts/cameras/*.png filter=lfs diff=lfs merge=lfs -text
 # This fork already stores these assets as normal tracked files.
 tests/artifacts/** -filter -diff -merge -text
 dual_scorpion_3d_printer_parts/**/*.stl -filter -diff -merge -text
+
+# Large Isaac Sim stages in the shared simulation model bundle.
+/dual_scorpion_Full_urdf/isaac_sim/*.usd filter=lfs -diff -merge -text
+/dual_scorpion_Full_urdf/isaac_sim/*.usda filter=lfs -diff -merge -text
+
+# Keep exported mesh bytes unchanged across platforms.
+/dual_scorpion_Full_urdf/**/*.obj binary
