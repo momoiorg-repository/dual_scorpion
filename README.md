@@ -37,6 +37,8 @@ Validated seven-joint plans can also be replayed through the existing follower
 driver, with encoder-based metrics and optional comparison to externally measured
 TCP points. An optional simulated orientation-error limit can reject plans before
 connecting to the robot; physical playback has not yet been verified.
+Recorded follower feedback can also be exported separately as an evaluation
+dataset with measured read times; this export does not assume any robot cameras.
 The guide also compares these human-pose records with the reference leader-operated
 dataset and explains their different cameras, state and action semantics.
 

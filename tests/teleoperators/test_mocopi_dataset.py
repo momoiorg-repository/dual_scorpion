@@ -254,6 +254,9 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
 
 
 def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
+    import hashlib
+    import os
+    import subprocess
     from copy import deepcopy
     from types import SimpleNamespace
 
@@ -272,6 +275,7 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
             "schema": "dual_scorpion.mocopi.robot_plan.v1",
             "source": "fake",
             "fps": 30,
+            "slowdown": 1,
             "expected_frames": 4,
             "urdf_sha256": model_fingerprint(cfg),
             "joint_names": list(JOINTS),
@@ -280,7 +284,7 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
             "failures": [],
         }
         for index in range(4):
-            frame = {"time_s": index / 30, "arms": {}}
+            frame = {"time_s": index / 30, "source_frame": index, "arms": {}}
             for side, arm in simulation.arms.items():
                 joint = initial[side].copy()
                 joint[0] += 0.2 * index
@@ -403,6 +407,91 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
 
         plan_file = tmp_path / "plan.json"
         plan_file.write_text(json.dumps(plan))
+        dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
+        from telegrip.mocopi.dataset.real_dataset import export_real_dataset
+
+        timed = deepcopy(report)
+        for index, sample in enumerate(timed["frames"]):
+            sample["elapsed_s"] = index * 0.04
+        timed_file = tmp_path / "timed-feedback.json"
+        timed_file.write_text(json.dumps(timed))
+        feedback_root = tmp_path / "feedback-dataset"
+        feedback_meta = export_real_dataset([(plan_file, timed_file)], feedback_root, "local/feedback")
+        feedback = dataset_type("local/feedback", root=feedback_root)
+        assert len(feedback) == 3 and feedback.meta.fps == 30
+        assert feedback_meta["human_capture_source"] == "fake" and not feedback_meta["images_included"]
+        assert (
+            feedback_meta["episodes"][0]["report_sha256"]
+            == hashlib.sha256(timed_file.read_bytes()).hexdigest()
+        )
+        assert feedback_meta["episodes"][0]["mean_read_interval_s"] == pytest.approx(0.04)
+        assert feedback_meta["episodes"][0]["observed_read_fps"] == pytest.approx(25)
+        for index in range(len(feedback)):
+            row, current, following = feedback[index], timed["frames"][index], timed["frames"][index + 1]
+            expected = np.concatenate(
+                [current["arms"][side]["measured_joint_deg"] for side in ("right", "left")]
+            )
+            action = np.concatenate([following["arms"][side]["sent_joint_deg"] for side in ("right", "left")])
+            np.testing.assert_allclose(row["observation.state"], expected, atol=1e-5)
+            np.testing.assert_allclose(row["action"], action, atol=1e-5)
+            np.testing.assert_allclose(
+                row["observation.execution.time"], [index * 0.04, (index + 1) * 0.04, index / 30]
+            )
+            np.testing.assert_array_equal(row["observation.execution.frame"], [index, index + 1, index])
+        assert not any("images" in key or "gripper" in key for key in feedback.meta.features)
+        invalid_timing = deepcopy(timed)
+        invalid_timing["frames"][1]["elapsed_s"] = invalid_timing["frames"][0]["elapsed_s"]
+        invalid_file = tmp_path / "invalid-timing.json"
+        invalid_file.write_text(json.dumps(invalid_timing))
+        with pytest.raises(ValueError, match="increasing"):
+            export_real_dataset([(plan_file, invalid_file)], tmp_path / "bad-timing", "local/bad-timing")
+        assert not (tmp_path / "bad-timing").exists()
+        partial = deepcopy(timed)
+        partial["status"], partial["frames"] = "aborted", partial["frames"][:3]
+        partial_file = tmp_path / "partial-feedback.json"
+        partial_file.write_text(json.dumps(partial))
+        partial_meta = export_real_dataset(
+            [(plan_file, timed_file), (plan_file, partial_file)], tmp_path / "partial", "local/partial"
+        )
+        assert len(partial_meta["episodes"]) == 2
+        assert partial_meta["episodes"][1]["report_status"] == "aborted"
+        assert partial_meta["episodes"][1]["frames"] == 2
+        assert dataset_type("local/partial", root=tmp_path / "partial").num_episodes == 2
+        mismatched = deepcopy(timed)
+        mismatched["plan_sha256"] = "0" * 64
+        mismatch_file = tmp_path / "mismatched.json"
+        mismatch_file.write_text(json.dumps(mismatched))
+        with pytest.raises(ValueError, match="does not match"):
+            export_real_dataset([(plan_file, mismatch_file)], tmp_path / "mismatch", "local/mismatch")
+        cli = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "telegrip.mocopi.dataset",
+                "convert-real",
+                "--run",
+                str(plan_file),
+                str(timed_file),
+                "--output",
+                str(tmp_path / "feedback-cli"),
+                "--repo-id",
+                "local/feedback-cli",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(
+                    [
+                        str(Path(__file__).resolve().parents[2] / "telegrip_teleoperation"),
+                        os.environ.get("PYTHONPATH", ""),
+                    ]
+                ),
+            },
+        )
+        assert cli.returncode == 0, cli.stderr
+        assert json.loads(cli.stdout)["episodes"][0]["frames"] == 3
         reference = tmp_path / "physical-measurements.csv"
         lines = ["frame,side,x_m,y_m,z_m\n"]
         for side in ("left", "right"):

@@ -63,6 +63,12 @@ def parser():
     joints.add_argument("--right-urdf", help="Right-arm URDF used by the plans")
     joints.add_argument("--max-sim-error-m", type=float, default=0.025)
     joints.add_argument("--max-sim-orientation-error-deg", type=float)
+    feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
+    feedback.add_argument(
+        "--run", action="append", nargs=2, metavar=("PLAN", "REPORT"), required=True, help="Repeat per run"
+    )
+    feedback.add_argument("--output", required=True, help="New local dataset folder")
+    feedback.add_argument("--repo-id", required=True)
     real = sub.add_parser("replay-real", help="Validate or explicitly replay a plan on the real follower")
     real.add_argument("--plan", required=True)
     real.add_argument("--execute", action="store_true", help="Connect and move the real arm joints")
@@ -181,6 +187,10 @@ def main():
                 max_sim_error_m=args.max_sim_error_m,
                 max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
             )
+        elif args.command == "convert-real":
+            from .real_dataset import export_real_dataset
+
+            result = export_real_dataset(args.run, args.output, args.repo_id)
         elif args.command == "replay-real":
             from .real import replay_real
 

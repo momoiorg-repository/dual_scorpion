@@ -64,6 +64,7 @@ def replay_sim(config, dataset_path, episode=0, *, gui=True, realtime=True, show
         "dataset_manifest_sha256": _file_hash(manifest_path),
         "dataset_content_sha256": content_hash,
         "episode": episode,
+        "task": episode_meta["tasks"][0],
         "source": source,
         "fps": dataset.fps,
         "slowdown": slowdown,

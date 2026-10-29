@@ -310,6 +310,38 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
 計算した手先位置・向きの差が出ます。後者は独立した外部計測ではなく、
 URDFの誤差やたわみを含む実際の手先位置精度を直接測った値ではありません。
 
+### 実機の関節フィードバックをLeRobot形式で確認する
+
+実機再生後に保存した計画とレポートから、関節の読み取りと送信指令を別のデータセットにできます。
+このコマンドは保存済みファイルを読むだけで、ロボットに接続しません。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset convert-real \
+  --run outputs/mocopi/plans/episode-001.json outputs/mocopi/reports/episode-001-real.json \
+  --output outputs/mocopi/datasets/episode-001-feedback --repo-id local/mocopi-feedback
+```
+
+複数の再生結果をまとめる場合は `--run 計画.json レポート.json` を繰り返します。
+計画とレポートのハッシュ、URDF、左右の関節数、読み取り順序と時刻を照合します。
+途中停止した再生も、2フレーム以上の読み取りがあれば保存された部分を変換し、状態を記録します。
+
+| 項目 | 実機フィードバックデータの内容 |
+| --- | --- |
+| `observation.state` | このフレームで読み取った左右の関節角14値 |
+| `action` | 次のフレームでソフトが送信した左右の関節指令14値 |
+| `observation.planned.state` / `action` | 対応する現在・次のシミュレーション計画の関節角 |
+| `observation.execution.time` | 現在・次の読み取り後のPC経過時刻と、計画上の時刻 |
+| `observation.execution.frame` | 現在・次の計画フレーム番号と、元の人の記録フレーム番号 |
+
+右7関節、左7関節の順で単位は度です。最後の読み取りには次の送信指令がないため除外します。
+LeRobot標準の `timestamp` と `fps` は計画上の等間隔値です。実際の読み取り間隔は一定とは限らず、
+上記の `observation.execution.time` と `meta/mocopi_real_feedback_dataset.json` の間隔統計を確認してください。
+時刻は左右のエンコーダーを順に読み取った**後**のPC時刻で、指令の送信時刻や各モーターの同時刻の計測値ではありません。
+このデータは再生の評価用で、等間隔の実機学習データとして使う場合は時刻のずれを別途扱う必要があります。
+
+映像は含めません。人の頭カメラ映像は元の記録にあり、実機再生と同時に撮影した映像ではないため、
+実機カメラの観測として混ぜません。実機側カメラの名前や設置位置も決め打ちしていません。
+
 ## 実機とシミュレーションを比較する
 
 同じ計画、実機レポート、URDFを使って、左右の関節角の差と、エンコーダーの角度から
