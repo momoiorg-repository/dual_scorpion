@@ -1,0 +1,74 @@
+{
+  "self_collision": true,
+  "external_collision": true,
+  "excluded_adjacent_pairs": [
+    [
+      "base_link",
+      "r_link_1"
+    ],
+    [
+      "r_link_1",
+      "r_link_2"
+    ],
+    [
+      "r_link_2",
+      "r_link_3"
+    ],
+    [
+      "r_link_3",
+      "r_link_4"
+    ],
+    [
+      "r_link_4",
+      "r_link_5"
+    ],
+    [
+      "r_link_5",
+      "r_link_6"
+    ],
+    [
+      "r_link_6",
+      "r_link_7"
+    ],
+    [
+      "r_link_7",
+      "r_link_8"
+    ],
+    [
+      "base_link",
+      "l_link_1"
+    ],
+    [
+      "l_link_1",
+      "l_link_2"
+    ],
+    [
+      "l_link_2",
+      "l_link_3"
+    ],
+    [
+      "l_link_3",
+      "l_link_4"
+    ],
+    [
+      "l_link_4",
+      "l_link_5"
+    ],
+    [
+      "l_link_5",
+      "l_link_6"
+    ],
+    [
+      "l_link_6",
+      "l_link_7"
+    ],
+    [
+      "l_link_7",
+      "l_link_8"
+    ]
+  ],
+  "friction": 0.6,
+  "restitution": 0,
+  "angular_limits_calibrated": false,
+  "collision_meshes_are_approximations": true
+}

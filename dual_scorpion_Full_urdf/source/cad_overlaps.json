@@ -1,0 +1,26 @@
+[
+  {
+    "link": "r_link_6",
+    "part": "joint6_R",
+    "other": "joint6_motor_case_R",
+    "intersection_mm3": 115.63988733583751
+  },
+  {
+    "link": "l_link_6",
+    "part": "joint6_L",
+    "other": "joint6_motor_case_L",
+    "intersection_mm3": 115.58022012146529
+  },
+  {
+    "link": "r_link_7",
+    "part": "joint7_R",
+    "other": "joint7_motor_case_R",
+    "intersection_mm3": 305.2842668100163
+  },
+  {
+    "link": "l_link_7",
+    "part": "joint7_L",
+    "other": "joint7_motor_case_L",
+    "intersection_mm3": 305.2838337884725
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "engine": "Genesis",
+  "version": "1.4.4",
+  "backend": "cpu",
+  "headless": true,
+  "dofs": 16,
+  "links": 17,
+  "geoms": 370,
+  "steps": 50,
+  "state_finite": true,
+  "self_collision": true,
+  "neutral_collision": true,
+  "adjacent_collision": false,
+  "watertighten_disabled": true,
+  "runtime_tested": true
+}
