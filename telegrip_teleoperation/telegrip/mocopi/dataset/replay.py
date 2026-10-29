@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from ..full_mujoco import full_model_path
 from ..geometry import MocopiSample, pose, world_arm_landmarks, world_hands
 from ..runtime import TrackingGate
 from .evaluate import _summary
@@ -87,9 +88,7 @@ def replay_sim(
         "expected_frames": (end - start) * slowdown,
         "model_kind": "full_mujoco" if sim_model == "full" else "legacy_urdf",
         "hardware_replay_allowed": sim_model == "legacy",
-        "mujoco_model_sha256": _file_hash(config["robot"]["mujoco_full_model"])
-        if sim_model == "full"
-        else None,
+        "mujoco_model_sha256": _file_hash(full_model_path(config["robot"])) if sim_model == "full" else None,
         "urdf_sha256": model_fingerprint(config) if sim_model == "legacy" else None,
         "joint_names": [f"joint{i}" for i in range(7)],
         "gripper_included": False,
@@ -208,7 +207,14 @@ def replay_sim(
         "tracking": {
             side: {key: _summary(values) for key, values in info.items()} for side, info in errors.items()
         },
-        "workspace_clamped_frames": {
+        # The full-model preview has no reachable-workspace clamp stage, so an
+        # aggregate of zero would be read as "no workspace violations". Report
+        # "not evaluated" instead; reachability shows up there as IK failure or
+        # position error.
+        "workspace_clamp_measured": sim_model == "legacy",
+        "workspace_clamped_frames": None
+        if sim_model == "full"
+        else {
             side: sum(frame["arms"][side]["workspace_clamped"] for frame in plan["frames"])
             for side in ("left", "right")
         },

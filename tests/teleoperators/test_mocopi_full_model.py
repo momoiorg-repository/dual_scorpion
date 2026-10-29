@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "telegrip_teleoperation"))
 pytest.importorskip("mujoco")
 from telegrip.mocopi.config import load_config
-from telegrip.mocopi.full_mujoco import FullMujocoSimulation
+from telegrip.mocopi.full_mujoco import FullMujocoSimulation, full_model_path
 from telegrip.mocopi.posture import ArmPostureTarget, robot_arm_state
 
 CONFIG = Path(__file__).resolve().parents[2] / "config/mocopi/tracking.yaml"
@@ -84,3 +84,13 @@ def test_full_model_jacobian_matches_mujoco_finite_difference(side):
             np.testing.assert_allclose((moved - position) / epsilon, jacobian[:, joint], atol=2e-5)
     finally:
         simulation.close()
+
+
+def test_missing_full_model_path_is_a_clear_error():
+    robot = dict(load_config(CONFIG)["robot"])
+    assert Path(full_model_path(robot)).is_file()
+    robot.pop("mujoco_full_model")
+    with pytest.raises(ValueError, match="mujoco_full_model"):
+        full_model_path(robot)
+    with pytest.raises(ValueError, match="mujoco_full_model"):
+        FullMujocoSimulation(robot, gui=False)

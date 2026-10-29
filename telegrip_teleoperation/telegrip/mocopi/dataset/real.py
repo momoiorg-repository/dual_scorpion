@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from ..full_mujoco import full_model_path
 from ..geometry import pose
 from ..ik import DualSimulation
 from .evaluate import _summary
@@ -54,7 +55,7 @@ def validate_plan(
     if model_kind == "full_mujoco":
         if not allow_preview_model or plan.get("hardware_replay_allowed") is not False:
             raise ValueError("Full CAD model has unmeasured limits; this plan is simulation-only")
-        if plan.get("mujoco_model_sha256") != _file_hash(config["robot"]["mujoco_full_model"]):
+        if plan.get("mujoco_model_sha256") != _file_hash(full_model_path(config["robot"])):
             raise ValueError("Plan MuJoCo model differs from selected model; regenerate the plan")
     elif model_kind == "legacy_urdf":
         if plan.get("urdf_sha256") != model_fingerprint(config):

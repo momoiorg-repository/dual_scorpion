@@ -227,6 +227,9 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
 レポートには左右の目標手先とFK結果の位置・回転誤差、関節の1更新あたりの動き、
 IK失敗、手の目標が制限されたフレーム数が入ります。
 既定の新CADモデルは関節限界が未測定のため、可動範囲までの余裕は `null` です。
+このモデルのIKには到達可能範囲への圧縮段がないため、`workspace_clamped_frames` も
+`null`（未評価）になり、`workspace_clamp_measured: false` と表示します。
+到達できない動作はIK失敗または位置誤差として現れます。
 これはシミュレーション上の比較で、実機の追従誤差や衝突の有無を測ったものではありません。
 手首の回転も使う作業では、左右の `tracking.*.orientation_deg` を確認してください。
 後述の実機計画の自動検証は手先の位置誤差に上限を設け、回転誤差の上限も必要に応じて指定できます。

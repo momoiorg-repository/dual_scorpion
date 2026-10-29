@@ -54,7 +54,8 @@
 | `tracking.*.max_joint_step_deg` | 1更新あたり max_k \|q_k − q_{k−1}\| | deg | 指令の滑らかさ。上限は `robot.max_joint_step_deg`（既定0.5） |
 | `tracking.*.joint_limit_margin_deg` | min_k(min(q_k−lower_k, upper_k−q_k)) | deg | **旧URDFのみ**。新CADモデルは限界未測定のため `null` |
 | `ik_failures` | 安全ゲートでHOLDしたフレーム数（リスト、`.count` で数えられる） | 件 | NaN・未到達・急変による計画の穴 |
-| `workspace_clamped_frames` / `retarget_clamped_frames` | 手の目標が到達可能領域/相対動作上限へ圧縮されたフレーム数 | フレーム | 人の動作がロボットの作業領域を超えた量の代理指標 |
+| `workspace_clamped_frames` | 手の目標が到達可能領域へ圧縮されたフレーム数 | フレーム | **旧URDF（`workspace_clamp_measured: true`）のみ**。新CADモデルのプレビューにはclamp段がなく、`null`（未評価） |
+| `retarget_clamped_frames` | 手の目標が相対動作の上限を超えたフレーム数 | フレーム | 人の動作がロボットの作業領域を超えた量の代理指標（両モデルで計算） |
 | `frames` / `requested_frames` / `source_frames` | 生成フレーム数 / 要求フレーム数 / 元フレーム数 | フレーム | `--slowdown` 倍で保持 |
 
 評価条件: `--slowdown N` は各元フレームをN更新保持します（速度を落とすほどIKが改善しやすい）。

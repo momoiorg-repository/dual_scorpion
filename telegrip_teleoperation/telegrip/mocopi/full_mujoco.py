@@ -21,6 +21,16 @@ from .mujoco_sim import COLORS, add_orientation_axes
 
 LOG = logging.getLogger(__name__)
 SUFFIX = {"left": "L", "right": "R"}
+
+
+def full_model_path(config):
+    """Resolve the MJCF path; configs without the key fail with a clear message."""
+    path = config.get("mujoco_full_model")
+    if not path:
+        raise ValueError("robot.mujoco_full_model is not set; add it to the YAML or pass --mujoco-model")
+    return path
+
+
 # Preview poses for this CAD frame. They are not calibrated hardware positions.
 FULL_START_POSES = {
     "work": {side: [80, 0, 0, -30, 0, 0, 0, 0] for side in SUFFIX},
@@ -196,7 +206,7 @@ class FullMujocoSimulation:
 
         self.mujoco, self.viewer, self.viewer_threads = mujoco, None, []
         self.postures, self.targets, self.initial_ee, self.arms = {}, {}, {}, {}
-        self.model = build_full_model(config["mujoco_full_model"], mujoco)
+        self.model = build_full_model(full_model_path(config), mujoco)
         self.data = mujoco.MjData(self.model)
         preset = config.get("start_pose", "config")
         if preset not in ("work", "backwards", "config"):

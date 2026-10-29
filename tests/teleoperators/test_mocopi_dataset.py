@@ -154,6 +154,8 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
         len(frame["arms"][side]["joint_deg"]) == 7 for frame in plan["frames"] for side in ("left", "right")
     )
     assert simulation["tracking"]["left"]["position_m"]["max"] >= 0
+    assert simulation["workspace_clamp_measured"] is True
+    assert set(simulation["workspace_clamped_frames"]) == {"left", "right"}
     assert (
         simulation["tracking"]["right"]["max_joint_step_deg"]["max"]
         <= cfg["robot"]["max_joint_step_deg"] + 1e-6
@@ -246,6 +248,8 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     assert full_plan["model_kind"] == "full_mujoco" and not full_plan["hardware_replay_allowed"]
     assert full_plan["urdf_sha256"] is None and full_report["joint_limit_source"] == "unmeasured"
     assert full_report["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
+    assert full_report["workspace_clamp_measured"] is False
+    assert full_report["workspace_clamped_frames"] is None
     assert not full_report["ik_failures"]
     full_file = tmp_path / "full-plan.json"
     full_file.write_text(json.dumps(full_plan))
