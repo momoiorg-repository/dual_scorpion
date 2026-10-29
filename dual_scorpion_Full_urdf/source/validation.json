@@ -1,0 +1,350 @@
+{
+  "source": "scorpion v11",
+  "links": 17,
+  "joints": 16,
+  "mujoco_version": "3.16.0",
+  "checks": {
+    "mujoco": {
+      "compiled": true,
+      "nq": 16,
+      "nv": 16,
+      "nu": 16,
+      "poses_compared": 34,
+      "fk_max_position_error_m": 2.477857965082472e-13,
+      "fk_max_rotation_error": 3.245233942683612e-15,
+      "fusion_current_pose_error_m": 1.5572139486334676e-14,
+      "total_mass_kg": 16.08754279537592,
+      "steps": 1000,
+      "state_finite": true,
+      "initial_penetrations": [],
+      "max_abs_qvel_after_steps": 0.0054676116866603725,
+      "fusion_current_rotation_max_matrix_element_error": 1.0125233984581428e-13
+    },
+    "collision_sweep": {
+      "poses": [
+        {
+          "pose": "neutral",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "fusion_current",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint0_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint0_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint1_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint1_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint2_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint2_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint3_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint3_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint4_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint4_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint5_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint5_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint6_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint6_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint7_R_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint7_R_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint0_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint0_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint1_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint1_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint2_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint2_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint3_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint3_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint4_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint4_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint5_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint5_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint6_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint6_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint7_L_5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        },
+        {
+          "pose": "joint7_L_-5",
+          "contact_count": 0,
+          "max_penetration_m": 0.0
+        }
+      ],
+      "scope": "neutral, captured Fusion pose, and each individual joint at +/-5 degrees; not the uncalibrated full mechanical range"
+    },
+    "collision_probe": {
+      "engine": "MuJoCo narrow phase",
+      "sphere_radius_m": 0.005,
+      "all_17_links_detected_contact": true,
+      "links": {
+        "base_link": true,
+        "r_link_1": true,
+        "r_link_2": true,
+        "r_link_3": true,
+        "r_link_4": true,
+        "r_link_5": true,
+        "r_link_6": true,
+        "r_link_7": true,
+        "r_link_8": true,
+        "l_link_1": true,
+        "l_link_2": true,
+        "l_link_3": true,
+        "l_link_4": true,
+        "l_link_5": true,
+        "l_link_6": true,
+        "l_link_7": true,
+        "l_link_8": true
+      },
+      "adjacent_exclusions": 16,
+      "nonadjacent_self_collision_enabled": true
+    },
+    "urdf_xml": {
+      "links": 17,
+      "joints": 16,
+      "mesh_paths_resolved": true
+    },
+    "genesis_xml": {
+      "links": 17,
+      "joints": 16,
+      "mesh_paths_resolved": true
+    },
+    "gazebo_sdf": {
+      "xml_parsed": true,
+      "links": 17,
+      "revolute_joints": 16,
+      "fixed_world_joints": 1,
+      "mesh_paths_resolved": true,
+      "runtime_tested": false
+    },
+    "scorpion.usd": {
+      "opened_by_OpenUSD": true,
+      "rigid_bodies": 17,
+      "revolute_joints": 16,
+      "fixed_joints": 1,
+      "articulation_root": true,
+      "meters_per_unit": 1.0,
+      "PhysX_runtime_tested": false
+    },
+    "scorpion.usda": {
+      "opened_by_OpenUSD": true,
+      "rigid_bodies": 17,
+      "revolute_joints": 16,
+      "fixed_joints": 1,
+      "articulation_root": true,
+      "meters_per_unit": 1.0,
+      "PhysX_runtime_tested": false
+    },
+    "scorpion_current_pose.usda": {
+      "opened_by_OpenUSD": true,
+      "rigid_bodies": 17,
+      "revolute_joints": 16,
+      "fixed_joints": 1,
+      "articulation_root": true,
+      "meters_per_unit": 1.0,
+      "PhysX_runtime_tested": false
+    },
+    "four_part_reference_holes": [
+      {
+        "part": "joint6_R",
+        "matched_holes": 8,
+        "max_reference_error_mm": 4.508722123988577e-08
+      },
+      {
+        "part": "joint6_L",
+        "matched_holes": 8,
+        "max_reference_error_mm": 4.5087235943277785e-08
+      },
+      {
+        "part": "joint7_R",
+        "matched_holes": 4,
+        "max_reference_error_mm": 3.37139567589821e-08
+      },
+      {
+        "part": "joint7_L",
+        "matched_holes": 4,
+        "max_reference_error_mm": 3.37139567589821e-08
+      }
+    ],
+    "cad_same_link_intersection_mm3": [
+      {
+        "link": "r_link_6",
+        "part": "joint6_R",
+        "other": "joint6_motor_case_R",
+        "intersection_mm3": 115.63988733583751
+      },
+      {
+        "link": "l_link_6",
+        "part": "joint6_L",
+        "other": "joint6_motor_case_L",
+        "intersection_mm3": 115.58022012146529
+      },
+      {
+        "link": "r_link_7",
+        "part": "joint7_R",
+        "other": "joint7_motor_case_R",
+        "intersection_mm3": 305.2842668100163
+      },
+      {
+        "link": "l_link_7",
+        "part": "joint7_L",
+        "other": "joint7_motor_case_L",
+        "intersection_mm3": 305.2838337884725
+      }
+    ],
+    "collision_geometry_count_each_format": {
+      "urdf": 370,
+      "mujoco": 370,
+      "gazebo_sdf": 370,
+      "usd": 370
+    },
+    "density_assumptions": {
+      "printed_parts_kg_per_m3": 1240,
+      "frame_motor_cad_kg_per_m3": 7850,
+      "total_mass_kg": 16.08754279537592
+    },
+    "genesis_runtime": {
+      "engine": "Genesis",
+      "version": "1.4.4",
+      "backend": "cpu",
+      "headless": true,
+      "dofs": 16,
+      "links": 17,
+      "geoms": 370,
+      "steps": 50,
+      "state_finite": true,
+      "self_collision": true,
+      "neutral_collision": true,
+      "adjacent_collision": false,
+      "watertighten_disabled": true,
+      "runtime_tested": true
+    }
+  },
+  "runtime_not_tested": [
+    "Isaac Sim / PhysX",
+    "Gazebo Jetty"
+  ],
+  "generated_at_utc": "2026-10-29T06:37:09.628789+00:00"
+}
