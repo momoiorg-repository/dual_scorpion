@@ -71,6 +71,59 @@ def test_gaps_split_episodes_instead_of_compressing_time():
     np.testing.assert_allclose([segment[0]["grid_s"] for segment in segments], [0, 0.45])
 
 
+def test_jittery_mocopi_dropout_preserves_episode_grid_boundaries(tmp_path):
+    pytest.importorskip("cv2")
+    dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
+    from telegrip.mocopi.dataset.convert import convert_sessions
+    from telegrip.mocopi.dataset.evaluate import session_metrics
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    raw = tmp_path / "jitter-dropout"
+    capture_session(cfg, raw, 1.2, "long jitter check", fake=True)
+    motion = rows(raw / "mocopi.jsonl")
+    motion = [row for index, row in enumerate(motion) if not 10 <= index < 14]
+    for index, row in enumerate(motion):
+        if index % 4 == 1:
+            row["timestamp_s"] += 0.012
+        elif index % 4 == 3:
+            row["timestamp_s"] -= 0.012
+    (raw / "mocopi.jsonl").write_text(
+        "".join(json.dumps(row, allow_nan=False) + "\n" for row in motion), encoding="utf-8"
+    )
+    metadata = json.loads((raw / "session.json").read_text(encoding="utf-8"))
+    metadata["mocopi_frames"] = len(motion)
+    (raw / "session.json").write_text(json.dumps(metadata), encoding="utf-8")
+
+    quality = session_metrics(raw, fps=20, max_sync_s=0.04)
+    assert quality["unsynchronized_samples"] > 0
+    assert quality["usable_segments"] >= 2
+    output = tmp_path / "jitter-dataset"
+    manifest = convert_sessions([raw], output, "local/mocopi-jitter", fps=20, max_sync_s=0.04)
+    dataset = dataset_type("local/mocopi-jitter", root=output, video_backend="pyav")
+    assert dataset.num_episodes == quality["usable_segments"] == len(manifest["episodes"])
+
+    episode_times = []
+    for episode, entry in enumerate(manifest["episodes"]):
+        start, end = (
+            int(dataset.meta.episodes[episode]["dataset_from_index"]),
+            int(dataset.meta.episodes[episode]["dataset_to_index"]),
+        )
+        times = np.array(
+            [
+                dataset.hf_dataset[index]["observation.capture.grid_time_s"].item()
+                for index in range(start, end)
+            ]
+        )
+        np.testing.assert_allclose(np.diff(times), 1 / dataset.fps, atol=1e-7)
+        np.testing.assert_allclose(times[0], entry["first_grid_time_s"], atol=1e-7)
+        episode_times.append(times)
+    assert any(
+        following[0] - previous[-1] > 3 / dataset.fps
+        for previous, following in zip(episode_times, episode_times[1:], strict=False)
+    )
+
+
 def test_quaternion_sign_is_continuous_across_180_degrees():
     from scipy.spatial.transform import Rotation
     from telegrip.mocopi.dataset.session import pose_vectors

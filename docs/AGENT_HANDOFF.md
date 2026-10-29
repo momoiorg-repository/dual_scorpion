@@ -30,11 +30,11 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `b9c4164 fix: verify bounded full-model IK results` に続き、
-  この文書の更新を含む今回のFull CAD衝突評価コミットが最新になる
+- 最新コミット: `4dd4b60 feat: evaluate full-model collisions` に続き、
+  この文書の更新を含む今回のjitter/dropout境界テストコミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
   `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
-  → 今回（Full CADのモデル内衝突評価）
+  → `4dd4b60`（Full CADのモデル内衝突評価）→ 今回（jitter/dropout境界テスト）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -121,13 +121,18 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
     で拒否する。検証時は計画の関節角から接触結果を再計算し、JSONの接触数・最大めり込みと
     照合する。同梱モデルにテーブル・人・工具などの外部障害物は含まれないため、
     この判定は実機作業空間の衝突安全を保証しない
+16. **jitter・ドロップ時のエピソード境界検証** — 合成収録に対して受信時刻の
+    ジッタと4フレーム連続のmocopiドロップを注入し、品質評価・LeRobot変換・
+    エピソード分割を通して検証する。各エピソードの固定FPS格子が保存され、
+    ドロップ区間が時間圧縮されないことをテストで確認している
 
 ## 実装途中の機能
 
 - **実機でのmocopi/C270/SLAM収録**: コードは完成。実機パケット・取り付け校正・レイテンシの
   実測検証が未実施
-- **長時間・ノイズ耐性の系統実験**: 初期姿勢依存の再現手順とメタデータは整備済み。
-  実データに近い長時間記録・ドロップ・ジッタを含む系統的な評価は未実施
+- **長時間・ノイズ耐性の系統実験**: 短い合成セッションでのジッタ・ドロップ・
+  エピソード境界は検証済み。実データに近い分数単位の長時間記録や、より多様な
+  ノイズ条件の系統評価は未実施
 - **実機 `--execute` 再生**: コードは完成。安全確認ができるまで実行しない。新CADモデルでは
   設計上拒否される
 - **外部障害物を含む衝突シーン**: モデル内の床・ロボットリンク衝突は測定できるが、
@@ -153,9 +158,9 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 | テスト | 結果 |
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
-| `tests/teleoperators/test_mocopi_dataset.py` | 13 passed（`metrics-csv`・`verify`・start-pose記録を含む） |
+| `tests/teleoperators/test_mocopi_dataset.py` | 14 passed（`metrics-csv`・`verify`・start-pose記録・jitter/dropout境界を含む） |
 | `tests/teleoperators/test_mocopi_full_model.py` | 7 passed（IK実返り値検証・モデル内衝突評価・`doctor` を含む） |
-| `tests/teleoperators` 全体 | 84 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators` 全体 | 85 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加の合成end-to-end確認はテストで実施: `capture --fake` → `evaluate` → `convert` →
