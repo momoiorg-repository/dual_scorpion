@@ -21,6 +21,12 @@ in [`telegrip_teleoperation/`](telegrip_teleoperation/README.md). That folder
 contains arm teleoperation only and reuses this repository's existing Dual
 Scorpion follower driver.
 
+## mocopi demonstration datasets
+
+The in-progress head-camera and mocopi demonstration capture workflow is documented
+in [MOCOPI_DATASET_GUIDE.md](MOCOPI_DATASET_GUIDE.md). Capture stores real camera
+and motion measurements without a robot connection, IK, or gripper measurements.
+
 ## Contents
 - [Highlights](#highlights)
 - [Quickstart](#quickstart)

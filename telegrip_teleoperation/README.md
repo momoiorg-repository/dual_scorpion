@@ -154,6 +154,8 @@ session telemetry are ignored by Git.
 ## mocopi + head camera prototype
 
 This add-on also provides a simulation-first Sony mocopi/C270 input path.
+For the demonstration recording and LeRobot dataset work, see
+[MOCOPI_DATASET_GUIDE.md](../MOCOPI_DATASET_GUIDE.md).
 Start with the Japanese [MOCOPI_START_GUIDE.md](../MOCOPI_START_GUIDE.md).
 MuJoCo is the default viewer, using the assembly URDF's STL visuals and the
 existing corrected per-arm FK/IK. Install the optional viewer with
