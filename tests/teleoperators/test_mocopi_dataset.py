@@ -154,6 +154,14 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
         len(frame["arms"][side]["joint_deg"]) == 7 for frame in plan["frames"] for side in ("left", "right")
     )
     assert simulation["tracking"]["left"]["position_m"]["max"] >= 0
+    feasibility = simulation["feasibility"]
+    assert feasibility["ik_failures"] == 0 and "hardware safety" in feasibility["scope"]
+    # The verdict must follow its own stated criteria; synthetic motion is not
+    # required to pass them, and the numbers are never rounded to guarantee it.
+    assert feasibility["within_preview_tolerance"] is (
+        feasibility["max_position_error_m"] <= feasibility["position_tolerance_m"]
+        and feasibility["max_joint_step_observed_deg"] <= feasibility["max_joint_step_limit_deg"] + 1e-6
+    )
     assert simulation["workspace_clamp_measured"] is True
     assert set(simulation["workspace_clamped_frames"]) == {"left", "right"}
     assert (
@@ -248,6 +256,8 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     assert full_plan["model_kind"] == "full_mujoco" and not full_plan["hardware_replay_allowed"]
     assert full_plan["urdf_sha256"] is None and full_report["joint_limit_source"] == "unmeasured"
     assert full_report["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
+    assert full_report["feasibility"]["ik_failures"] == 0
+    assert isinstance(full_report["feasibility"]["within_preview_tolerance"], bool)
     assert full_report["workspace_clamp_measured"] is False
     assert full_report["workspace_clamped_frames"] is None
     assert not full_report["ik_failures"]

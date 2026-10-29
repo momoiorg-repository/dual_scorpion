@@ -188,6 +188,36 @@ def replay_sim(
         simulation.close()
     if dataset_fingerprint(root) != content_hash:
         raise ValueError("Source dataset changed during replay; create a new plan")
+
+    def worst(values):
+        return float(np.max(values)) if values else None
+
+    position_tolerance = float(config["robot"]["position_tolerance_m"])
+    step_limit = float(config["robot"]["max_joint_step_deg"])
+    feasibility = {
+        "criteria": (
+            "no IK failures, position error <= robot.position_tolerance_m, and joint step <= "
+            "robot.max_joint_step_deg"
+        ),
+        "position_tolerance_m": position_tolerance,
+        "max_joint_step_limit_deg": step_limit,
+        "ik_failures": len(plan["failures"]),
+        "max_position_error_m": worst([value for side in errors for value in errors[side]["position_m"]]),
+        "max_orientation_error_deg": worst(
+            [value for side in errors for value in errors[side]["orientation_deg"]]
+        ),
+        "max_joint_step_observed_deg": worst(
+            [value for side in errors for value in errors[side]["max_joint_step_deg"]]
+        ),
+        "scope": "Model-based kinematic check; not a collision or hardware safety check",
+    }
+    feasibility["within_preview_tolerance"] = bool(
+        not plan["failures"]
+        and feasibility["max_position_error_m"] is not None
+        and feasibility["max_position_error_m"] <= position_tolerance
+        and feasibility["max_joint_step_observed_deg"] is not None
+        and feasibility["max_joint_step_observed_deg"] <= step_limit + 1e-6
+    )
     report = {
         "schema": "dual_scorpion.mocopi.simulation_metrics.v1",
         "frames": len(plan["frames"]),
@@ -222,6 +252,7 @@ def replay_sim(
             side: sum(frame["arms"][side]["retarget_clamped"] for frame in plan["frames"])
             for side in ("left", "right")
         },
+        "feasibility": feasibility,
         "limits": "Kinematic FK comparison only; does not measure physical robot error or collisions",
     }
     return plan, report

@@ -57,10 +57,13 @@
 | `workspace_clamped_frames` | 手の目標が到達可能領域へ圧縮されたフレーム数 | フレーム | **旧URDF（`workspace_clamp_measured: true`）のみ**。新CADモデルのプレビューにはclamp段がなく、`null`（未評価） |
 | `retarget_clamped_frames` | 手の目標が相対動作の上限を超えたフレーム数 | フレーム | 人の動作がロボットの作業領域を超えた量の代理指標（両モデルで計算） |
 | `frames` / `requested_frames` / `source_frames` | 生成フレーム数 / 要求フレーム数 / 元フレーム数 | フレーム | `--slowdown` 倍で保持 |
+| `feasibility` | `ik_failures`・`max_position_error_m`・`max_joint_step_observed_deg` と各上限をまとめた判定 | — | `within_preview_tolerance` は「IK失敗0・位置誤差≤`position_tolerance_m`・関節ステップ≤`max_joint_step_limit_deg`」のとき true。プレビュー範囲内の運動学判定であり、衝突や実機の安全を保証しない |
 
 評価条件: `--slowdown N` は各元フレームをN更新保持します（速度を落とすほどIKが改善しやすい）。
 レポートの `model_kind`、`hardware_replay_allowed`、`mujoco_model_sha256`（または
 `urdf_sha256`）が計画とモデルの同一性を示します。
+`convert-joints` は `feasibility` とは別に、既定25 mmの位置誤差上限（`--max-sim-error-m`）で
+変換を拒否できます。判定基準はレポート内の `criteria` と合わせて必ず確認してください。
 
 新CADモデルの関節限界が未測定である理由: MJCFは全関節が `limited="false"` で出力され、
 実機の可動範囲・原点・回転方向の対応も未確認です。このため計算上の±180度を仮置きし、

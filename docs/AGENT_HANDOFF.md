@@ -95,6 +95,11 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
 10. **データセットの読み込み検証** — `verify` がLeRobot APIで読み込み、スキーマ・寸法・
     映像デコード・時刻格子・`action` = 次フレーム状態の検算・未測定モデルが実機再生可能と
     主張していないことを確認。失敗時は終了コード1と `errors` を返す
+11. **実行可能性の判定** — `replay-sim` レポートの `feasibility` に、IK失敗数・最大位置誤差・
+    最大関節ステップと各上限、判定基準を記録し `within_preview_tolerance` を返す
+    （プレビュー範囲の運動学判定。衝突・実機安全を保証しない）
+12. **グリッパー拡張の設計点** — `docs/MOCOPI_DESIGN.md` に収録・変換・IK・実機再生・評価の
+    接続点を整理（`GripperEncoderSource` Protocolが既存）。未計測区間は作らない方針を維持
 
 ## 実装途中の機能
 
@@ -148,7 +153,7 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
    新CADモデルのIKの初期姿勢依存性）
 2. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
-3. グリッパー拡張の設計メモ（収録開始時のタイムスタンプ同期方法を含む）
+3. 新CADモデルのIKの初期姿勢依存性と長時間記録の確認（実機なしで可能な範囲）
 
 ## 必要な実行コマンド（環境設定）
 

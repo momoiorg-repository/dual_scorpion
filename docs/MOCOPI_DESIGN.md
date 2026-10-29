@@ -68,3 +68,28 @@ armへ再割当しない。既存FKはupper/lower arm rotationをHandへ伝搬�
 上腕origin=12/16、肘（lower-arm origin）=13/17をHead-relative worldへ変換してdebugに公開。
 宣言modeは自動検出/アプリ操作を意味せず、実UDPは未検証。
 robot EE目標以外に肘constraintを入れる機能は今回追加しない。
+
+## グリッパー拡張の設計点（2026-10-29時点、未実装）
+
+現行データはグリッパー開閉を収録せず、架空の実測値も生成しない
+（`gripper_recorded: false`、関節計画は7関節、`joint7` はプレビューで0固定）。
+将来追加するときの接続点は次のとおり。
+
+1. **収録**: `telegrip/mocopi/sources.py` に既に `GripperEncoderSource` Protocol
+   （`read() -> (monotonic timestamp, aperture[0,1])`）がある。captureは同形式の
+   sourceを追加し、カメラ・mocopiと同じ受信時刻規則で保存する。開閉量の定義
+   （0=閉、1=開など）と取得方法（Glove等の外部計測か、カメラ推定か）を先に決め、
+   未計測区間は値を作らず欠測として扱う。
+2. **変換**: `session.json` と `meta/mocopi_dataset.json` に
+   `gripper_source`・単位・許容同期差を追加し、LeRobot featuresへ
+   `observation.gripper` / 状態とaction内の該当値を足す。現在 action は人の手姿勢
+   14値なので、次フレームの開閉量を付ける位置を明示する。
+3. **計画とIK**: 既存URDF/MJCFの `joint7`（`full_mujoco.py` は0固定）を有効化し、
+   手指開閉から関節角への写像を`config/mocopi/tracking.yaml`に追加する。
+   新CADモデルは実機可動範囲・原点が未測定なので、写像を入れるまで
+   `hardware_replay_allowed: false` を維持する。
+4. **実機再生**: `replay-real` の `gripper_commanded: false` を解除する際は、
+   既存follower driverのグリッパー校正・可動範囲・把持力の安全確認を先に行い、
+   検証ゲートに開閉値の上限と速度制限を追加する。
+5. **評価**: 欠測率（開閉値を取得できなかったフレーム数の割合）、同期残差、指令と実際の
+   開閉量の差を metrics に追加し、`metrics-csv` の比較表へ流す。
