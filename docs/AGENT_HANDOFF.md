@@ -44,7 +44,7 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
 | `origin/sim` | `c73f98c` | 差し替え済み（旧内容を削除） |
 | `origin/main` | `1f64c14` | 差し替え済み |
 | `origin/dev` | `90c29a1` | 差し替え済み |
-| `origin/dev_mocopi_convert_dataset` | `836556d` | 差し替え済み＋新モデル統合 |
+| `origin/dev_mocopi_convert_dataset` | `git ls-remote` で確認 | 差し替え済み＋新モデル統合 |
 
 ローカルの `main`・`dev` はリモートより遅れている（fast-forward 可能、force push 不要）。
 差し替えは Git LFS を含む。新しいクローンでは `git lfs install && git lfs pull` を実行すること。
@@ -60,8 +60,8 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
   - `replay.py` / `joint_dataset.py` — MuJoCo再生・計画・関節角データセット
   - `real.py` / `real_dataset.py` — 実機検証ゲート・実行・フィードバック変換
 - 設定: `config/mocopi/tracking.yaml`（`robot.mujoco_full_model` を含む）
-- テスト: `tests/teleoperators/test_mocopi_tracking.py`（61件）、`test_mocopi_dataset.py`（11件）、
-  `test_mocopi_full_model.py`（3件）
+- テスト: `tests/teleoperators/test_mocopi_tracking.py`（61件）、`test_mocopi_dataset.py`（14件）、
+  `test_mocopi_full_model.py`（7件）
 
 ## 完成した機能（実装・検証済み）
 
@@ -180,10 +180,9 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## 次に実行するべき具体的な作業
 
-1. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界）
+1. 実機なしで可能な残り検証（分数単位の長時間記録、より多様なノイズ・ドロップ条件）
 2. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
-3. 長時間・ノイズ・ドロップを含む記録と変換・再生の確認（実機なしで可能な範囲）
 
 ## 必要な実行コマンド（環境設定）
 
