@@ -68,6 +68,47 @@ def test_full_model_maps_cad_sides_and_fixes_gripper():
         simulation.close()
 
 
+def test_full_model_ik_rejects_a_clipped_unreachable_candidate():
+    """The safety verdict must describe the command actually returned."""
+    cfg = load_config(CONFIG)["robot"]
+    work = FullMujocoSimulation(cfg, gui=False)
+    try:
+        targets = {side: value.copy() for side, value in work.initial_ee.items()}
+        targets["left"][:3, 3] += [0, 0.01, 0.005]
+        work.update(targets)
+        left = work.arms["left"]
+        actual, _ = left.solver.fk_solver.compute(left.last_valid_target)
+        returned_residual = np.linalg.norm(actual - targets["left"][:3, 3])
+        assert left.valid
+        assert abs(left.solver.last_solve_info["residual_final_m"] - returned_residual) < 1e-9
+        assert returned_residual <= left.tolerance
+        work_target = targets["left"]
+    finally:
+        work.close()
+
+    backwards_cfg = {**cfg, "start_pose": "backwards"}
+    backwards = FullMujocoSimulation(backwards_cfg, gui=False)
+    try:
+        assert backwards.start_pose == "backwards"
+        left = backwards.arms["left"]
+        before = left.last_valid_target.copy()
+        candidate = left.solver.solve(work_target[:3, 3], None, before)
+        candidate_position, _ = left.solver.fk_solver.compute(candidate)
+        candidate_residual = np.linalg.norm(candidate_position - work_target[:3, 3])
+        assert np.max(np.abs(candidate[:7] - before[:7])) <= left.max_step + 1e-6
+        assert candidate_residual > left.tolerance
+        np.testing.assert_allclose(
+            left.solver.last_solve_info["residual_final_m"], candidate_residual, atol=1e-12
+        )
+
+        backwards.update(targets)
+        assert not left.valid
+        assert "IK not reachable" in left.status
+        np.testing.assert_array_equal(left.last_valid_target, before)
+    finally:
+        backwards.close()
+
+
 @pytest.mark.parametrize("side", ["left", "right"])
 def test_full_model_jacobian_matches_mujoco_finite_difference(side):
     simulation = FullMujocoSimulation(load_config(CONFIG)["robot"], gui=False)

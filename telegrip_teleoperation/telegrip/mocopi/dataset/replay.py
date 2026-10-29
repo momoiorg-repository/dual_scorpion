@@ -49,6 +49,7 @@ def replay_sim(
     show_camera=True,
     slowdown=1,
     sim_model="legacy",
+    start_pose=None,
 ):
     """Play an episode, returning a reviewable joint plan and simulation metrics."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -64,6 +65,12 @@ def replay_sim(
 
     if not isinstance(slowdown, int) or not 1 <= slowdown <= 10:
         raise ValueError("slowdown must be an integer from 1 to 10")
+    selected_start_pose = start_pose or config["robot"].get("start_pose", "config")
+    if selected_start_pose not in ("work", "backwards", "config"):
+        raise ValueError("start_pose must be work, backwards or config")
+    robot_config = config["robot"]
+    if start_pose is not None and start_pose != robot_config.get("start_pose", "config"):
+        robot_config = {**robot_config, "start_pose": start_pose}
     root = Path(dataset_path)
     manifest_path = root / "meta" / "mocopi_dataset.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -87,6 +94,7 @@ def replay_sim(
         "slowdown": slowdown,
         "expected_frames": (end - start) * slowdown,
         "model_kind": "full_mujoco" if sim_model == "full" else "legacy_urdf",
+        "start_pose": selected_start_pose,
         "hardware_replay_allowed": sim_model == "legacy",
         "mujoco_model_sha256": _file_hash(full_model_path(config["robot"])) if sim_model == "full" else None,
         "urdf_sha256": model_fingerprint(config) if sim_model == "legacy" else None,
@@ -105,7 +113,7 @@ def replay_sim(
         }
         for side in ("left", "right")
     }
-    simulation = Simulation(config["robot"], gui=gui)
+    simulation = Simulation(robot_config, gui=gui)
     camera_window = None
     try:
         if gui and show_camera:
@@ -229,6 +237,7 @@ def replay_sim(
         "episode": episode,
         "task": plan["task"],
         "model_kind": plan["model_kind"],
+        "start_pose": plan["start_pose"],
         "hardware_replay_allowed": plan["hardware_replay_allowed"],
         "joint_limit_source": "unmeasured" if sim_model == "full" else "legacy_urdf",
         "mujoco_model_sha256": plan["mujoco_model_sha256"],

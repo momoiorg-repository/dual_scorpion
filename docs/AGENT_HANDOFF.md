@@ -1,6 +1,6 @@
 # Agent Handoff — mocopiベース Leaderレス収録システム
 
-最終更新: 2026-10-29（作業ブランチ `dev_mocopi_convert_dataset`、commit `836556d`）
+最終更新: 2026-10-29（作業ブランチ `dev_mocopi_convert_dataset`、HEADは`git log -1`で確認）
 
 このドキュメントは、別のエージェント（OpenAI Codex 等）がそのまま作業を再開できるようにするための
 現在地の記録です。作業単位が完了するたびに「現在のブランチとコミット」「実行済みテスト」
@@ -30,8 +30,10 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `836556d feat: replay mocopi plans in the full native Scorpion model`
-- 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）
+- 最新コミット: `141fb51 feat: check the native model and LFS meshes in doctor` に続き、
+  この文書の更新を含む今回のIK安全性修正コミットが最新になる
+- 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
+  `141fb51`（doctorのLFS診断）→ 今回（full-model IKの実返り値検証とstart-pose記録）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -103,11 +105,20 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
 13. **`doctor` の環境診断** — `mujoco_importable`、新CADモデルの `exists`、メッシュの
     `mesh_state`（`ok` / `lfs_pointer` / `missing`）、`visual_urdf_exists` を追加。
     LFS未取得を実行前に検出できる
+14. **Full CAD IKの実返り値検証と初期姿勢記録** — MuJoCo IKは各更新の
+    `robot.max_joint_step_deg` を最適化境界に適用し、返された関節角をFKで再計算した
+    残差を安全判定に使う。オプティマイザーが大きな解を出してから後処理で切詰め、
+    その切詰め前の残差で成功扱いにする偽陽性を防ぐ。`replay-sim --start-pose work|backwards|config`
+    で同一データの初期姿勢依存実験を再現でき、選択した `start_pose` は計画・評価レポート・
+    関節角データセットのメタデータに保存する。速い合成動作はIK失敗として明示され、
+    `replay-real` と `convert-joints` の検証で拒否される
 
 ## 実装途中の機能
 
 - **実機でのmocopi/C270/SLAM収録**: コードは完成。実機パケット・取り付け校正・レイテンシの
   実測検証が未実施
+- **長時間・ノイズ耐性の系統実験**: 初期姿勢依存の再現手順とメタデータは整備済み。
+  実データに近い長時間記録・ドロップ・ジッタを含む系統的な評価は未実施
 - **実機 `--execute` 再生**: コードは完成。安全確認ができるまで実行しない。新CADモデルでは
   設計上拒否される
 
@@ -132,14 +143,16 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 | テスト | 結果 |
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
-| `tests/teleoperators/test_mocopi_dataset.py` | 14 passed（`metrics-csv`・`verify` の検証を含む） |
-| `tests/teleoperators/test_mocopi_full_model.py` | 5 passed（`doctor` の診断を含む） |
-| `tests/teleoperators` 全体 | 82 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators/test_mocopi_dataset.py` | 13 passed（`metrics-csv`・`verify`・start-pose記録を含む） |
+| `tests/teleoperators/test_mocopi_full_model.py` | 6 passed（IK実返り値検証・`doctor` を含む） |
+| `tests/teleoperators` 全体 | 83 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
-追加で実行した手動の end-to-end 確認（合成データ、実機非接続）:
-`capture --fake` → `evaluate` → `convert` → `replay-sim --headless --fast --slowdown 2`
-（新CADモデル、IK失敗0、位置誤差 max 約26mm）→ `convert-joints` → `replay-real`（検証のみ）まで動作。
+追加の合成end-to-end確認はテストで実施: `capture --fake` → `evaluate` → `convert` →
+`replay-sim --headless --fast`（旧URDFと新CAD）→ `convert-joints` → `verify` →
+`replay-real`（検証のみ）。速い合成動作では新CADのIK失敗が発生することも確認し、
+その計画が実機検証で拒否されることをテストしている。別の静止合成データでは
+新CAD計画・関節角データセット・検証ゲートの成功経路を確認した。
 
 ## 現在発生しているエラー
 
@@ -152,8 +165,7 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## 次に実行するべき具体的な作業
 
-1. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界、
-   新CADモデルのIKの初期姿勢依存性）
+1. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界）
 2. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
 3. 新CADモデルのIKの初期姿勢依存性と長時間記録の確認（実機なしで可能な範囲）

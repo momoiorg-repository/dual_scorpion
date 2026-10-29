@@ -131,7 +131,10 @@ class FullModelIK:
         ):
             raise ValueError("Invalid full-model IK target or state")
         initial = np.deg2rad(current[:7])
-        lower, upper = np.full(7, -np.pi), np.full(7, np.pi)
+        preview_lower, preview_upper = np.full(7, -np.pi), np.full(7, np.pi)
+        step = np.deg2rad(self.max_step)
+        lower = np.maximum(preview_lower, initial - step)
+        upper = np.minimum(preview_upper, initial + step)
         initial = np.clip(initial, lower + 1e-9, upper - 1e-9)
         desired_rotation = (
             Rotation.from_quat(target_orientation_quat).as_matrix()
@@ -172,8 +175,9 @@ class FullModelIK:
                 xtol=1e-7,
                 gtol=1e-7,
             )
-            position, _ = self.fk_solver.compute(np.rad2deg(result.x))
-            return result.x, float(np.linalg.norm(position - target_position))
+            solution = np.clip(result.x, lower, upper)
+            position, _ = self.fk_solver.compute(np.rad2deg(solution))
+            return solution, float(np.linalg.norm(position - target_position))
 
         solution, residual = run(desired_rotation is not None)
         position_only = False
@@ -186,11 +190,7 @@ class FullModelIK:
             "used_position_only": position_only,
             "model": "full_mujoco_preview_unmeasured_limits",
         }
-        return np.clip(
-            np.rad2deg(solution),
-            np.maximum(-180, current[:7] - self.max_step),
-            np.minimum(180, current[:7] + self.max_step),
-        )
+        return np.clip(np.rad2deg(solution), np.rad2deg(lower), np.rad2deg(upper))
 
 
 class FullMujocoSimulation:
@@ -211,6 +211,7 @@ class FullMujocoSimulation:
         preset = config.get("start_pose", "config")
         if preset not in ("work", "backwards", "config"):
             raise ValueError("robot.start_pose must be work, backwards or config")
+        self.start_pose = preset
         initial = config["initial_joints_deg"] if preset == "config" else FULL_START_POSES[preset]
         self.qpos_indices = {}
         for side in SUFFIX:

@@ -252,15 +252,34 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     from telegrip.mocopi.dataset.real import replay_real, validate_plan
     from telegrip.mocopi.full_mujoco import FullMujocoSimulation
 
-    full_plan, full_report = replay_sim(cfg, output, gui=False, realtime=False, slowdown=2, sim_model="full")
+    # The normal synthetic motion is deliberately fast enough to exercise IK
+    # failures under the strict per-update bounds. A stationary source provides
+    # a clean, valid full-CAD plan for testing downstream validation/export.
+    stationary_raw = tmp_path / "raw-stationary"
+    capture_session(cfg, stationary_raw, 0.35, "stationary check", fake=True)
+    motion_path = stationary_raw / "mocopi.jsonl"
+    motion = [json.loads(line) for line in motion_path.read_text().splitlines() if line]
+    stationary_bones = motion[0]["bones"]
+    for row in motion[1:]:
+        row["bones"] = stationary_bones
+    motion_path.write_text(
+        "".join(json.dumps(row, allow_nan=False) + "\n" for row in motion), encoding="utf-8"
+    )
+    stationary_output = tmp_path / "stationary-dataset"
+    convert_sessions([stationary_raw], stationary_output, "local/mocopi-stationary", fps=20)
+    full_plan, full_report = replay_sim(
+        cfg, stationary_output, gui=False, realtime=False, slowdown=2, sim_model="full"
+    )
     assert full_plan["model_kind"] == "full_mujoco" and not full_plan["hardware_replay_allowed"]
+    assert full_plan["start_pose"] == cfg["robot"]["start_pose"] == "work"
+    assert full_report["start_pose"] == "work"
     assert full_plan["urdf_sha256"] is None and full_report["joint_limit_source"] == "unmeasured"
     assert full_report["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
-    assert full_report["feasibility"]["ik_failures"] == 0
+    assert full_report["feasibility"]["ik_failures"] == len(full_report["ik_failures"])
     assert isinstance(full_report["feasibility"]["within_preview_tolerance"], bool)
     assert full_report["workspace_clamp_measured"] is False
     assert full_report["workspace_clamped_frames"] is None
-    assert not full_report["ik_failures"]
+    assert not full_plan["failures"]
     full_file = tmp_path / "full-plan.json"
     full_file.write_text(json.dumps(full_plan))
     preview = replay_real(cfg, full_file, allow_synthetic=True, max_sim_error_m=0.1)
@@ -268,9 +287,36 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
     with pytest.raises(ValueError, match="simulation-only"):
         replay_real(cfg, full_file, execute=True, allow_synthetic=True, max_sim_error_m=0.1)
     full_joints = export_joint_dataset(
-        cfg, output, [full_file], tmp_path / "full-joints", "local/full-joints", max_sim_error_m=0.1
+        cfg,
+        stationary_output,
+        [full_file],
+        tmp_path / "full-joints",
+        "local/full-joints",
+        max_sim_error_m=0.1,
     )
     assert full_joints["model_kind"] == "full_mujoco" and not full_joints["hardware_replay_allowed"]
+    assert full_joints["start_pose"] == "work"
+    assert full_joints["episodes"][0]["start_pose"] == "work"
+
+    backwards_plan, backwards_report = replay_sim(
+        cfg,
+        stationary_output,
+        gui=False,
+        realtime=False,
+        slowdown=2,
+        sim_model="full",
+        start_pose="backwards",
+    )
+    assert backwards_plan["start_pose"] == backwards_report["start_pose"] == "backwards"
+    assert backwards_plan["model_kind"] == "full_mujoco"
+    assert len(backwards_plan["frames"]) == len(full_plan["frames"])
+    # The two experiments intentionally start from different robot poses. Their
+    # saved start_pose and numeric reports make the dependency reproducible.
+    final_left = np.linalg.norm(
+        np.asarray(full_plan["frames"][-1]["arms"]["left"]["joint_deg"])
+        - np.asarray(backwards_plan["frames"][-1]["arms"]["left"]["joint_deg"])
+    )
+    assert final_left > 0
     from telegrip.mocopi.dataset.verify import verify_dataset
 
     verified = verify_dataset(tmp_path / "full-joints", sample_frames=2)
@@ -863,7 +909,7 @@ def test_metrics_csv_combines_quality_and_simulation_reports(tmp_path):
         float(parsed[1]["tracking.right.position_m.max"])
         == simulation["tracking"]["right"]["position_m"]["max"]
     )
-    assert int(parsed[1]["ik_failures.count"]) == len(simulation["ik_failures"]) == 0
+    assert int(parsed[1]["ik_failures.count"]) == len(simulation["ik_failures"])
     assert parsed[1]["model_kind"] == "full_mujoco" and parsed[1]["task"] == "csv check"
     # Unmeasured CAD joint limits stay empty instead of a fabricated margin.
     assert simulation["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None

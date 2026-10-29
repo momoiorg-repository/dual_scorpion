@@ -161,6 +161,7 @@ def export_joint_dataset(
         "fps": source.fps,
         "gripper_recorded": False,
         "model_kind": plans[0].get("model_kind", "legacy_urdf"),
+        "start_pose": plans[0].get("start_pose", "config"),
         "hardware_replay_allowed": not full_model,
         "mujoco_model_sha256": plans[0].get("mujoco_model_sha256"),
         "urdf_sha256": plans[0]["urdf_sha256"],
@@ -189,6 +190,7 @@ def export_joint_dataset(
             result["episodes"].append(
                 {
                     "source_episode": plan["episode"],
+                    "start_pose": plan.get("start_pose", "config"),
                     "plan_sha256": plan_hash(plan),
                     "slowdown": plan["slowdown"],
                     "frames": len(plan["frames"]) - 1,

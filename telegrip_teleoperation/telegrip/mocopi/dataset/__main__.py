@@ -59,6 +59,11 @@ def parser():
     replay.add_argument("--visual-urdf", help="Optional compatible assembly URDF for CAD visuals")
     replay.add_argument("--sim-model", choices=["full", "legacy"], help="Full native CAD or legacy arm URDFs")
     replay.add_argument("--mujoco-model", help="Override the full MuJoCo XML model path")
+    replay.add_argument(
+        "--start-pose",
+        choices=["work", "backwards", "config"],
+        help="Override the configured initial robot pose for this plan",
+    )
     replay.add_argument("--plan", help="Write a new robot joint plan JSON")
     replay.add_argument("--report", help="Write a new simulation metrics JSON")
     joints = sub.add_parser(
@@ -198,6 +203,7 @@ def main():
                 show_camera=not args.no_camera,
                 slowdown=args.slowdown,
                 sim_model=sim_model,
+                start_pose=args.start_pose,
             )
             for path, document in ((args.plan, plan), (args.report, result)):
                 if path:

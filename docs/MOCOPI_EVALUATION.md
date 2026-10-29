@@ -57,6 +57,7 @@
 | `workspace_clamped_frames` | 手の目標が到達可能領域へ圧縮されたフレーム数 | フレーム | **旧URDF（`workspace_clamp_measured: true`）のみ**。新CADモデルのプレビューにはclamp段がなく、`null`（未評価） |
 | `retarget_clamped_frames` | 手の目標が相対動作の上限を超えたフレーム数 | フレーム | 人の動作がロボットの作業領域を超えた量の代理指標（両モデルで計算） |
 | `frames` / `requested_frames` / `source_frames` | 生成フレーム数 / 要求フレーム数 / 元フレーム数 | フレーム | `--slowdown` 倍で保持 |
+| `start_pose` | MuJoCo IKを開始した設定 (`work` / `backwards` / `config`) | — | 初期姿勢依存の比較に必要な実験条件。開始姿勢そのものの良し悪しを示さない |
 | `feasibility` | `ik_failures`・`max_position_error_m`・`max_joint_step_observed_deg` と各上限をまとめた判定 | — | `within_preview_tolerance` は「IK失敗0・位置誤差≤`position_tolerance_m`・関節ステップ≤`max_joint_step_limit_deg`」のとき true。プレビュー範囲内の運動学判定であり、衝突や実機の安全を保証しない |
 
 評価条件: `--slowdown N` は各元フレームをN更新保持します（速度を落とすほどIKが改善しやすい）。
@@ -111,10 +112,21 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
   --dataset outputs/mocopi/datasets/demo-001 --episode 0 --headless --fast --slowdown 3 \
   --plan outputs/mocopi/plans/e1.json --report outputs/mocopi/reports/e1-sim.json
 
+# 初期姿勢依存の比較。同じデータ・モデル・slowdownで開始姿勢だけ変更する
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
+  --dataset outputs/mocopi/datasets/demo-001 --episode 0 --headless --fast --slowdown 3 \
+  --start-pose work --plan outputs/mocopi/plans/e1-work.json \
+  --report outputs/mocopi/reports/e1-work-sim.json
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
+  --dataset outputs/mocopi/datasets/demo-001 --episode 0 --headless --fast --slowdown 3 \
+  --start-pose backwards --plan outputs/mocopi/plans/e1-backwards.json \
+  --report outputs/mocopi/reports/e1-backwards-sim.json
+
 # 複数レポートを1つの比較表へ（品質・シミュレーション・実機・比較のどのレポートも可）
 uv run --no-sync --active python -m telegrip.mocopi.dataset metrics-csv \
   --input outputs/mocopi/reports/episode-001.json \
-  --input outputs/mocopi/reports/e1-sim.json \
+  --input outputs/mocopi/reports/e1-work-sim.json \
+  --input outputs/mocopi/reports/e1-backwards-sim.json \
   --output outputs/mocopi/reports/metrics-table.csv
 ```
 
@@ -123,6 +135,9 @@ CSVは1レポート1行で、ネストした値は `tracking.left.position_m.p95
 同じ入力からは常に同じCSVが生成されます（再現・比較用）。数値はJSONの値をそのまま
 書き出すため、丸めによる差は生じません。グラフ化はCSVをpandas等で読み込み、
 `tracking.*.position_m.p95` などをエピソード間で並べるのが基本操作です。
+初期姿勢依存の比較では、`start_pose` 列で2つの実行を区別し、IK失敗数・位置誤差・
+関節ステップ・対応する計画JSONの最終関節角差を確認します。この比較は選択した初期姿勢に
+対するIKの内部整合性の感度であり、どちらの初期姿勢が物理的に安全かを示すものではありません。
 
 数値指標の前に、データセットそのものの構造検証を行えます（読み込み・寸法・映像デコード・
 `action` が次フレーム状態であること・未測定モデルが実機再生可能と主張していないこと）。
