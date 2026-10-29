@@ -33,7 +33,8 @@ Optionally, the head-camera SLAM stream aligns the head and both arms while
 preserving the original mocopi poses and timestamps.
 Validated seven-joint plans can also be replayed through the existing follower
 driver, with encoder-based metrics and optional comparison to externally measured
-TCP points; physical playback has not yet been verified.
+TCP points. An optional simulated orientation-error limit can reject plans before
+connecting to the robot; physical playback has not yet been verified.
 The guide also compares these human-pose records with the reference leader-operated
 dataset and explains their different cameras, state and action semantics.
 

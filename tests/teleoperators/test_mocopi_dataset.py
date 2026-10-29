@@ -178,6 +178,7 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
     from types import SimpleNamespace
 
     pytest.importorskip("pybullet")
+    from scipy.spatial.transform import Rotation
     from telegrip.mocopi.dataset.real import JOINTS, execute_plan, validate_plan
     from telegrip.mocopi.dataset.replay import _pose_vector, model_fingerprint
     from telegrip.mocopi.geometry import pose
@@ -216,7 +217,23 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
             plan["frames"].append(frame)
         with pytest.raises(ValueError, match="Synthetic"):
             validate_plan(plan, cfg, simulation)
-        assert validate_plan(plan, cfg, simulation, allow_synthetic=True)["frames"] == 4
+        result = validate_plan(plan, cfg, simulation, allow_synthetic=True)
+        assert result["frames"] == 4
+        assert result["simulated_orientation_error_deg"]["left"]["max"] < 1e-5
+        rotated = deepcopy(plan)
+        rotated_arm = rotated["frames"][1]["arms"]["left"]
+        rotated_pose = rotated_arm["target_pose"] = list(rotated_arm["target_pose"])
+        rotated_pose[3:] = (
+            (Rotation.from_euler("x", 35, degrees=True) * Rotation.from_quat(rotated_pose[3:]))
+            .as_quat()
+            .tolist()
+        )
+        assert validate_plan(rotated, cfg, simulation, allow_synthetic=True)[
+            "simulated_orientation_error_deg"
+        ]["left"]["max"] == pytest.approx(35)
+        with pytest.raises(ValueError, match="orientation error"):
+            validate_plan(rotated, cfg, simulation, allow_synthetic=True, max_sim_orientation_error_deg=20)
+        validate_plan(rotated, cfg, simulation, allow_synthetic=True, max_sim_orientation_error_deg=40)
         bad = deepcopy(plan)
         bad["frames"][1]["arms"]["left"]["joint_deg"][0] += 30
         with pytest.raises(ValueError, match="limit"):
@@ -278,6 +295,20 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
                     self.current.update(action)
                 return dict(action)
 
+        rejected_robot = FakeRobot()
+        with pytest.raises(ValueError, match="orientation error"):
+            execute_plan(
+                rotated,
+                cfg,
+                simulation,
+                rejected_robot,
+                tmp_path / "rejected.json",
+                realtime=False,
+                allow_synthetic=True,
+                max_sim_orientation_error_deg=20,
+            )
+        assert not rejected_robot.left_bus.is_connected and not rejected_robot.right_bus.is_connected
+        assert not rejected_robot.commands and not (tmp_path / "rejected.json").exists()
         robot = FakeRobot()
         report = execute_plan(
             plan, cfg, simulation, robot, tmp_path / "real-report.json", realtime=False, allow_synthetic=True

@@ -32,7 +32,15 @@ def _joint_map(frame):
     return result
 
 
-def validate_plan(plan, config, simulation, *, allow_synthetic=False, max_sim_error_m=0.025):
+def validate_plan(
+    plan,
+    config,
+    simulation,
+    *,
+    allow_synthetic=False,
+    max_sim_error_m=0.025,
+    max_sim_orientation_error_deg=None,
+):
     """Check every command against the selected URDF before opening motor ports."""
     if (
         plan.get("schema") != "dual_scorpion.mocopi.robot_plan.v1"
@@ -57,10 +65,14 @@ def validate_plan(plan, config, simulation, *, allow_synthetic=False, max_sim_er
         raise ValueError("Plan needs an integer fps and at least two frames")
     if not np.isfinite(max_sim_error_m) or not 0 < max_sim_error_m <= 0.10:
         raise ValueError("max_sim_error_m must be in (0, 0.10]")
+    if max_sim_orientation_error_deg is not None and (
+        not np.isfinite(max_sim_orientation_error_deg) or not 0 < max_sim_orientation_error_deg <= 180
+    ):
+        raise ValueError("max_sim_orientation_error_deg must be in (0, 180]")
     # At most 0.5 degrees per frame and 15 degrees/second, including if a
     # higher-rate dataset was generated with a different configuration.
     step_limit = min(0.5, 15.0 / fps, float(config["robot"]["max_joint_step_deg"]))
-    positions, previous = {side: [] for side in SIDES}, None
+    positions, orientations, previous = {side: [] for side in SIDES}, {side: [] for side in SIDES}, None
     for index, frame in enumerate(frames):
         if not np.isfinite(frame.get("time_s", np.nan)) or abs(frame["time_s"] - index / fps) > 1e-5:
             raise ValueError(f"Invalid plan timing at frame {index}")
@@ -100,13 +112,26 @@ def validate_plan(plan, config, simulation, *, allow_synthetic=False, max_sim_er
                 raise ValueError(
                     f"Simulated position error {error:.3f} m exceeds limit at frame {index} ({side})"
                 )
+            orientation_error = float(
+                np.rad2deg(Rotation.from_matrix(target[:3, :3] @ actual[:3, :3].T).magnitude())
+            )
+            if (
+                max_sim_orientation_error_deg is not None
+                and orientation_error > max_sim_orientation_error_deg
+            ):
+                raise ValueError(
+                    f"Simulated orientation error {orientation_error:.1f} deg exceeds limit "
+                    f"at frame {index} ({side})"
+                )
             positions[side].append(error)
+            orientations[side].append(orientation_error)
         previous = joints
     return {
         "frames": len(frames),
         "fps": fps,
         "max_joint_step_deg": step_limit,
         "simulated_position_error_m": {side: _summary(positions[side]) for side in SIDES},
+        "simulated_orientation_error_deg": {side: _summary(orientations[side]) for side in SIDES},
     }
 
 
@@ -176,13 +201,19 @@ def execute_plan(
     max_tracking_error_deg=5.0,
     allow_synthetic=False,
     max_sim_error_m=0.025,
+    max_sim_orientation_error_deg=None,
     realtime=True,
 ):
     """Replay a prevalidated plan; retain partial quantitative results on failure."""
     if not (0 < max_start_error_deg <= 2 and 0 < max_tracking_error_deg <= 5):
         raise ValueError("Start/tracking tolerances must be positive and at most 2/5 degrees")
     validation = validate_plan(
-        plan, config, simulation, allow_synthetic=allow_synthetic, max_sim_error_m=max_sim_error_m
+        plan,
+        config,
+        simulation,
+        allow_synthetic=allow_synthetic,
+        max_sim_error_m=max_sim_error_m,
+        max_sim_orientation_error_deg=max_sim_orientation_error_deg,
     )
     limit = robot.config.max_relative_target
     if (
@@ -336,12 +367,18 @@ def replay_real(
     report=None,
     allow_synthetic=False,
     max_sim_error_m=0.025,
+    max_sim_orientation_error_deg=None,
 ):
     plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
     simulation = DualSimulation(config["robot"], gui=False)
     try:
         result = validate_plan(
-            plan, config, simulation, allow_synthetic=allow_synthetic, max_sim_error_m=max_sim_error_m
+            plan,
+            config,
+            simulation,
+            allow_synthetic=allow_synthetic,
+            max_sim_error_m=max_sim_error_m,
+            max_sim_orientation_error_deg=max_sim_orientation_error_deg,
         )
         if not execute:
             return {"mode": "validation_only", **result}
@@ -358,6 +395,7 @@ def replay_real(
             report,
             allow_synthetic=allow_synthetic,
             max_sim_error_m=max_sim_error_m,
+            max_sim_orientation_error_deg=max_sim_orientation_error_deg,
         )
     finally:
         simulation.close()

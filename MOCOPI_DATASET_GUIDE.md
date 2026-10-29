@@ -30,11 +30,29 @@ uv run --no-sync --active python -m telegrip.mocopi camera-list
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
-  --fake --output outputs/mocopi/sessions/fake-001 --duration 3 --task 'コップを移動する' \
+  --fake --output outputs/mocopi/sessions/fake-001 --duration 0.8 --task 'コップを移動する' \
   --reference-id workbench-session-A
 ```
 
 `--fake` は合成画像と合成姿勢を作ります。保存先は毎回、新しいフォルダ名にしてください。
+続けて、機器に接続せずに評価・変換・MuJoCo再生と計画の検証まで試せます。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset evaluate \
+  --input outputs/mocopi/sessions/fake-001 --output outputs/mocopi/reports/fake-001.json
+uv run --no-sync --active python -m telegrip.mocopi.dataset convert \
+  --input outputs/mocopi/sessions/fake-001 --output outputs/mocopi/datasets/fake-001 \
+  --repo-id local/mocopi-fake --fps 30
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
+  --dataset outputs/mocopi/datasets/fake-001 --episode 0 --headless --fast --slowdown 3 \
+  --plan outputs/mocopi/plans/fake-001.json --report outputs/mocopi/reports/fake-001-sim.json
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
+  --plan outputs/mocopi/plans/fake-001.json --allow-synthetic
+```
+
+最後のコマンドは計画の検証のみで、実機に接続しません。合成データの数値は実測結果ではありません。
+MuJoCoと記録映像を画面で見るときは、新しい計画・レポート名を指定し、`--headless --fast` を外します。
+変換に必要な依存関係が入っていない場合は、後述の「LeRobot形式へ変換する」のインストールを先に実行してください。
 
 ## C270とmocopiで記録する
 
@@ -196,6 +214,8 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
 レポートには左右の目標手先とFK結果の位置・回転誤差、関節の1更新あたりの動き、
 関節可動範囲までの余裕、IK失敗、手の目標が制限されたフレーム数が入ります。
 これはシミュレーション上の比較で、実機の追従誤差や衝突の有無を測ったものではありません。
+手首の回転も使う作業では、左右の `tracking.*.orientation_deg` を確認してください。
+後述の実機計画の自動検証は手先の位置誤差に上限を設け、回転誤差の上限も必要に応じて指定できます。
 計画JSONにはグリッパーを含まない左右7関節ずつの角度を記録します。
 位置誤差が大きい場合は、再生をゆっくりにして計画し直せます。例えば `--slowdown 3` は
 各記録フレームを3更新保持し、再生時間を3倍にします。出力ファイルは新しい名前にしてください。
@@ -220,6 +240,10 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
 `--allow-synthetic` が必要です。位置誤差の既定上限は25mmです。超えた場合は、
 MuJoCoの再生で `--slowdown 3` などを指定して計画を作り直してください。
 別のURDFを使った計画では、検証にも同じ `--left-urdf` / `--right-urdf` を指定します。
+左右のシミュレーション上の回転誤差も出力されます。例えば作業上の許容値が20度なら、
+検証と実機実行のそれぞれに `--max-sim-orientation-error-deg 20` を追加すると、
+どちらかの腕のいずれかのフレームで超えた計画を拒否します。既定では回転の上限は設定しません。
+この角度はURDF上の値であり、実機の手首角度の外部計測値ではありません。
 
 ## 実機で再生する
 

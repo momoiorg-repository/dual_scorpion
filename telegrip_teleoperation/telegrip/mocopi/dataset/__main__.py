@@ -62,6 +62,11 @@ def parser():
     real.add_argument("--report", help="New JSON output for measured real-robot results")
     real.add_argument("--allow-synthetic", action="store_true", help="Permit a plan sourced from --fake")
     real.add_argument("--max-sim-error-m", type=float, default=0.025)
+    real.add_argument(
+        "--max-sim-orientation-error-deg",
+        type=float,
+        help="Optionally reject plans exceeding this simulated wrist angle error",
+    )
     real.add_argument("--left-urdf", help="Left-arm URDF used to create the plan")
     real.add_argument("--right-urdf", help="Right-arm URDF used to create the plan")
     compare = sub.add_parser(
@@ -167,6 +172,7 @@ def main():
                 report=args.report,
                 allow_synthetic=args.allow_synthetic,
                 max_sim_error_m=args.max_sim_error_m,
+                max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
             )
             if args.execute:
                 result = {
