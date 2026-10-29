@@ -197,6 +197,8 @@ def replay_sim(
         "slowdown": slowdown,
         "fps": dataset.fps,
         "source": source,
+        "episode": episode,
+        "task": plan["task"],
         "model_kind": plan["model_kind"],
         "hardware_replay_allowed": plan["hardware_replay_allowed"],
         "joint_limit_source": "unmeasured" if sim_model == "full" else "legacy_urdf",

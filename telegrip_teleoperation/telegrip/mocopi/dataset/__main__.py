@@ -40,6 +40,9 @@ def parser():
     evaluate.add_argument("--fps", type=int, default=30)
     evaluate.add_argument("--max-sync-s", type=float, default=0.08)
     evaluate.add_argument("--workspace", help="Optional YAML with left/right min_m and max_m")
+    metrics = sub.add_parser("metrics-csv", help="Combine saved evaluation reports into one comparison CSV")
+    metrics.add_argument("--input", action="append", required=True, help="Saved JSON report; repeat for each")
+    metrics.add_argument("--output", required=True, help="New CSV file to write")
     replay = sub.add_parser("replay-sim", help="Replay an episode in MuJoCo and quantify tracking")
     replay.add_argument("--dataset", required=True)
     replay.add_argument("--episode", type=int, default=0)
@@ -146,6 +149,10 @@ def main():
                 output.parent.mkdir(parents=True, exist_ok=True)
                 with output.open("x", encoding="utf-8") as file:
                     file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+        elif args.command == "metrics-csv":
+            from .report_csv import export_metrics_csv
+
+            result = export_metrics_csv(args.input, args.output)
         elif args.command == "replay-sim":
             from .replay import replay_sim
 

@@ -793,3 +793,61 @@ def test_slam_map_mismatch_aborts_recording_before_camera_capture(tmp_path):
         )
     meta = json.loads((root / "session.json").read_text())
     assert meta["status"] == "aborted" and meta["camera_frames"] == 0
+
+
+def test_metrics_csv_combines_quality_and_simulation_reports(tmp_path):
+    import csv
+
+    pytest.importorskip("cv2")
+    pytest.importorskip("mujoco")
+    pytest.importorskip("pybullet")
+    pytest.importorskip("lerobot.datasets.lerobot_dataset")
+    from telegrip.mocopi.dataset.convert import convert_sessions
+    from telegrip.mocopi.dataset.evaluate import session_metrics
+    from telegrip.mocopi.dataset.replay import replay_sim
+    from telegrip.mocopi.dataset.report_csv import export_metrics_csv
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    session = tmp_path / "raw"
+    capture_session(cfg, session, 0.5, "csv check", fake=True)
+    quality = session_metrics(session, fps=20)
+    quality_file = tmp_path / "quality.json"
+    quality_file.write_text(json.dumps(quality))
+    output = tmp_path / "dataset"
+    convert_sessions([session], output, "local/csv-check", fps=20)
+    _, simulation = replay_sim(cfg, output, gui=False, realtime=False, sim_model="full")
+    sim_file = tmp_path / "sim.json"
+    sim_file.write_text(json.dumps(simulation))
+
+    table = tmp_path / "metrics.csv"
+    summary = export_metrics_csv([quality_file, sim_file], table)
+    assert summary["schema"] == "dual_scorpion.mocopi.metrics_table.v1"
+    assert summary["reports"] == 2 and summary["output"] == str(table)
+    parsed = list(csv.DictReader(table.open(newline="", encoding="utf-8")))
+    assert [row["report"] for row in parsed] == [str(quality_file), str(sim_file)]
+    assert [row["schema"] for row in parsed] == [quality["schema"], simulation["schema"]]
+    # Quality-only and simulation-only columns share one table; missing cells stay empty.
+    assert float(parsed[0]["camera_fps"]) == quality["camera_fps"]
+    assert int(parsed[0]["usable_dataset_frames"]) == quality["usable_dataset_frames"]
+    assert parsed[0]["tracking.left.position_m.max"] == ""
+    assert parsed[1]["camera_fps"] == ""
+    assert (
+        float(parsed[1]["tracking.right.position_m.max"])
+        == simulation["tracking"]["right"]["position_m"]["max"]
+    )
+    assert int(parsed[1]["ik_failures.count"]) == len(simulation["ik_failures"]) == 0
+    assert parsed[1]["model_kind"] == "full_mujoco" and parsed[1]["task"] == "csv check"
+    # Unmeasured CAD joint limits stay empty instead of a fabricated margin.
+    assert simulation["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
+    assert parsed[1]["tracking.left.joint_limit_margin_deg.max"] == ""
+    assert parsed[0]["episode"] == "" and parsed[1]["episode"] == "0"
+
+    with pytest.raises(FileExistsError):
+        export_metrics_csv([quality_file], table)
+    with pytest.raises(ValueError, match="more than once"):
+        export_metrics_csv([quality_file, quality_file], tmp_path / "duplicate.csv")
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({"schema": "some.other.report"}))
+    with pytest.raises(ValueError, match="Not a mocopi evaluation report"):
+        export_metrics_csv([other], tmp_path / "other.csv")

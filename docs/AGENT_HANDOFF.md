@@ -23,7 +23,7 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 | 3 | LeRobot Datasetを生成・読み込み・検証できる | 実装済み。テストで往復検証済み |
 | 4 | MuJoCoでDatasetからの再生を確認できる | 実装済み。既定は新CADモデル（full）、旧URDFは `--sim-model legacy` |
 | 5 | 実機への安全な再生経路と実施状況の明示 | 実装済み（`replay-real` の検証ゲートと `--execute`）。実機実行は未実施 |
-| 6 | 再現可能な定量評価の実装と結果取得 | 実装済み（JSONレポート一式）。CSVエクスポートは未実装（次作業） |
+| 6 | 再現可能な定量評価の実装と結果取得 | 実装済み。JSONレポート一式＋`metrics-csv` 比較表＋`docs/MOCOPI_EVALUATION.md`（指標定義） |
 | 7 | READMEと使用手順 | `MOCOPI_START_GUIDE.md`・`MOCOPI_DATASET_GUIDE.md`・`README.md`・`HOW_TO_USE.md` を更新済み |
 | 8 | 実装・検証結果がGitに保存されている | 逐次 commit / push。未 push がある場合は本ドキュメントの下記を確認 |
 
@@ -88,12 +88,13 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
    - 実機レポートから読み取り/指令データセットを生成。外部実測TCPのCSV入力で
      Ground Truth 比較が可能（未計測なら推定値のみ）
 8. **URDF差し替え**（sim/main/dev/dev_mocopi_convert_dataset へ反映済み）
+9. **評価の比較表と指標定義** — `metrics-csv` が保存済みレポート（品質・MuJoCo・実機・比較）を
+   1つのCSVへまとめる。ネスト値はドット区切り、リストは `.count`、未取得は空セル。
+   `docs/MOCOPI_EVALUATION.md` に計算式・単位・入力・評価条件・限界を定義し、
+   内部整合性の評価と外部Ground Truthが必要な評価を区別している
 
 ## 実装途中の機能
 
-- **定量評価のCSVエクスポート**: JSONレポートは完成。研究での比較表に使うCSV出力と、
-  指標の定義（計算式・単位・入力・評価条件・意味、内部整合性と外部Ground Truthの区別）を
-  記したドキュメントを追加する予定（本ドキュメント作成時点で未実装）
 - **実機でのmocopi/C270/SLAM収録**: コードは完成。実機パケット・取り付け校正・レイテンシの
   実測検証が未実施
 - **実機 `--execute` 再生**: コードは完成。安全確認ができるまで実行しない。新CADモデルでは
@@ -120,8 +121,9 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 | テスト | 結果 |
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
-| `tests/teleoperators/test_mocopi_dataset.py` | 11 passed |
+| `tests/teleoperators/test_mocopi_dataset.py` | 12 passed（`metrics-csv` の往復検証を含む） |
 | `tests/teleoperators/test_mocopi_full_model.py` | 3 passed |
+| `tests/teleoperators` 全体 | 79 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加で実行した手動の end-to-end 確認（合成データ、実機非接続）:
@@ -139,16 +141,13 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## 次に実行するべき具体的な作業
 
-1. 定量評価の仕上げ（優先）:
-   - レポート（quality / sim / comparison / real feedback）を横断比較できるCSV出力を追加
-   - 指標の定義（計算式・単位・入力・条件・意味、外部Ground Truthと内部整合性の区別）を
-     `docs/MOCOPI_EVALUATION.md` として文書化し、README と `MOCOPI_DATASET_GUIDE.md` からリンク
-   - テストを追加し commit / push
-2. 新CADモデルの計画の安全側の扱いを再確認（`hardware_replay_allowed` の伝搬、ハッシュ照合）
-3. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界）
-4. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
+1. 新CADモデルの計画の安全側の扱いを再確認（`hardware_replay_allowed` の伝搬、ハッシュ照合、
+   関節限界が未測定であることの一貫した表示）
+2. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界、
+   新CADモデルのIKの初期姿勢依存性）
+3. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
-5. グリッパー拡張の設計メモ（収録開始時のタイムスタンプ同期方法を含む）
+4. グリッパー拡張の設計メモ（収録開始時のタイムスタンプ同期方法を含む）
 
 ## 必要な実行コマンド（環境設定）
 

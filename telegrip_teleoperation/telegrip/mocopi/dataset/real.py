@@ -240,6 +240,8 @@ def execute_plan(
         "schema": "dual_scorpion.mocopi.real_metrics.v1",
         "status": "starting",
         "source": plan["source"],
+        "episode": plan.get("episode"),
+        "task": plan.get("task"),
         "plan_sha256": plan_hash(plan),
         "robot_id": getattr(robot, "id", None),
         "urdf_sha256": plan["urdf_sha256"],

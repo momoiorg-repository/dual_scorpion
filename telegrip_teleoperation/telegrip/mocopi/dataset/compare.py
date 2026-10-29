@@ -71,6 +71,9 @@ def compare_real(config, plan_path, report_path, reference_csv=None):
 
     result = {
         "schema": "dual_scorpion.mocopi.comparison.v1",
+        "episode": plan.get("episode"),
+        "task": plan.get("task"),
+        "model_kind": plan.get("model_kind", "legacy_urdf"),
         "plan_sha256": plan_hash(plan),
         "urdf_sha256": plan["urdf_sha256"],
         "real_status": report["status"],

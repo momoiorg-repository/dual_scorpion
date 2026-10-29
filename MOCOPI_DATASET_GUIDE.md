@@ -135,6 +135,19 @@ SLAM使用時は追跡喪失数、画像とSLAMの時刻差、bridgeからの画
 書式は [workspace.example.yaml](config/mocopi/workspace.example.yaml) を参照してください。
 例の数値は実際のテープ位置ではありません。範囲は自動推定せず、未指定なら範囲外判定を省きます。
 
+複数のレポートを1つのCSV比較表にまとめるには、次のコマンドを使います。品質・MuJoCo評価・
+実機評価・比較のレポートを混在でき、値のないセルは空になります。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset metrics-csv \
+  --input outputs/mocopi/reports/episode-001.json \
+  --input outputs/mocopi/reports/episode-001-sim.json \
+  --output outputs/mocopi/reports/metrics-table.csv
+```
+
+各指標の計算式・単位・入力・評価条件・限界と、内部整合性の評価と外部Ground Truthを
+必要とする評価の区別は [MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md) にまとめています。
+
 ## LeRobot形式へ変換する
 
 LeRobotのdataset依存関係を用意します。
