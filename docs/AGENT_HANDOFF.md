@@ -30,12 +30,13 @@ MuJoCo と実機で再生・確認でき、研究として説明できる定量�
 ## 現在のブランチとコミット
 
 - 作業ブランチ: `dev_mocopi_convert_dataset`（`origin/dev_mocopi_convert_dataset` と同期済み）
-- 最新コミット: `aad68b5 docs: refresh mocopi agent handoff` に続き、
-  この文書の更新を含む今回の120秒ストレステストコミットが最新になる
+- 最新コミット: `860e520 test: stress long mocopi sessions` に続き、
+  この文書の更新を含む今回の実機診断記録コミットが最新になる
 - 直近の流れ: `a96461b`（URDF差し替え）→ `836556d`（新CADモデルのMuJoCo導入）→
   `141fb51`（doctorのLFS診断）→ `b9c4164`（full-model IKの実返り値検証とstart-pose記録）
   → `4dd4b60`（Full CADのモデル内衝突評価）→ `bb6bc2c`（jitter/dropout境界テスト）
-  → `aad68b5`（ハンドオフ整理）→ 今回（120秒ストレステスト）
+  → `aad68b5`（ハンドオフ整理）→ `860e520`（120秒ストレステスト）
+  → 今回（実機診断の記録）
 
 URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` の内容が
 `dual_scorpion_Full_urdf/` へ反映され、次の4ブランチすべてで同一であることを確認済み:
@@ -177,16 +178,36 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 ## 現在発生しているエラー
 
 - テスト失敗・既知の実行時エラーはなし
+- 実機mocopiのUDP受信は現在失敗: `mocopi-check --duration 2` でフレームなし
+  （終了コード2）。PC側のUDP 12351受信準備はできているが、スマホ側SENDが
+  動作していない可能性がある。物理的なmocopi送信開始・アプリ設定・
+  ネットワーク確認が必要
 - 環境上の注意:
   - root `.venv` に `mujoco` 3.14.0 と `lerobot`・`telegrip` が入っている。
     `telegrip_teleoperation/.venv` には mujoco がない
   - `ruff` はvenvに未導入。`uvx ruff@0.14.1 ...` を使う
   - ROS を source した shell では `lark` 不足等で pytest が失敗する（上記の env -u を使う）
 
+## 実機診断（2026-10-29、モーター非接触）
+
+- `camera-list`: HD Webcam（C270と同一デバイス表示）を `/dev/video0` で検出。
+  MJPG 640x480 30 FPSを含む複数モードを列挙できた。`/dev/video1` はメタデータ用で
+  キャプチャ不能。設定ファイルの既定 `/dev/video2` は現在の接続順では存在しない
+- C270 1フレーム読み取り: `/dev/video0` で成功。`shape=(480, 640, 3)`,
+  `dtype=uint8`。画像は保存していない
+- `doctor`: MuJoCo 3.14 import可、新CAD MJCFとメッシュは `ok`、
+  visual URDF存在、ハードウェア制御は `disabled`
+- `doctor` の注意: `rclpy_importable=false`、`head_calibration_exists=false`。
+  したがってSLAM/頭校正を使う実機収録前にROS 2環境と頭校正の準備が必要
+- `mocopi-check --duration 2`: UDP 12351でmocopiフレームなし。カメラは読み取れるが、
+  現在mocopi実パケット受信まで到達していない
+
 ## 次に実行するべき具体的な作業
 
 1. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
-   安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
+   まずスマホのmocopi SENDを開始し、`mocopi-check --duration 5` で受信を確認する。
+   現在の接続ではC270に `--camera /dev/video0` を指定する。安全確認が取れるまで
+   モーターを動かさない。実施したら本ドキュメントへ結果を記録
 2. 実機由来の長時間記録が取得できたら、同じ評価・変換・検証コマンドで結果を記録する
 
 ## 必要な実行コマンド（環境設定）
