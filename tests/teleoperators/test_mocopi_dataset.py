@@ -261,6 +261,19 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
         cfg, output, [full_file], tmp_path / "full-joints", "local/full-joints", max_sim_error_m=0.1
     )
     assert full_joints["model_kind"] == "full_mujoco" and not full_joints["hardware_replay_allowed"]
+    from telegrip.mocopi.dataset.verify import verify_dataset
+
+    verified = verify_dataset(tmp_path / "full-joints", sample_frames=2)
+    assert verified["status"] == "ok" and verified["dataset_kind"] == "joints"
+    tampered = tmp_path / "tampered-joints"
+    shutil.copytree(tmp_path / "full-joints", tampered)
+    tampered_meta = tampered / "meta" / "mocopi_joint_dataset.json"
+    document = json.loads(tampered_meta.read_text())
+    document["hardware_replay_allowed"] = True
+    tampered_meta.write_text(json.dumps(document))
+    tampered_report = verify_dataset(tampered, sample_frames=1)
+    assert tampered_report["status"] == "failed"
+    assert "preview_model_simulation_only" in tampered_report["errors"]
     full_data = dataset_type("local/full-joints", root=tmp_path / "full-joints", video_backend="pyav")
     assert len(full_data) == len(full_plan["frames"]) - 1
     np.testing.assert_allclose(
@@ -855,3 +868,43 @@ def test_metrics_csv_combines_quality_and_simulation_reports(tmp_path):
     other.write_text(json.dumps({"schema": "some.other.report"}))
     with pytest.raises(ValueError, match="Not a mocopi evaluation report"):
         export_metrics_csv([other], tmp_path / "other.csv")
+
+
+def test_verify_dataset_reads_human_dataset_and_rejects_wrong_claims(tmp_path):
+    pytest.importorskip("cv2")
+    pytest.importorskip("lerobot.datasets.lerobot_dataset")
+    from telegrip.mocopi.dataset.convert import convert_sessions
+    from telegrip.mocopi.dataset.verify import verify_dataset
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    session = tmp_path / "raw"
+    capture_session(cfg, session, 0.5, "verify check", fake=True)
+    output = tmp_path / "dataset"
+    convert_sessions([session], output, "local/verify-check", fps=20)
+
+    report = verify_dataset(output, sample_frames=4)
+    assert report["schema"] == "dual_scorpion.mocopi.verify.v1"
+    assert report["status"] == "ok" and not report["errors"]
+    assert report["dataset_kind"] == "human" and report["frames"] >= 4
+    assert report["sampled_pairs"] >= 1
+    checks = {item["check"]: item["ok"] for item in report["checks"]}
+    assert checks["gripper_not_recorded"] and checks["no_gripper_feature"]
+    assert checks["raw_mocopi_state_present"] and checks["action_is_next_measured_state"]
+    assert checks["head_video_decodable"] and checks["timestamps_are_episode_grid"]
+
+    with pytest.raises(ValueError, match="sample_frames"):
+        verify_dataset(output, sample_frames=0)
+    with pytest.raises(ValueError, match="Not a mocopi dataset"):
+        verify_dataset(tmp_path)
+
+    import shutil
+
+    tampered = tmp_path / "tampered"
+    shutil.copytree(output, tampered)
+    metadata = tampered / "meta" / "mocopi_dataset.json"
+    document = json.loads(metadata.read_text())
+    document["gripper_recorded"] = True
+    metadata.write_text(json.dumps(document))
+    tampered_report = verify_dataset(tampered, sample_frames=1)
+    assert tampered_report["status"] == "failed" and "gripper_not_recorded" in tampered_report["errors"]

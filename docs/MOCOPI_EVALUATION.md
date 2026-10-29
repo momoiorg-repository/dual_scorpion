@@ -121,6 +121,14 @@ CSVは1レポート1行で、ネストした値は `tracking.left.position_m.p95
 書き出すため、丸めによる差は生じません。グラフ化はCSVをpandas等で読み込み、
 `tracking.*.position_m.p95` などをエピソード間で並べるのが基本操作です。
 
+数値指標の前に、データセットそのものの構造検証を行えます（読み込み・寸法・映像デコード・
+`action` が次フレーム状態であること・未測定モデルが実機再生可能と主張していないこと）。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset verify \
+  --dataset outputs/mocopi/datasets/demo-001 --output outputs/mocopi/reports/demo-001-verify.json
+```
+
 ## 参考: 現時点で評価できない項目
 
 | 項目 | 理由 | 追加に必要なもの |

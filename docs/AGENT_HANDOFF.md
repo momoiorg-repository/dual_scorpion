@@ -92,6 +92,9 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
    1つのCSVへまとめる。ネスト値はドット区切り、リストは `.count`、未取得は空セル。
    `docs/MOCOPI_EVALUATION.md` に計算式・単位・入力・評価条件・限界を定義し、
    内部整合性の評価と外部Ground Truthが必要な評価を区別している
+10. **データセットの読み込み検証** — `verify` がLeRobot APIで読み込み、スキーマ・寸法・
+    映像デコード・時刻格子・`action` = 次フレーム状態の検算・未測定モデルが実機再生可能と
+    主張していないことを確認。失敗時は終了コード1と `errors` を返す
 
 ## 実装途中の機能
 
@@ -121,9 +124,9 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 | テスト | 結果 |
 |---|---|
 | `tests/teleoperators/test_mocopi_tracking.py` | 61 passed |
-| `tests/teleoperators/test_mocopi_dataset.py` | 12 passed（`metrics-csv` の往復検証を含む） |
+| `tests/teleoperators/test_mocopi_dataset.py` | 14 passed（`metrics-csv`・`verify` の検証を含む） |
 | `tests/teleoperators/test_mocopi_full_model.py` | 3 passed |
-| `tests/teleoperators` 全体 | 79 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
+| `tests/teleoperators` 全体 | 81 passed, 2 skipped（skip は追加依存が必要な既存テスト） |
 | `uvx ruff@0.14.1 check` / `format --check`（mocopi・tests） | PASS（0.14.1 は `.pre-commit-config.yaml` と同一） |
 
 追加で実行した手動の end-to-end 確認（合成データ、実機非接続）:
@@ -141,13 +144,11 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## 次に実行するべき具体的な作業
 
-1. 新CADモデルの計画の安全側の扱いを再確認（`hardware_replay_allowed` の伝搬、ハッシュ照合、
-   関節限界が未測定であることの一貫した表示）
-2. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界、
+1. 実機なしで検証できる範囲の拡充（ノイズ耐性、長時間の記録、エピソード分割の境界、
    新CADモデルのIKの初期姿勢依存性）
-3. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
+2. 実機検証（mocopi実packet、C270露出、SLAM、`replay-real --execute`）:
    安全確認が取れるまでモーターを動かさない。実施したら本ドキュメントへ結果を記録
-4. グリッパー拡張の設計メモ（収録開始時のタイムスタンプ同期方法を含む）
+3. グリッパー拡張の設計メモ（収録開始時のタイムスタンプ同期方法を含む）
 
 ## 必要な実行コマンド（環境設定）
 

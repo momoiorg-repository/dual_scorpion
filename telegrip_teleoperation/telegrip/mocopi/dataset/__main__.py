@@ -43,6 +43,10 @@ def parser():
     metrics = sub.add_parser("metrics-csv", help="Combine saved evaluation reports into one comparison CSV")
     metrics.add_argument("--input", action="append", required=True, help="Saved JSON report; repeat for each")
     metrics.add_argument("--output", required=True, help="New CSV file to write")
+    verify = sub.add_parser("verify", help="Read a finalized dataset and check structure and semantics")
+    verify.add_argument("--dataset", required=True, help="Finalized mocopi dataset folder")
+    verify.add_argument("--sample-frames", type=int, default=8, help="Sampled frames per episode (1..200)")
+    verify.add_argument("--output", help="Optional JSON report")
     replay = sub.add_parser("replay-sim", help="Replay an episode in MuJoCo and quantify tracking")
     replay.add_argument("--dataset", required=True)
     replay.add_argument("--episode", type=int, default=0)
@@ -153,6 +157,18 @@ def main():
             from .report_csv import export_metrics_csv
 
             result = export_metrics_csv(args.input, args.output)
+        elif args.command == "verify":
+            from .verify import verify_dataset
+
+            result = verify_dataset(args.dataset, sample_frames=args.sample_frames)
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with output.open("x", encoding="utf-8") as file:
+                    file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+            if result["errors"]:
+                print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+                parser().exit(1, f"Error: dataset verification failed: {', '.join(result['errors'])}\n")
         elif args.command == "replay-sim":
             from .replay import replay_sim
 

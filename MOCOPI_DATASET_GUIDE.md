@@ -286,6 +286,28 @@ IK失敗や制限があった計画、位置誤差が既定の25 mmを超える�
 関節の原点・回転方向・単位、実機側のカメラ配置と観測の対応、実際の追従結果を確認する必要があります。
 由来は出力の `meta/mocopi_joint_dataset.json` に保存されます。
 
+## データセットを読み込み・検証する
+
+生成したデータセットは、学習や共有の前に読み込みと整合性の確認ができます。
+人の姿勢データと関節角データのどちらも指定でき、種類は `meta/` の内容から自動で判定します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset verify \
+  --dataset outputs/mocopi/datasets/demo-001
+uv run --no-sync --active python -m telegrip.mocopi.dataset verify \
+  --dataset outputs/mocopi/datasets/demo-001-joints \
+  --output outputs/mocopi/reports/demo-001-joints-verify.json
+```
+
+LeRobotの通常APIで読み込み、metaのスキーマ、エピソード数、状態とactionの寸法、
+グリッパー項目がないこと、頭カメラ映像が実際にデコードできること、時刻がエピソード格子に
+一致することを確認します。`action` が次のフレームの人の手の姿勢（関節角データでは次の
+関節角）に一致することも、フレームを抜き出して検算します。新CADモデルで生成した関節角
+データが実機再生可能と主張している場合は失敗として報告します。
+失敗があると終了コード1で終了し、`errors` に失敗したチェック名が並びます。
+これは学習前の機械的な読み込み確認で、mocopiや実機の測定精度を評価するものではありません。
+指標の定義は [MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md) を参照してください。
+
 ## 実機の再生計画を検証する
 
 まずMuJoCoで映像と腕の動き、生成された計画とレポートを確認し、次を実行します。
