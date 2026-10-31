@@ -1,12 +1,8 @@
 # MuJoCo
 
-This folder contains a self-contained MJCF model with 16 hinge joints, 16
-position actuators, visual meshes, and 370 convex collision meshes.
+This folder contains a self-contained MJCF model and run script for Dual Scorpion.
 
 ## Setup
-
-The supplied model was tested with MuJoCo 3.16.0 and NumPy. Install the pinned
-dependencies in a virtual environment:
 
 ```sh
 python3 -m venv .venv
@@ -20,24 +16,14 @@ From this folder:
 
 ```sh
 python run.py
-python run.py --pose fusion_current
 python run.py --headless --steps 1000
 ```
 
-The default run opens the passive MuJoCo viewer at the `neutral` keyframe. The
-viewer advances simulation and does not provide an interactive arm controller.
-The headless run applies the selected keyframe, executes the requested number of
-steps, and checks that all joint positions remain finite.
+The viewer starts from the neutral pose. The headless run executes the requested
+number of simulation steps.
 
-Available poses are `neutral` and `fusion_current`. `fusion_current` is the pose
-captured from Fusion, not a calibrated home pose.
+## Notes
 
-## Collision and control policy
-
-`scorpion.xml` enables self-collision and excludes only the 16 directly connected
-parent-child link pairs. Collision geometry is an approximation of the CAD parts.
-Position gains, damping, force range, and joint limits are provisional simulation
-values; they are not measured servo parameters.
-
-The headless success message is a numerical smoke-test result. It is not a full
-workspace collision check or evidence that a real robot is safe to operate.
+The model is fixed at the base and has 16 actuated joints. Collision is enabled
+for non-adjacent links. Joint limits, damping, controller gains, and force limits
+are provisional values and should be replaced for a specific robot setup.

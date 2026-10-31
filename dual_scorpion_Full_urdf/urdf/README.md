@@ -1,22 +1,20 @@
-# URDF and ROS 2 Description
+# URDF and ROS 2
 
-This folder contains a 17-link, 16-joint URDF description with visual STL meshes
-and 370 convex OBJ collision meshes.
+This folder contains the URDF model, meshes, SRDF, and ROS 2 package files for
+Dual Scorpion.
 
 ## Files
 
-- `scorpion.urdf` uses relative mesh paths and is suitable for standalone URDF viewers.
-- `scorpion_ros.urdf` uses `package://scorpion_description/` mesh paths for ROS 2.
-- `scorpion.srdf` records the 16 intended parent-child collision exclusions.
-- `collision_config.json` records the collision policy in machine-readable form.
-- `initial_state.json` stores the Fusion display pose in radians.
-- `CMakeLists.txt`, `package.xml`, and `launch/` provide a ROS 2 description package.
+- `scorpion.urdf` uses relative mesh paths.
+- `scorpion_ros.urdf` uses `package://scorpion_description/` mesh paths.
+- `scorpion.srdf` defines the intended adjacent-link collision exclusions.
+- `collision_config.json` defines the collision policy.
+- `CMakeLists.txt`, `package.xml`, and `launch/` provide the ROS 2 package.
 
-## Use as a ROS 2 package
+## Run in ROS 2
 
-The launch file requires `robot_state_publisher`,
-`joint_state_publisher_gui`, and `rviz2`. Create a ROS 2 workspace and copy this
-folder into it as the `scorpion_description` package:
+Create a ROS 2 workspace and copy this folder as the `scorpion_description`
+package:
 
 ```sh
 mkdir -p ~/scorpion_ws/src
@@ -30,17 +28,11 @@ source install/setup.bash
 ros2 launch scorpion_description display.launch.py
 ```
 
-The launch file starts RViz with its default layout. Add a RobotModel display and
-select `/robot_description` to inspect the model. No calibrated joint limits,
-collision checking, controller, or hardware driver is supplied here.
+Add a RobotModel display in RViz and select `/robot_description`.
 
-## Collision policy
+## Notes
 
-The URDF contains self-collision geometry, but URDF itself has no standard field
-for disabling specific link pairs. When using MoveIt, load `scorpion.srdf` so the
-16 adjacent pairs remain excluded. For other consumers, reproduce the exclusions
-listed in `collision_config.json` while keeping collisions enabled between
-non-adjacent links.
-
-The collision meshes are convex approximations. Use the original STEP or exact
-CAD solids for detailed interference analysis.
+- URDF does not apply SRDF exclusions automatically. Apply them in the target
+  simulator or motion-planning stack.
+- The collision meshes are convex approximations of the visual model.
+- Joint limits and controller values are provisional.
