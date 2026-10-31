@@ -1,36 +1,25 @@
-# Isaac Sim and OpenUSD
+# Isaac Sim
 
-This folder provides a neutral USD stage, an editable USD ASCII source stage, a
-Fusion-current-pose overlay, and an Isaac Sim runner.
+This folder contains OpenUSD assets and a run script for Isaac Sim.
 
 ## Files
 
-- `scorpion.usd` is the neutral binary USD stage used by default.
-- `scorpion.usda` is the readable USD ASCII source stage.
-- `scorpion_current_pose.usda` overlays the captured Fusion link transforms on
-  `scorpion.usd`.
-- `run.py` opens a stage, creates an Isaac Sim world, and runs physics steps.
-- `initial_state.json` stores the captured joint coordinates in radians.
+- `scorpion.usd` is the default binary USD stage.
+- `scorpion.usda` is the editable ASCII USD stage.
+- `scorpion_current_pose.usda` applies an alternative captured pose.
 
-## Run with Isaac Sim
+## Run
 
-Run the script with Isaac Sim's bundled Python. From this folder:
+From this folder, use Isaac Sim's bundled Python:
 
 ```sh
 <ISAAC_SIM_ROOT>/python.sh run.py
-<ISAAC_SIM_ROOT>/python.sh run.py --pose fusion_current
 <ISAAC_SIM_ROOT>/python.sh run.py --headless --steps 1000
 ```
 
-The default pose is `neutral`. Use `--pose fusion_current` to open the captured
-Fusion display pose.
+The default pose is neutral. The `scorpion_current_pose.usda` overlay is optional.
 
-## Validation status
+## Notes
 
-OpenUSD successfully opened all three assets and found 17 rigid bodies, 16
-revolute joints, one fixed joint, an articulation root, and meter units. Those
-checks verify stage structure only.
-
-Isaac Sim and PhysX were not launched during generation and validation. The
-runner is provided for the next runtime test, not as evidence of successful
-Isaac Sim physics or rendering.
+The asset set has been checked with OpenUSD. Isaac Sim and PhysX runtime behavior
+has not been verified yet.
