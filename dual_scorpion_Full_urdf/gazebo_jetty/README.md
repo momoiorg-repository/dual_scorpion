@@ -1,11 +1,28 @@
 # Gazebo Sim
 
-Gazebo Sim と必要なシステムプラグインをインストールした環境で、このフォルダーから実行します。
+This folder contains a self-contained SDF 1.12 robot model and demo world for
+Gazebo Sim (modern Gazebo, command `gz sim`).
+
+## Run
+
+Install Gazebo Sim and the joint-controller system plugin for your distribution,
+then run from this folder:
 
 ```sh
 sh run.sh
 ```
 
-モデルとワールドは SDF 1.12 です。`models/scorpion/model.sdf` に衝突形状、ジョイント、仮の位置制御器があります。`initial_state.json` は Fusion 表示姿勢の記録です。Gazebo 起動時の初期姿勢は中立姿勢です。
+The script locates its own directory, adds `models/` to `GZ_SIM_RESOURCE_PATH`,
+and opens `worlds/scorpion.sdf`. The world starts the robot in its neutral pose.
 
-SDF の構造とメッシュパスを検査していますが、Gazebo Sim 自体での起動検証は `source/validation.json` の記載を確認してください。
+## Model
+
+- `models/scorpion/model.sdf` contains 17 links, 16 revolute joints, one fixed
+  world joint, visual meshes, and 370 convex collision meshes.
+- Each revolute joint has a provisional `JointPositionController`.
+- `initial_state.json` records the Fusion display pose; it is not applied
+  automatically by `run.sh`.
+
+The SDF and all referenced mesh paths were parsed and checked structurally.
+Gazebo Sim itself was not launched during generation and validation, so runtime
+physics, plugin loading, and rendering are not yet verified.
