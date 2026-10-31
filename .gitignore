@@ -162,6 +162,7 @@ outputs/
 # Dev folders
 .cache/*
 *.stl
+!dual_scorpion_3d_printer_parts/**/*.stl
 *.urdf
 !telegrip_teleoperation/URDF/dual_scorpion/*.urdf
 *.xml
