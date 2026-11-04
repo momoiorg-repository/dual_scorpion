@@ -18,6 +18,12 @@ def parser():
     )
     capture.add_argument("--output", required=True, help="New local session folder")
     capture.add_argument("--duration", type=float, default=30)
+    capture.add_argument(
+        "--trim-end",
+        type=float,
+        default=0,
+        help="Seconds to discard from the end; record this extra buffer after the usable task",
+    )
     capture.add_argument("--task", required=True, help="Description of the demonstrated task")
     capture.add_argument("--camera", type=camera_device, help="Camera index or device path")
     capture.add_argument("--fake", action="store_true", help="Use visibly synthetic camera and motion")
@@ -56,6 +62,17 @@ def parser():
     verify.add_argument("--dataset", required=True, help="Finalized mocopi dataset folder")
     verify.add_argument("--sample-frames", type=int, default=8, help="Sampled frames per episode (1..200)")
     verify.add_argument("--output", help="Optional JSON report")
+    edit = sub.add_parser("edit", help="Visually select keep ranges in a converted dataset")
+    edit.add_argument("--dataset", required=True, help="Finalized human mocopi dataset folder")
+    edit.add_argument("--selection", required=True, help="Selection JSON to create or resume")
+    edit.add_argument("--episode", type=int, default=0, help="Initial episode to display")
+    edit.add_argument(
+        "--resume", action="store_true", help="Load and continue editing an existing selection JSON"
+    )
+    apply_edit = sub.add_parser("apply-edit", help="Create a new dataset from a saved selection JSON")
+    apply_edit.add_argument("--selection", required=True, help="Selection JSON created by edit")
+    apply_edit.add_argument("--output", required=True, help="New local edited dataset folder")
+    apply_edit.add_argument("--repo-id", required=True, help="Local repo id, e.g. local/mocopi-edited")
     replay = sub.add_parser("replay-sim", help="Replay an episode in MuJoCo and quantify tracking")
     replay.add_argument("--dataset", required=True)
     replay.add_argument("--episode", type=int, default=0)
@@ -142,6 +159,7 @@ def main():
                 head_source=args.head_source,
                 image_port=args.image_port,
                 reference_id=args.reference_id,
+                trim_end_s=args.trim_end,
             )
         elif args.command == "convert":
             from .convert import convert_sessions
@@ -191,6 +209,18 @@ def main():
             if result["errors"]:
                 print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
                 parser().exit(1, f"Error: dataset verification failed: {', '.join(result['errors'])}\n")
+        elif args.command == "edit":
+            from .editor import load_dataset, load_selection, run_editor
+
+            dataset, _ = load_dataset(args.dataset)
+            selection = load_selection(
+                args.selection, dataset, args.dataset, resume=args.resume
+            )
+            result = run_editor(dataset, selection, args.selection, initial_episode=args.episode)
+        elif args.command == "apply-edit":
+            from .editor import apply_dataset_selection
+
+            result = apply_dataset_selection(args.selection, args.output, args.repo_id)
         elif args.command == "replay-sim":
             from .replay import replay_sim
 

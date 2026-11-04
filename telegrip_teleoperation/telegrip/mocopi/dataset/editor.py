@@ -1,0 +1,370 @@
+"""Visual review and non-destructive range selection for converted datasets."""
+
+import hashlib
+import json
+from copy import deepcopy
+from pathlib import Path
+
+import numpy as np
+
+SELECTION_SCHEMA = "dual_scorpion.mocopi.dataset_selection.v1"
+HUMAN_SCHEMA = "dual_scorpion.mocopi.lerobot.v1"
+DEFAULT_FEATURES = {"timestamp", "frame_index", "episode_index", "index", "task_index"}
+
+
+def _manifest_path(root):
+    return Path(root) / "meta" / "mocopi_dataset.json"
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as file:
+        for block in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _atomic_json(path, value):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    temp.replace(path)
+
+
+def load_dataset(root):
+    """Open a finalized human MOCOPI dataset with its manifest."""
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    root = Path(root).resolve()
+    manifest_file = _manifest_path(root)
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    if manifest.get("schema") != HUMAN_SCHEMA or manifest.get("gripper_recorded"):
+        raise ValueError("Only finalized human MOCOPI datasets are supported")
+    dataset = LeRobotDataset(manifest["repo_id"], root=root, video_backend="pyav")
+    if dataset.num_episodes < 1 or len(dataset) < 2:
+        raise ValueError("Dataset must contain at least one episode with two frames")
+    return dataset, manifest
+
+
+def episode_bounds(dataset, episode):
+    if not isinstance(episode, int) or isinstance(episode, bool) or not 0 <= episode < dataset.num_episodes:
+        raise ValueError(f"Episode must be between 0 and {dataset.num_episodes - 1}")
+    metadata = dataset.meta.episodes[episode]
+    start, end = int(metadata["dataset_from_index"]), int(metadata["dataset_to_index"])
+    if not 0 <= start < end <= len(dataset):
+        raise ValueError(f"Invalid dataset bounds for episode {episode}")
+    return start, end
+
+
+def default_selection(root, dataset):
+    """Select every complete episode initially; the GUI then trims each range."""
+    selections = []
+    for episode in range(dataset.num_episodes):
+        start, end = episode_bounds(dataset, episode)
+        selections.append(
+            {"episode_index": episode, "start_index": start, "end_index": end - 1}
+        )
+    return {
+        "schema": SELECTION_SCHEMA,
+        "dataset": str(Path(root).resolve()),
+        "dataset_manifest_sha256": _sha256(_manifest_path(root)),
+        "fps": float(dataset.fps),
+        "selections": selections,
+    }
+
+
+def validate_selection(dataset, root, selection):
+    """Return normalized selections or raise before any output dataset is written."""
+    if not isinstance(selection, dict) or selection.get("schema") != SELECTION_SCHEMA:
+        raise ValueError("Unsupported dataset selection schema")
+    expected_root = str(Path(root).resolve())
+    if selection.get("dataset") != expected_root:
+        raise ValueError(f"Selection belongs to another dataset: {selection.get('dataset')}")
+    if selection.get("dataset_manifest_sha256") != _sha256(_manifest_path(root)):
+        raise ValueError("Dataset manifest changed after the selection was created")
+    if float(selection.get("fps", -1)) != float(dataset.fps):
+        raise ValueError("Selection FPS does not match the dataset")
+    rows = selection.get("selections")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Selection needs at least one range")
+    normalized, episodes = [], set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Each selection must be an object")
+        episode, start, end = row.get("episode_index"), row.get("start_index"), row.get("end_index")
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in (episode, start, end)):
+            raise ValueError("Episode and range indices must be integers")
+        if episode in episodes:
+            raise ValueError(f"Episode {episode} appears more than once")
+        episode_start, episode_end = episode_bounds(dataset, episode)
+        if not episode_start <= start <= end < episode_end or end - start + 1 < 2:
+            raise ValueError(f"Invalid selection range for episode {episode}: {start}..{end}")
+        episodes.add(episode)
+        normalized.append(
+            {"episode_index": episode, "start_index": start, "end_index": end}
+        )
+    normalized.sort(key=lambda item: item["episode_index"])
+    result = deepcopy(selection)
+    result.update(
+        {
+            "dataset": expected_root,
+            "dataset_manifest_sha256": _sha256(_manifest_path(root)),
+            "fps": float(dataset.fps),
+            "selections": normalized,
+        }
+    )
+    return result
+
+
+def save_selection(path, selection):
+    _atomic_json(path, selection)
+
+
+def _frame_for_writer(source, index):
+    """Re-shape decoded values to the feature contract expected by the writer."""
+    row = source[index]
+    data = {"task": row["task"]}
+    for key, feature in source.meta.features.items():
+        if key in DEFAULT_FEATURES:
+            continue
+        value = row[key]
+        if feature.get("dtype") == "video":
+            data[key] = value
+            continue
+        shape = tuple(feature.get("shape", ()))
+        array = np.asarray(value)
+        if shape == (1,):
+            array = np.asarray([array.item()], dtype=np.dtype(feature["dtype"]))
+        else:
+            array = array.reshape(shape).astype(np.dtype(feature["dtype"]))
+        data[key] = array
+    return data
+
+
+def load_selection(path, dataset, root, *, resume=False):
+    path = Path(path)
+    if resume:
+        if not path.is_file():
+            raise FileNotFoundError(f"Selection file does not exist: {path}")
+        return validate_selection(dataset, root, json.loads(path.read_text(encoding="utf-8")))
+    if path.exists():
+        raise FileExistsError(f"Selection file already exists: {path}; use --resume to continue")
+    return default_selection(root, dataset)
+
+
+def apply_dataset_selection(selection_path, output, repo_id):
+    """Copy selected source ranges into a new, independently verifiable dataset."""
+    selection_path = Path(selection_path).resolve()
+    selection = json.loads(selection_path.read_text(encoding="utf-8"))
+    root = Path(selection.get("dataset", "")).resolve()
+    source, manifest = load_dataset(root)
+    selection = validate_selection(source, root, selection)
+    output, repo_id = Path(output), repo_id.strip()
+    if not repo_id:
+        raise ValueError("repo_id must not be empty")
+    if output.exists():
+        raise FileExistsError(f"Edited dataset output already exists: {output}")
+
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    destination = LeRobotDataset.create(
+        repo_id=repo_id,
+        fps=source.fps,
+        features=source.meta.features,
+        root=output,
+        robot_type="human_mocopi",
+        use_videos=True,
+        vcodec="h264",
+        image_writer_threads=2,
+    )
+    edited_manifest = deepcopy(manifest)
+    edited_manifest.update(
+        {
+            "repo_id": repo_id,
+            "selection_schema": SELECTION_SCHEMA,
+            "selection_file": str(selection_path),
+            "selections": selection["selections"],
+            "edited_from": {
+                "dataset": str(root),
+                "dataset_manifest_sha256": _sha256(_manifest_path(root)),
+            },
+            "edit_semantics": (
+                "Frames are copied from contiguous source ranges. Actions remain the next measured "
+                "human hand pose from the source dataset, even when the following source frame is excluded."
+            ),
+            "episodes": [],
+        }
+    )
+    try:
+        for item in selection["selections"]:
+            start, end = item["start_index"], item["end_index"]
+            for index in range(start, end + 1):
+                destination.add_frame(_frame_for_writer(source, index))
+            destination.save_episode()
+            source_episode = item["episode_index"]
+            source_entry = manifest["episodes"][source_episode]
+            first_grid = float(source[start]["observation.capture.grid_time_s"].item())
+            edited_manifest["episodes"].append(
+                {
+                    "episode_index": len(edited_manifest["episodes"]),
+                    "source_session": source_entry["source_session"],
+                    "source_episode": source_episode,
+                    "first_grid_time_s": first_grid,
+                    "frames": end - start + 1,
+                    "source_dataset_from_index": start,
+                    "source_dataset_to_index": end + 1,
+                    "source_episode_manifest": deepcopy(source_entry),
+                }
+            )
+    finally:
+        destination.finalize()
+    _atomic_json(output / "meta" / "mocopi_dataset.json", edited_manifest)
+    return edited_manifest
+
+
+def run_editor(dataset, selection, output, initial_episode=0):
+    """Run the Tk frame viewer and write the current ranges to ``output``."""
+    try:
+        import tkinter as tk
+
+        from PIL import Image, ImageTk
+    except ImportError as exc:
+        raise RuntimeError("Dataset editor needs tkinter and Pillow; use a desktop session") from exc
+
+    episode_bounds(dataset, initial_episode)
+    ranges = {item["episode_index"]: item for item in selection["selections"]}
+    current_episode = initial_episode
+    start, end = episode_bounds(dataset, current_episode)
+    index = start
+
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        raise RuntimeError("Dataset editor needs a desktop display") from exc
+    root.title("Dual Scorpion MOCOPI dataset editor")
+    image_label = tk.Label(root)
+    image_label.pack()
+    info_label = tk.Label(root, justify="left", font=("TkDefaultFont", 10))
+    info_label.pack(fill="x")
+    status_label = tk.Label(root, anchor="w")
+    status_label.pack(fill="x")
+
+    def current_range():
+        return ranges.get(current_episode)
+
+    def set_range_start():
+        item = current_range()
+        if item:
+            item["start_index"] = index
+            if item["end_index"] < item["start_index"]:
+                item["start_index"], item["end_index"] = item["end_index"], item["start_index"]
+
+    def set_range_end():
+        item = current_range()
+        if item:
+            item["end_index"] = index
+            if item["end_index"] < item["start_index"]:
+                item["start_index"], item["end_index"] = item["end_index"], item["start_index"]
+
+    def reset_episode():
+        start, end = episode_bounds(dataset, current_episode)
+        ranges[current_episode] = {
+            "episode_index": current_episode,
+            "start_index": start,
+            "end_index": end - 1,
+        }
+
+    def clear_episode():
+        if len(ranges) <= 1:
+            status_label.configure(text="At least one selected range is required")
+            return
+        ranges.pop(current_episode, None)
+
+    def write(path=output):
+        items = sorted(ranges.values(), key=lambda item: item["episode_index"])
+        normalized = validate_selection(
+            dataset,
+            Path(selection["dataset"]),
+            {**selection, "selections": items},
+        )
+        save_selection(path, normalized)
+        status_label.configure(text=f"Saved: {path}")
+        return normalized
+
+    def move(delta):
+        nonlocal index
+        start, end = episode_bounds(dataset, current_episode)
+        index = max(start, min(end - 1, index + delta))
+
+    def move_episode(delta):
+        nonlocal current_episode, index
+        current_episode = max(0, min(dataset.num_episodes - 1, current_episode + delta))
+        start, _ = episode_bounds(dataset, current_episode)
+        index = start
+
+    def render():
+        row = dataset[index]
+        image = row["observation.images.head"]
+        if hasattr(image, "permute"):
+            image = image.permute(1, 2, 0).numpy()
+        else:
+            image = np.asarray(image)
+            if image.ndim == 3 and image.shape[0] in (3, 4):
+                image = np.transpose(image, (1, 2, 0))
+        rgb = Image.fromarray(np.clip(image * 255, 0, 255).astype(np.uint8))
+        photo = ImageTk.PhotoImage(rgb.resize((640, max(1, int(640 * image.shape[0] / image.shape[1])))))
+        image_label.configure(image=photo)
+        image_label.image = photo
+        item = current_range()
+        kept = sum(row["end_index"] - row["start_index"] + 1 for row in ranges.values())
+        info_label.configure(
+            text=(
+                f"dataset index {index} / {len(dataset) - 1}   episode {current_episode} / "
+                f"{dataset.num_episodes - 1}   frame {row['frame_index']}   "
+                f"time {float(row['timestamp']):.3f}s\n"
+                f"selection: {item['start_index'] if item else 'excluded'}.."
+                f"{item['end_index'] if item else 'excluded'}   total kept frames: {kept}\n"
+                "Left/Right=1 frame  Up/Down=10  PageUp/PageDown=episode  "
+                "[=start ]=end  A=all C=exclude  S=save  Q=save+quit"
+            )
+        )
+
+    actions = {
+        "<Left>": lambda _: move(-1),
+        "<Right>": lambda _: move(1),
+        "<Up>": lambda _: move(-10),
+        "<Down>": lambda _: move(10),
+        "<Prior>": lambda _: move_episode(-1),
+        "<Next>": lambda _: move_episode(1),
+        "<bracketleft>": lambda _: set_range_start(),
+        "<bracketright>": lambda _: set_range_end(),
+        "a": lambda _: reset_episode(),
+        "c": lambda _: clear_episode(),
+        "s": lambda _: write(),
+    }
+    for sequence, action in actions.items():
+        root.bind(sequence, action)
+
+    def quit_editor(_=None):
+        write()
+        root.destroy()
+
+    root.bind("q", quit_editor)
+    root.protocol("WM_DELETE_WINDOW", quit_editor)
+
+    def refresh():
+        if not root.winfo_exists():
+            return
+        render()
+        root.after(30, refresh)
+
+    reset_episode()
+    refresh()
+    root.mainloop()
+    items = sorted(ranges.values(), key=lambda item: item["episode_index"])
+    return validate_selection(
+        dataset,
+        Path(selection["dataset"]),
+        {**selection, "selections": items},
+    )

@@ -32,6 +32,8 @@ def session_metrics(path, fps=30, max_sync_s=0.08, workspace=None):
         "head_pose_source": session.meta["head_pose_source"],
         "camera_frames": len(session.camera),
         "mocopi_frames": len(session.motion),
+        "trim_end_s": session.meta.get("trim_end_s", 0.0),
+        "usable_end_s": session.meta.get("usable_end_s"),
         "camera_fps": float(
             (len(session.camera) - 1) / max(session.camera_times[-1] - session.camera_times[0], 1e-9)
         ),

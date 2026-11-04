@@ -26,6 +26,14 @@ def _json_line(file, row):
     file.flush()
 
 
+def _count_rows_until(path, end_s):
+    path = Path(path)
+    if not path.is_file():
+        return 0
+    with path.open(encoding="utf-8") as file:
+        return sum(json.loads(line)["timestamp_s"] <= end_s for line in file if line.strip())
+
+
 class FakeCamera:
     """Timed and visibly synthetic input for exercising the complete pipeline."""
 
@@ -109,6 +117,7 @@ def capture_session(
     slam_receiver=None,
     calibration=None,
     reference_id=None,
+    trim_end_s=0.0,
 ):
     """Write one immutable raw session. Each stream keeps its acquisition times.
 
@@ -118,6 +127,8 @@ def capture_session(
     """
     if not np.isfinite(duration) or duration <= 0 or not task.strip():
         raise ValueError("duration must be positive and task must not be empty")
+    if not np.isfinite(trim_end_s) or not 0 <= trim_end_s < duration:
+        raise ValueError("trim_end_s must be 0 or positive and less than duration")
     if head_source not in ("mocopi", "slam") or not 0 < image_port <= 65535:
         raise ValueError("head_source must be mocopi/slam and image_port must be valid")
     if reference_id is not None and not reference_id.strip():
@@ -132,6 +143,8 @@ def capture_session(
         "status": "recording",
         "source": "fake" if fake else "real",
         "task": task.strip(),
+        "requested_duration_s": float(duration),
+        "trim_end_s": float(trim_end_s),
         "camera": {
             "device": str(config_camera["device"]),
             "width": config_camera["width"],
@@ -168,6 +181,7 @@ def capture_session(
     stop = threading.Event()
     ready = threading.Event()
     slam_ready = threading.Event()
+    usable_end_s = -np.inf
     if head_source == "mocopi":
         slam_ready.set()
     errors = []
@@ -256,10 +270,11 @@ def capture_session(
                             bones = {
                                 str(k): validate_pose(v).tolist() for k, v in sample.bones.items() if k <= 18
                             }
+                            relative_stamp = sample.timestamp - origin
                             _json_line(
                                 file,
                                 {
-                                    "timestamp_s": sample.timestamp - origin,
+                                    "timestamp_s": relative_stamp,
                                     "frame_id": sample.frame_id,
                                     "bones": bones,
                                 },
@@ -321,6 +336,10 @@ def capture_session(
         import cv2
 
         start = time.monotonic()
+        recording_start_s = start - origin
+        usable_end_s = recording_start_s + duration - trim_end_s
+        metadata["recording_start_s"] = recording_start_s
+        metadata["usable_end_s"] = usable_end_s
         previous_camera = -np.inf
         with (output / "camera.jsonl").open("w", encoding="utf-8") as file:
             while time.monotonic() - start < duration and not stop.is_set():
@@ -340,7 +359,8 @@ def capture_session(
                 source_frame_id = getattr(camera, "last_frame_id", counts["camera_frames"])
                 if source_frame_id is None:
                     raise ValueError("Head camera frame has no source frame id")
-                _json_line(file, {"timestamp_s": stamp - origin, "file": name, "frame_id": source_frame_id})
+                relative_stamp = stamp - origin
+                _json_line(file, {"timestamp_s": relative_stamp, "file": name, "frame_id": source_frame_id})
                 previous_camera = stamp
                 counts["camera_frames"] += 1
         # Retain a brief tail so the last camera frame can pair with a later UDP frame.
@@ -364,6 +384,11 @@ def capture_session(
             if worker.is_alive():
                 metadata["status"] = "aborted"
                 errors.append(RuntimeError("mocopi receiver did not stop"))
+        if trim_end_s > 0:
+            metadata["usable_camera_frames"] = _count_rows_until(output / "camera.jsonl", usable_end_s)
+            metadata["usable_mocopi_frames"] = _count_rows_until(output / "mocopi.jsonl", usable_end_s)
+            if head_source == "slam":
+                metadata["usable_slam_frames"] = _count_rows_until(output / "slam.jsonl", usable_end_s)
         if receiver:
             metadata["mocopi_bad_packets"] = int(getattr(receiver, "bad_packets", 0))
             receiver.close()

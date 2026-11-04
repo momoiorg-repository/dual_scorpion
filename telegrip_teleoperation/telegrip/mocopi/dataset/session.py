@@ -27,11 +27,15 @@ STATE_NAMES = [f"{name}.{component}" for name, _ in POSE_BONES for component in 
 ACTION_NAMES = [f"{side}_hand.{component}" for side in ("left", "right") for component in COMPONENTS]
 
 
-def _read_rows(path):
+def _read_rows(path, end_s=None):
     with path.open(encoding="utf-8") as file:
         rows = [json.loads(line) for line in file if line.strip()]
     if not rows:
         raise ValueError(f"No records in {path}")
+    if end_s is not None:
+        rows = [row for row in rows if row["timestamp_s"] <= end_s]
+        if not rows:
+            raise ValueError(f"No records before the usable end time in {path}")
     stamps = np.array([row["timestamp_s"] for row in rows], dtype=float)
     if not np.isfinite(stamps).all() or np.any(np.diff(stamps) <= 0):
         raise ValueError(f"Timestamps must be finite and strictly increasing: {path}")
@@ -53,6 +57,10 @@ class Session:
             or mocopi.get("bone_space") != "mocopi_global"
         ):
             raise ValueError("Unsupported mocopi coordinate convention")
+        trim_end_s = self.meta.get("trim_end_s", 0.0)
+        usable_end_s = self.meta.get("usable_end_s") if trim_end_s > 0 else None
+        if trim_end_s < 0 or (trim_end_s > 0 and not np.isfinite(usable_end_s)):
+            raise ValueError("Invalid end-trim metadata")
         self.intrinsics = None
         if self.meta["camera"].get("intrinsics_sha256"):
             intrinsic_path = self.root / "intrinsics.yaml"
@@ -64,11 +72,15 @@ class Session:
             self.intrinsics, _, _ = load_intrinsics(
                 intrinsic_path, [self.meta["camera"]["width"], self.meta["camera"]["height"]]
             )
-        self.camera, self.camera_times = _read_rows(self.root / "camera.jsonl")
-        self.motion, self.motion_times = _read_rows(self.root / "mocopi.jsonl")
-        if self.meta.get("camera_frames") != len(self.camera) or self.meta.get("mocopi_frames") != len(
-            self.motion
-        ):
+        self.camera, self.camera_times = _read_rows(self.root / "camera.jsonl", usable_end_s)
+        self.motion, self.motion_times = _read_rows(self.root / "mocopi.jsonl", usable_end_s)
+        expected_camera = (
+            self.meta.get("usable_camera_frames") if trim_end_s > 0 else self.meta.get("camera_frames")
+        )
+        expected_motion = (
+            self.meta.get("usable_mocopi_frames") if trim_end_s > 0 else self.meta.get("mocopi_frames")
+        )
+        if expected_camera != len(self.camera) or expected_motion != len(self.motion):
             raise ValueError(f"Recording counts do not match files: {self.root}")
         for row in self.camera:
             image = (self.root / row["file"]).resolve()
@@ -92,8 +104,11 @@ class Session:
             if digest != self.meta.get("head_calibration_sha256"):
                 raise ValueError("Recorded head calibration changed or is missing")
             self.calibration = HeadCalibration.load(calibration_path)
-            self.slam, self.slam_times = _read_rows(self.root / "slam.jsonl")
-            if len(self.slam) != self.meta.get("slam_frames"):
+            self.slam, self.slam_times = _read_rows(self.root / "slam.jsonl", usable_end_s)
+            expected_slam = (
+                self.meta.get("usable_slam_frames") if trim_end_s > 0 else self.meta.get("slam_frames")
+            )
+            if len(self.slam) != expected_slam:
                 raise ValueError("SLAM recording counts do not match")
             for row in self.slam:
                 validate_pose(row["camera_pose"])

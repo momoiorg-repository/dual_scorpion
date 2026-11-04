@@ -52,14 +52,22 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
 
 最後のコマンドは計画の検証のみで、実機に接続しません。合成データの数値は実測結果ではありません。
 MuJoCoと記録映像を画面で見るときは、新しい計画・レポート名を指定し、`--headless --fast` を外します。
-変換に必要な依存関係が入っていない場合は、後述の「LeRobot形式へ変換する」のインストールを先に実行してください。
+依存関係は最初の `uv sync --locked --all-packages --extra dual_scorpion` に含まれるため、
+変換前に追加インストールは不要です。
 
 ## C270とmocopiで記録する
+
+作業を終えたあとの「録画を止めるための動作」まで学習データに入れたくない場合は、
+`--trim-end` を指定します。`--duration 35 --trim-end 5` なら35秒間録画し、
+評価・LeRobot変換・MuJoCo再生には最初の30秒だけを使います。最後の5秒は
+撮影終了動作や片付けに使えます。生ファイルは残りますが、データセット化からは除外されます。
+コマンドは指定秒数で自動的に終了するため、作業が終わってもすぐにスマホやカメラを止めず、
+コマンドの終了を待ってください。スマホのSEND停止はその後に行います。
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
   --camera /dev/video2 --output outputs/mocopi/sessions/episode-001 \
-  --duration 30 --task 'コップを移動する' --reference-id workbench-session-A
+  --duration 35 --trim-end 5 --task 'コップを移動する' --reference-id workbench-session-A
 ```
 
 `/dev/video2` はカメラ一覧の結果に合わせて変更します。コマンドの起動後、スマホのSENDを
@@ -103,7 +111,7 @@ A・Bを動かしたまま、手順1の環境設定をしたターミナルCで�
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
   --head-source slam --image-port 12354 --output outputs/mocopi/sessions/episode-slam-001 \
-  --duration 30 --task 'コップを移動する' --reference-id workbench-session-A
+  --duration 35 --trim-end 5 --task 'コップを移動する' --reference-id workbench-session-A
 ```
 
 画像はAからPC内部のローカル通信で受け取ります。mocopiのSENDを停止→再開すると、
@@ -242,6 +250,44 @@ URDFは記録・変換に使わず、後のロボット再生時に選びます�
 MuJoCo再生時に表示する記録映像は人の頭カメラで、実機のカメラ映像の新規記録は含みません。
 
 ## MuJoCoで記録を再生し、動作を評価する
+
+変換後のデータを目視で確認し、残す範囲を選びたい場合は `edit` を使います。
+このツールは元データを変更しません。まず選択ファイルを作成します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset edit \
+  --dataset outputs/mocopi/datasets/demo-001 \
+  --selection outputs/mocopi/edits/demo-001.json
+```
+
+操作:
+
+| キー | 動作 |
+| --- | --- |
+| ← / → | 1フレーム戻る / 進む |
+| ↑ / ↓ | 10フレーム戻る / 進む |
+| PageUp / PageDown | エピソードを切り替える |
+| `[` / `]` | 現在のフレームを選択開始 / 選択終了にする |
+| `A` | このエピソード全体を選択し直す |
+| `C` | このエピソードを選択から除外する |
+| `S` | 選択JSONを保存する |
+| `Q` | 保存して終了する |
+
+次の操作で、選択した範囲だけをコピーした新しいデータセットを作成します。
+保存先は必ず新しいフォルダにしてください。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset apply-edit \
+  --selection outputs/mocopi/edits/demo-001.json \
+  --output outputs/mocopi/datasets/demo-001-edited \
+  --repo-id local/mocopi-demo-edited
+
+uv run --no-sync --active python -m telegrip.mocopi.dataset verify \
+  --dataset outputs/mocopi/datasets/demo-001-edited
+```
+
+`apply-edit` は範囲選択を新しいエピソードとして書き出します。
+元のデータ、選択JSON、編集後データがすべて残るため、やり直しも安全です。
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \

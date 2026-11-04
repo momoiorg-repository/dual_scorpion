@@ -1,5 +1,6 @@
 """Demonstration capture, conversion and playback integration tests."""
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -56,6 +57,84 @@ def test_capture_failure_is_not_marked_as_complete(tmp_path):
         capture_session(load_config(CONFIG), path, 0.1, "test", fake=True, camera=camera)
     assert camera.closed
     assert json.loads((path / "session.json").read_text())["status"] == "aborted"
+
+
+def test_capture_trim_end_excludes_recording_stop_buffer(tmp_path):
+    pytest.importorskip("cv2")
+    from telegrip.mocopi.dataset.evaluate import session_metrics
+    from telegrip.mocopi.dataset.session import Session
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    root = tmp_path / "trimmed"
+    metadata = capture_session(
+        cfg,
+        root,
+        0.65,
+        "move cup",
+        fake=True,
+        trim_end_s=0.2,
+    )
+    raw_camera, raw_motion = rows(root / "camera.jsonl"), rows(root / "mocopi.jsonl")
+    usable_end = metadata["usable_end_s"]
+    assert metadata["requested_duration_s"] == 0.65
+    assert metadata["trim_end_s"] == 0.2
+    assert any(row["timestamp_s"] > usable_end for row in raw_camera)
+    assert any(row["timestamp_s"] > usable_end for row in raw_motion)
+
+    session = Session(root)
+    assert session.camera_times[-1] <= usable_end
+    assert session.motion_times[-1] <= usable_end
+    assert len(session.camera) == metadata["usable_camera_frames"] < len(raw_camera)
+    assert len(session.motion) == metadata["usable_mocopi_frames"] < len(raw_motion)
+
+    report = session_metrics(root, fps=20, max_sync_s=0.08)
+    assert report["camera_frames"] == len(session.camera)
+    assert report["mocopi_frames"] == len(session.motion)
+
+
+def test_dataset_editor_selection_creates_trimmed_dataset(tmp_path):
+    pytest.importorskip("cv2")
+    dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
+    from telegrip.mocopi.dataset.convert import convert_sessions
+    from telegrip.mocopi.dataset.editor import apply_dataset_selection, load_dataset, save_selection
+    from telegrip.mocopi.dataset.verify import verify_dataset
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    raw = tmp_path / "raw"
+    capture_session(cfg, raw, 0.65, "move cup", fake=True)
+    source_root = tmp_path / "source"
+    convert_sessions([raw], source_root, "local/mocopi-source", fps=20)
+    source, _ = load_dataset(source_root)
+    start, end = (
+        int(source.meta.episodes[0]["dataset_from_index"]),
+        int(source.meta.episodes[0]["dataset_to_index"]),
+    )
+    selection = {
+        "schema": "dual_scorpion.mocopi.dataset_selection.v1",
+        "dataset": str(source_root.resolve()),
+        "dataset_manifest_sha256": hashlib.sha256(
+            (source_root / "meta" / "mocopi_dataset.json").read_bytes()
+        ).hexdigest(),
+        "fps": 20,
+        "selections": [
+            {"episode_index": 0, "start_index": start, "end_index": end - 2}
+        ],
+    }
+    selection_path = tmp_path / "selection.json"
+    save_selection(selection_path, selection)
+    edited_root = tmp_path / "edited"
+    edited = apply_dataset_selection(
+        selection_path, edited_root, "local/mocopi-edited"
+    )
+    assert edited["episodes"][0]["frames"] == end - start - 1
+    edited_dataset = dataset_type(
+        "local/mocopi-edited", root=edited_root, video_backend="pyav"
+    )
+    assert len(edited_dataset) == end - start - 1
+    report = verify_dataset(edited_root, sample_frames=4)
+    assert report["status"] == "ok", report
 
 
 def test_gaps_split_episodes_instead_of_compressing_time():
