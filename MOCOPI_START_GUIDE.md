@@ -39,7 +39,7 @@ export PYTHONPATH="$PWD/telegrip_teleoperation${PYTHONPATH:+:$PYTHONPATH}"
 続けてインストールします。Python 3.12とuvが必要です。
 
 ```bash
-uv sync --locked --all-packages --extra all
+uv sync --locked --all-packages --extra dual_scorpion
 git lfs install && git lfs pull
 ```
 

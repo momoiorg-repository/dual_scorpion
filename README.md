@@ -78,7 +78,7 @@ comparison table and dependency-free SVG plots are defined in
 ```bash
 git clone https://github.com/momoiorg-repository/dual_scorpion.git
 cd dual_scorpion
-uv sync --locked --all-packages --extra all
+uv sync --locked --all-packages --extra dual_scorpion
 ```
 
 ### Optional: authenticate with Hugging Face

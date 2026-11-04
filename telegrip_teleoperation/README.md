@@ -30,7 +30,7 @@ does not ship another robot implementation.
 git clone https://github.com/momoiorg-repository/dual_scorpion.git
 cd dual_scorpion
 
-uv sync --locked --all-packages --extra all
+uv sync --locked --all-packages --extra dual_scorpion
 ```
 
 Open `telegrip_teleoperation/config.yaml` and set:
@@ -155,7 +155,7 @@ For the demonstration recording and LeRobot dataset work, see
 Start with the Japanese [MOCOPI_START_GUIDE.md](../MOCOPI_START_GUIDE.md).
 MuJoCo is the default viewer, using the assembly URDF's STL visuals and the
 existing corrected per-arm FK/IK. Install all dependencies with
-`uv sync --locked --all-packages --extra all` from the repository root;
+`uv sync --locked --all-packages --extra dual_scorpion` from the repository root;
 `--sim-backend pybullet` selects the previous viewer.
 See the Japanese [HOW_TO_USE.md](../HOW_TO_USE.md) for camera calibration,
 external stella_vslam integration, guided scale/extrinsic calibration, and

@@ -61,7 +61,7 @@ Full details in [`docs/source/so101.mdx`](./docs/source/so101.mdx) and [`docs/so
 **4.1 Install**
 
 ```bash
-uv sync --locked --all-packages --extra all
+uv sync --locked --all-packages --extra dual_scorpion
 git lfs install && git lfs pull
 hf auth login                               # required to push datasets/policies
 ```

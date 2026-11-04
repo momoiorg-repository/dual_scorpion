@@ -199,7 +199,7 @@ class MujocoSimulation(DualSimulation):
             import mujoco
         except ImportError as exc:
             raise ImportError(
-                "MuJoCo is not installed. Run: uv sync --locked --all-packages --extra all ; "
+                "MuJoCo is not installed. Run: uv sync --locked --all-packages --extra dual_scorpion ; "
                 "or use --sim-backend pybullet"
             ) from exc
 

@@ -126,6 +126,17 @@ core_scripts = ["lerobot[dataset]", "lerobot[hardware]", "lerobot[viz]"]
 evaluation = ["lerobot[av-dep]"]
 # lerobot-dataset-viz, lerobot-imgtransform-viz
 dataset_viz = ["lerobot[dataset]", "lerobot[viz]"]
+# Everything needed by the Dual Scorpion repository. This intentionally avoids
+# the upstream `all` extra, which pulls optional simulation stacks such as
+# LIBERO that are not used by this project and can require native builds.
+dual_scorpion = [
+    "lerobot[core_scripts]",
+    "lerobot[training]",
+    "lerobot[mocopi]",
+    "lerobot[feetech]",
+    "lerobot[dev]",
+    "lerobot[test]",
+]
 # Dual Scorpion MOCOPI recording, conversion, and MuJoCo preview workflow.
 # The telegrip package itself is imported from telegrip_teleoperation/ via PYTHONPATH.
 mocopi = [

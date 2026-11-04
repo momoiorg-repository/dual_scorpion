@@ -183,7 +183,7 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## LeRobot形式へ変換する
 
-初期設定で `uv sync --locked --all-packages --extra all` を使っていれば、
+初期設定で `uv sync --locked --all-packages --extra dual_scorpion` を使っていれば、
 LeRobotのdataset依存はすでに含まれています。
 
 複数の作業を一つのデータセットにまとめる場合は `--input` を繰り返します。
