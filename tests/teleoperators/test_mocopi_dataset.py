@@ -1,8 +1,8 @@
 """Demonstration capture, conversion and playback integration tests."""
 
-import hashlib
 import json
 import sys
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -93,11 +93,48 @@ def test_capture_trim_end_excludes_recording_stop_buffer(tmp_path):
     assert report["mocopi_frames"] == len(session.motion)
 
 
+def test_capture_q_stop_saves_only_frames_before_q(tmp_path):
+    pytest.importorskip("cv2")
+    from telegrip.mocopi.dataset.session import Session
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    manual_stop = threading.Event()
+    threading.Timer(0.25, manual_stop.set).start()
+    root = tmp_path / "q-stopped"
+    metadata = capture_session(
+        cfg,
+        root,
+        0.65,
+        "move cup",
+        fake=True,
+        trim_end_s=0.2,
+        manual_stop=manual_stop,
+    )
+    assert metadata["status"] == "complete"
+    assert metadata["stop_method"] == "q"
+    assert metadata["actual_recording_duration_s"] < metadata["requested_duration_s"]
+    assert metadata["usable_end_s"] == metadata["manual_stop_time_s"]
+    assert metadata["usable_camera_frames"] < metadata["camera_frames"]
+    assert metadata["usable_mocopi_frames"] < metadata["mocopi_frames"]
+
+    session = Session(root)
+    assert session.camera_times[-1] <= metadata["usable_end_s"]
+    assert session.motion_times[-1] <= metadata["usable_end_s"]
+
+
 def test_dataset_editor_selection_creates_trimmed_dataset(tmp_path):
     pytest.importorskip("cv2")
+    pytest.importorskip("rerun")
     dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
     from telegrip.mocopi.dataset.convert import convert_sessions
-    from telegrip.mocopi.dataset.editor import apply_dataset_selection, load_dataset, save_selection
+    from telegrip.mocopi.dataset.editor import (
+        apply_dataset_selection,
+        create_selection,
+        load_dataset,
+        save_selection,
+    )
+    from telegrip.mocopi.dataset.rerun_view import log_dataset_to_rerun
     from telegrip.mocopi.dataset.verify import verify_dataset
 
     cfg = load_config(CONFIG)
@@ -111,28 +148,38 @@ def test_dataset_editor_selection_creates_trimmed_dataset(tmp_path):
         int(source.meta.episodes[0]["dataset_from_index"]),
         int(source.meta.episodes[0]["dataset_to_index"]),
     )
-    selection = {
-        "schema": "dual_scorpion.mocopi.dataset_selection.v1",
-        "dataset": str(source_root.resolve()),
-        "dataset_manifest_sha256": hashlib.sha256(
-            (source_root / "meta" / "mocopi_dataset.json").read_bytes()
-        ).hexdigest(),
-        "fps": 20,
-        "selections": [
-            {"episode_index": 0, "start_index": start, "end_index": end - 2}
-        ],
-    }
+    with pytest.raises(ValueError, match="START < END"):
+        create_selection(source_root, source, ["0:2:1"])
+    with pytest.raises(ValueError, match="Overlapping selection ranges"):
+        create_selection(source_root, source, ["0:0:3", "0:2:5"])
+    multi = create_selection(source_root, source, ["0:0:3", "0:4:7"])
+    assert multi["selections"] == [
+        {"episode_index": 0, "start_index": start, "end_index": start + 3},
+        {"episode_index": 0, "start_index": start + 4, "end_index": start + 7},
+    ]
+    selection = create_selection(source_root, source, [f"0:0:{end - start - 2}"])
     selection_path = tmp_path / "selection.json"
     save_selection(selection_path, selection)
+    rerun_path = tmp_path / "source.rrd"
+    rerun = log_dataset_to_rerun(
+        source_root,
+        episode=0,
+        selection_path=selection_path,
+        save_path=rerun_path,
+        spawn=False,
+        max_frames=3,
+    )
+    assert rerun["logged_frames"] == 3 and rerun_path.stat().st_size > 0
+    assert rerun["selected_frames"] == end - start - 2
     edited_root = tmp_path / "edited"
     edited = apply_dataset_selection(
         selection_path, edited_root, "local/mocopi-edited"
     )
-    assert edited["episodes"][0]["frames"] == end - start - 1
+    assert edited["episodes"][0]["frames"] == end - start - 2
     edited_dataset = dataset_type(
         "local/mocopi-edited", root=edited_root, video_backend="pyav"
     )
-    assert len(edited_dataset) == end - start - 1
+    assert len(edited_dataset) == end - start - 2
     report = verify_dataset(edited_root, sample_frames=4)
     assert report["status"] == "ok", report
 

@@ -32,7 +32,7 @@
 | `camera_frames_outside_tolerance` | \|t_m−t_c\| > `max_sync_s` のフレーム数 | フレーム | 変換時に除外されうるフレーム |
 | `grid_samples` / `unsynchronized_samples` | 固定FPSのグリッド点の総数と、同期条件を満たさず除外した数 | フレーム | 変換で使えた割合 = 1 − unsync/grid |
 | `usable_segments` / `usable_dataset_frames` | 連続する同期区間の数 / Σ max(0, len(segment)−1) | 区間・フレーム | LeRobotの (state, next action) ペア数上限 |
-| `mocopi_discarded_at_capture` / `mocopi_bad_packets` | 収録中に破棄したフレーム / 不完全パケット数 | 件 | mocopi通信の健全性 |
+| `mocopi_discarded_at_capture` / `mocopi_bad_packets` / `mocopi_waiting_for_skdf_packets` | 収録中に破棄したフレーム / 骨格定義受信後の不完全パケット / `skdf`待ちパケット | 件 | mocopi通信の健全性。起動待ちの `skdf`前パケットは `bad_packets` とは別に数える |
 | `hands.left/right.bounds_min_m` / `bounds_max_m` | 各軸の最小・最大 | m | 手の到達範囲。座標系は `hands_coordinate_frame` |
 | `hands.*.path_length_m` | Σ‖p_{i+1}−p_i‖ | m | 手の総移動距離 |
 | `hands.*.speed_m_s` | ‖p_{i+1}−p_i‖・fps（SLAM時）/ Δt（mocopi時） | m/s | 速度の分布 |
@@ -51,7 +51,7 @@
 |---|---|---|---|
 | `tracking.*.position_m` | ‖p_FK(q) − p_target‖（各更新、min/mean/p95/max） | m | 内部整合性。人が示した手の位置にどれだけ近い関節角を生成できたか |
 | `tracking.*.orientation_deg` | 測地角 acos((tr(R_err)−1)/2)（R_err=R_FK R_target^T）の度換算 | deg | 手首回転の追従。位置優先のため逸脱しうる |
-| `tracking.*.max_joint_step_deg` | 1更新あたり max_k \|q_k − q_{k−1}\| | deg | 指令の滑らかさ。上限は `robot.max_joint_step_deg`（既定0.5） |
+| `tracking.*.max_joint_step_deg` | 1更新あたり max_k \|q_k − q_{k−1}\| | deg | 指令の滑らかさ。新CADの表示プレビューでは `robot.preview_max_joint_step_deg`（既定10）、実機検証では `robot.max_joint_step_deg`（既定0.5）を使う |
 | `tracking.*.joint_limit_margin_deg` | min_k(min(q_k−lower_k, upper_k−q_k)) | deg | **旧URDFのみ**。新CADモデルは限界未測定のため `null` |
 | `ik_failures` | 安全ゲートでHOLDしたフレーム数（リスト、`.count` で数えられる） | 件 | NaN・未到達・急変による計画の穴 |
 | `workspace_clamped_frames` | 手の目標が到達可能領域へ圧縮されたフレーム数 | フレーム | **旧URDF（`workspace_clamp_measured: true`）のみ**。新CADモデルのプレビューにはclamp段がなく、`null`（未評価） |
@@ -64,7 +64,7 @@
 | `collision_check.body_pairs` | ボディ名ペアごとの接触数 | 件 | どの部分が接触したかを特定するための内訳 |
 | `obstacle_count` / `collision_check.obstacle_names` | YAMLで指定された箱の個数と名前 | 個・名前 | 実験条件。障害物寸法が実測かどうかはこの値では保証されない |
 | `obstacles_sha256` | 正規化した障害物定義のSHA-256 | — | 計画・レポート・関節角データセット間で同一障害物シーンを照合するための識別子 |
-| `feasibility` | `ik_failures`・`max_position_error_m`・`max_joint_step_observed_deg` と各上限をまとめた判定 | — | `within_preview_tolerance` は「IK失敗0・位置誤差≤`position_tolerance_m`・関節ステップ≤`max_joint_step_limit_deg`」のとき true。新CADでは「モデル上の衝突0」も条件に加わる。プレビュー判定であり、実機の安全を保証しない |
+| `feasibility` | `ik_failures`・`max_position_error_m`・`max_joint_step_observed_deg` と各上限をまとめた判定 | — | `within_preview_tolerance` は「IK失敗0・位置誤差≤`position_tolerance_m`・関節ステップ≤`max_joint_step_limit_deg`」のとき true。新CADでは「モデル上の衝突0」も条件に加わる。`max_joint_step_limit_deg` は表示プレビュー用、`hardware_max_joint_step_deg` は実機検証用。プレビュー判定であり、実機の安全を保証しない |
 
 評価条件: `--slowdown N` は各元フレームをN更新保持します（速度を落とすほどIKが改善しやすい）。
 レポートの `model_kind`、`hardware_replay_allowed`、`mujoco_model_sha256`（または

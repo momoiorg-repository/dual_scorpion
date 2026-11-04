@@ -1,4 +1,4 @@
-"""Visual review and non-destructive range selection for converted datasets."""
+"""Rerun-compatible range selection for converted MOCOPI datasets."""
 
 import hashlib
 import json
@@ -57,23 +57,6 @@ def episode_bounds(dataset, episode):
     return start, end
 
 
-def default_selection(root, dataset):
-    """Select every complete episode initially; the GUI then trims each range."""
-    selections = []
-    for episode in range(dataset.num_episodes):
-        start, end = episode_bounds(dataset, episode)
-        selections.append(
-            {"episode_index": episode, "start_index": start, "end_index": end - 1}
-        )
-    return {
-        "schema": SELECTION_SCHEMA,
-        "dataset": str(Path(root).resolve()),
-        "dataset_manifest_sha256": _sha256(_manifest_path(root)),
-        "fps": float(dataset.fps),
-        "selections": selections,
-    }
-
-
 def validate_selection(dataset, root, selection):
     """Return normalized selections or raise before any output dataset is written."""
     if not isinstance(selection, dict) or selection.get("schema") != SELECTION_SCHEMA:
@@ -88,23 +71,29 @@ def validate_selection(dataset, root, selection):
     rows = selection.get("selections")
     if not isinstance(rows, list) or not rows:
         raise ValueError("Selection needs at least one range")
-    normalized, episodes = [], set()
+    normalized = []
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Each selection must be an object")
         episode, start, end = row.get("episode_index"), row.get("start_index"), row.get("end_index")
         if any(not isinstance(value, int) or isinstance(value, bool) for value in (episode, start, end)):
             raise ValueError("Episode and range indices must be integers")
-        if episode in episodes:
-            raise ValueError(f"Episode {episode} appears more than once")
         episode_start, episode_end = episode_bounds(dataset, episode)
-        if not episode_start <= start <= end < episode_end or end - start + 1 < 2:
+        if not episode_start <= start < end <= episode_end:
             raise ValueError(f"Invalid selection range for episode {episode}: {start}..{end}")
-        episodes.add(episode)
         normalized.append(
             {"episode_index": episode, "start_index": start, "end_index": end}
         )
-    normalized.sort(key=lambda item: item["episode_index"])
+    normalized.sort(key=lambda item: (item["episode_index"], item["start_index"]))
+    previous = None
+    for item in normalized:
+        if (
+            previous is not None
+            and item["episode_index"] == previous["episode_index"]
+            and item["start_index"] <= previous["end_index"]
+        ):
+            raise ValueError(f"Overlapping selection ranges for episode {item['episode_index']}")
+        previous = item
     result = deepcopy(selection)
     result.update(
         {
@@ -119,6 +108,37 @@ def validate_selection(dataset, root, selection):
 
 def save_selection(path, selection):
     _atomic_json(path, selection)
+
+
+def create_selection(root, dataset, ranges):
+    """Create selections from half-open ``episode:local_start:local_end`` ranges."""
+    selections = []
+    for value in ranges:
+        try:
+            episode, start, end = (int(part) for part in value.split(":"))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError(f"Invalid range {value!r}; expected EPISODE:START:END") from exc
+        episode_start, episode_end = episode_bounds(dataset, episode)
+        frame_count = episode_end - episode_start
+        if not 0 <= start < end <= frame_count:
+            raise ValueError(
+                f"Invalid range {value!r}; use 0 <= START < END <= {frame_count} (END is exclusive)"
+            )
+        selections.append(
+            {
+                "episode_index": episode,
+                "start_index": episode_start + start,
+                "end_index": episode_start + end,
+            }
+        )
+    selection = {
+        "schema": SELECTION_SCHEMA,
+        "dataset": str(Path(root).resolve()),
+        "dataset_manifest_sha256": _sha256(_manifest_path(root)),
+        "fps": float(dataset.fps),
+        "selections": selections,
+    }
+    return validate_selection(dataset, root, selection)
 
 
 def _frame_for_writer(source, index):
@@ -140,17 +160,6 @@ def _frame_for_writer(source, index):
             array = array.reshape(shape).astype(np.dtype(feature["dtype"]))
         data[key] = array
     return data
-
-
-def load_selection(path, dataset, root, *, resume=False):
-    path = Path(path)
-    if resume:
-        if not path.is_file():
-            raise FileNotFoundError(f"Selection file does not exist: {path}")
-        return validate_selection(dataset, root, json.loads(path.read_text(encoding="utf-8")))
-    if path.exists():
-        raise FileExistsError(f"Selection file already exists: {path}; use --resume to continue")
-    return default_selection(root, dataset)
 
 
 def apply_dataset_selection(selection_path, output, repo_id):
@@ -199,7 +208,7 @@ def apply_dataset_selection(selection_path, output, repo_id):
     try:
         for item in selection["selections"]:
             start, end = item["start_index"], item["end_index"]
-            for index in range(start, end + 1):
+            for index in range(start, end):
                 destination.add_frame(_frame_for_writer(source, index))
             destination.save_episode()
             source_episode = item["episode_index"]
@@ -211,9 +220,9 @@ def apply_dataset_selection(selection_path, output, repo_id):
                     "source_session": source_entry["source_session"],
                     "source_episode": source_episode,
                     "first_grid_time_s": first_grid,
-                    "frames": end - start + 1,
+                    "frames": end - start,
                     "source_dataset_from_index": start,
-                    "source_dataset_to_index": end + 1,
+                    "source_dataset_to_index": end,
                     "source_episode_manifest": deepcopy(source_entry),
                 }
             )
@@ -221,150 +230,3 @@ def apply_dataset_selection(selection_path, output, repo_id):
         destination.finalize()
     _atomic_json(output / "meta" / "mocopi_dataset.json", edited_manifest)
     return edited_manifest
-
-
-def run_editor(dataset, selection, output, initial_episode=0):
-    """Run the Tk frame viewer and write the current ranges to ``output``."""
-    try:
-        import tkinter as tk
-
-        from PIL import Image, ImageTk
-    except ImportError as exc:
-        raise RuntimeError("Dataset editor needs tkinter and Pillow; use a desktop session") from exc
-
-    episode_bounds(dataset, initial_episode)
-    ranges = {item["episode_index"]: item for item in selection["selections"]}
-    current_episode = initial_episode
-    start, end = episode_bounds(dataset, current_episode)
-    index = start
-
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        raise RuntimeError("Dataset editor needs a desktop display") from exc
-    root.title("Dual Scorpion MOCOPI dataset editor")
-    image_label = tk.Label(root)
-    image_label.pack()
-    info_label = tk.Label(root, justify="left", font=("TkDefaultFont", 10))
-    info_label.pack(fill="x")
-    status_label = tk.Label(root, anchor="w")
-    status_label.pack(fill="x")
-
-    def current_range():
-        return ranges.get(current_episode)
-
-    def set_range_start():
-        item = current_range()
-        if item:
-            item["start_index"] = index
-            if item["end_index"] < item["start_index"]:
-                item["start_index"], item["end_index"] = item["end_index"], item["start_index"]
-
-    def set_range_end():
-        item = current_range()
-        if item:
-            item["end_index"] = index
-            if item["end_index"] < item["start_index"]:
-                item["start_index"], item["end_index"] = item["end_index"], item["start_index"]
-
-    def reset_episode():
-        start, end = episode_bounds(dataset, current_episode)
-        ranges[current_episode] = {
-            "episode_index": current_episode,
-            "start_index": start,
-            "end_index": end - 1,
-        }
-
-    def clear_episode():
-        if len(ranges) <= 1:
-            status_label.configure(text="At least one selected range is required")
-            return
-        ranges.pop(current_episode, None)
-
-    def write(path=output):
-        items = sorted(ranges.values(), key=lambda item: item["episode_index"])
-        normalized = validate_selection(
-            dataset,
-            Path(selection["dataset"]),
-            {**selection, "selections": items},
-        )
-        save_selection(path, normalized)
-        status_label.configure(text=f"Saved: {path}")
-        return normalized
-
-    def move(delta):
-        nonlocal index
-        start, end = episode_bounds(dataset, current_episode)
-        index = max(start, min(end - 1, index + delta))
-
-    def move_episode(delta):
-        nonlocal current_episode, index
-        current_episode = max(0, min(dataset.num_episodes - 1, current_episode + delta))
-        start, _ = episode_bounds(dataset, current_episode)
-        index = start
-
-    def render():
-        row = dataset[index]
-        image = row["observation.images.head"]
-        if hasattr(image, "permute"):
-            image = image.permute(1, 2, 0).numpy()
-        else:
-            image = np.asarray(image)
-            if image.ndim == 3 and image.shape[0] in (3, 4):
-                image = np.transpose(image, (1, 2, 0))
-        rgb = Image.fromarray(np.clip(image * 255, 0, 255).astype(np.uint8))
-        photo = ImageTk.PhotoImage(rgb.resize((640, max(1, int(640 * image.shape[0] / image.shape[1])))))
-        image_label.configure(image=photo)
-        image_label.image = photo
-        item = current_range()
-        kept = sum(row["end_index"] - row["start_index"] + 1 for row in ranges.values())
-        info_label.configure(
-            text=(
-                f"dataset index {index} / {len(dataset) - 1}   episode {current_episode} / "
-                f"{dataset.num_episodes - 1}   frame {row['frame_index']}   "
-                f"time {float(row['timestamp']):.3f}s\n"
-                f"selection: {item['start_index'] if item else 'excluded'}.."
-                f"{item['end_index'] if item else 'excluded'}   total kept frames: {kept}\n"
-                "Left/Right=1 frame  Up/Down=10  PageUp/PageDown=episode  "
-                "[=start ]=end  A=all C=exclude  S=save  Q=save+quit"
-            )
-        )
-
-    actions = {
-        "<Left>": lambda _: move(-1),
-        "<Right>": lambda _: move(1),
-        "<Up>": lambda _: move(-10),
-        "<Down>": lambda _: move(10),
-        "<Prior>": lambda _: move_episode(-1),
-        "<Next>": lambda _: move_episode(1),
-        "<bracketleft>": lambda _: set_range_start(),
-        "<bracketright>": lambda _: set_range_end(),
-        "a": lambda _: reset_episode(),
-        "c": lambda _: clear_episode(),
-        "s": lambda _: write(),
-    }
-    for sequence, action in actions.items():
-        root.bind(sequence, action)
-
-    def quit_editor(_=None):
-        write()
-        root.destroy()
-
-    root.bind("q", quit_editor)
-    root.protocol("WM_DELETE_WINDOW", quit_editor)
-
-    def refresh():
-        if not root.winfo_exists():
-            return
-        render()
-        root.after(30, refresh)
-
-    reset_episode()
-    refresh()
-    root.mainloop()
-    items = sorted(ranges.values(), key=lambda item: item["episode_index"])
-    return validate_selection(
-        dataset,
-        Path(selection["dataset"]),
-        {**selection, "selections": items},
-    )

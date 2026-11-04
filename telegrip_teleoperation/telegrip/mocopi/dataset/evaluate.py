@@ -49,6 +49,7 @@ def session_metrics(path, fps=30, max_sync_s=0.08, workspace=None):
         "usable_dataset_frames": sum(max(0, len(segment) - 1) for segment in segments),
         "mocopi_discarded_at_capture": session.meta.get("mocopi_discarded", 0),
         "mocopi_bad_packets": session.meta.get("mocopi_bad_packets", 0),
+        "mocopi_waiting_for_skdf_packets": session.meta.get("mocopi_waiting_for_skdf_packets", 0),
         "timestamp_limit": "PC receive/read times; exposure, wireless latency and tracking accuracy not measured",
         "hands": {},
     }

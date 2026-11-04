@@ -73,4 +73,7 @@ robot:
     left: [-20, 0, -80, 0, 0, 0, 0, 0]
     right: [-20, 0, 80, 0, 0, 0, 0, 0]
   max_joint_step_deg: 0.5
+  # Simulation-only catch-up per source frame. Hardware replay still enforces
+  # max_joint_step_deg and is disabled for the unmeasured full CAD preview.
+  preview_max_joint_step_deg: 10.0
   position_tolerance_m: 0.025

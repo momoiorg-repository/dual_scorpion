@@ -58,11 +58,12 @@ MuJoCoと記録映像を画面で見るときは、新しい計画・レポー�
 ## C270とmocopiで記録する
 
 作業を終えたあとの「録画を止めるための動作」まで学習データに入れたくない場合は、
-`--trim-end` を指定します。`--duration 35 --trim-end 5` なら35秒間録画し、
-評価・LeRobot変換・MuJoCo再生には最初の30秒だけを使います。最後の5秒は
-撮影終了動作や片付けに使えます。生ファイルは残りますが、データセット化からは除外されます。
-コマンドは指定秒数で自動的に終了するため、作業が終わってもすぐにスマホやカメラを止めず、
-コマンドの終了を待ってください。スマホのSEND停止はその後に行います。
+`--trim-end` を指定します。`--duration 35` は最大35秒、`--trim-end 5` は
+終了処理用の5秒バッファです。作業が終わったらターミナルで **q** を押してください。
+評価・LeRobot変換・MuJoCo再生には **q を押した時点まで** のデータだけを使い、
+その後の5秒は録画されますが学習対象から除外されます。生ファイルは残ります。
+スマホやカメラはすぐに止めず、コマンドが終了してから `SEND` を停止してください。
+`q` を押さなければ最大35秒で自動終了します。
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
@@ -71,9 +72,13 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset capture \
 ```
 
 `/dev/video2` はカメラ一覧の結果に合わせて変更します。コマンドの起動後、スマホのSENDを
-一度停止して再開します。mocopiのフレーム受信後に記録が始まり、指定秒数で終了します。
+一度停止して再開します。mocopiのフレーム受信後に記録が始まり、`q` または最大秒数で終了します。
 保存先を変えて、作業ごとに繰り返します。途中でカメラ等が故障した場合は `session.json` が
 `aborted` になり、正常な記録として扱いません。
+`Ctrl+C` は緊急停止です。正常に確定したい場合は必ず `q` を使ってください。
+コマンド起動直後の `Waiting for skdf` は、スマホ側の骨格定義を受信する前のパケットを
+待っている状態です。この待機パケットは `mocopi_waiting_for_skdf_packets` として別カウントし、
+骨格定義後の壊れたパケットのみを `mocopi_bad_packets` として扱います。
 `--reference-id` は、そのmocopiの基準座標と校正が同じ間に付ける任意の名前です。
 複数回の記録をまとめる場合は同じ名前を指定し、スマホの再校正や座標のリセット後は別の名前にしてください。
 これは人が指定する識別子で、基準座標の一致を自動的に保証するものではありません。
@@ -251,30 +256,53 @@ MuJoCo再生時に表示する記録映像は人の頭カメラで、実機の�
 
 ## MuJoCoで記録を再生し、動作を評価する
 
-変換後のデータを目視で確認し、残す範囲を選びたい場合は `edit` を使います。
-このツールは元データを変更しません。まず選択ファイルを作成します。
+変換後のデータを詳しく確認するにはRerunを使います。頭カメラ映像、現在の姿勢、
+変換後のAction、Actionと次フレーム姿勢の誤差、取得時刻を同じタイムラインに表示します。
 
 ```bash
-uv run --no-sync --active python -m telegrip.mocopi.dataset edit \
+uv run --no-sync --active python -m telegrip.mocopi.dataset rerun \
   --dataset outputs/mocopi/datasets/demo-001 \
+  --episode 0
+```
+
+Rerunの表示:
+
+- `Recorded video`: 記録した頭カメラ映像
+- `Observation and next Action`: 灰色が現在の骨格、赤・水色がActionの左右手、緑が次フレームの実測手
+- `Action, timing, and selection`: 現在位置とAction、位置・回転誤差、時刻ずれ
+- `Frame details`: episode、local frame、dataset index、Action座標、誤差
+
+タイムラインは `episode_time`、`frame`、`local_frame` で移動できます。
+保存して後から開く場合は `.rrd` を書き出します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset rerun \
+  --dataset outputs/mocopi/datasets/demo-001 \
+  --episode 0 \
+  --save outputs/mocopi/rerun/demo-001.rrd \
+  --no-spawn
+```
+
+Rerunで残す `local_frame` の開始・終了を確認したら、範囲選択を作ります。
+`END` は含まず、`START` から `END-1` までを出力します。複数範囲は `--range` を繰り返します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset select \
+  --dataset outputs/mocopi/datasets/demo-001 \
+  --range 0:10:200 \
+  --output outputs/mocopi/edits/demo-001.json
+```
+
+選択範囲をRerun上で確認できます。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset rerun \
+  --dataset outputs/mocopi/datasets/demo-001 \
+  --episode 0 \
   --selection outputs/mocopi/edits/demo-001.json
 ```
 
-操作:
-
-| キー | 動作 |
-| --- | --- |
-| ← / → | 1フレーム戻る / 進む |
-| ↑ / ↓ | 10フレーム戻る / 進む |
-| PageUp / PageDown | エピソードを切り替える |
-| `[` / `]` | 現在のフレームを選択開始 / 選択終了にする |
-| `A` | このエピソード全体を選択し直す |
-| `C` | このエピソードを選択から除外する |
-| `S` | 選択JSONを保存する |
-| `Q` | 保存して終了する |
-
-次の操作で、選択した範囲だけをコピーした新しいデータセットを作成します。
-保存先は必ず新しいフォルダにしてください。
+選択した範囲だけをコピーした新しいデータセットを作成します。保存先は新しいフォルダにします。
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset apply-edit \
@@ -328,9 +356,12 @@ IK失敗、手の目標が制限されたフレーム数が入ります。
 範囲は仮値で、実機の可動範囲ではありません。別のMJCFを使う場合は `--mujoco-model 新しい.xml`
 を指定し、計画と評価結果にそのXMLのSHA-256を保存します。
 
-IKは現在姿勢から各更新で `robot.max_joint_step_deg` 以内の解だけを返します。そのため、
-人が速く動いたフレームはIK失敗として記録され、実機再生の検証で拒否されます。この失敗は
-「目標に1更新で到達できなかった」ことを示し、実機の安全性を保証する成功ではありません。
+実機向けの関節ステップ上限は `robot.max_joint_step_deg`（既定0.5度）です。
+シミュレーションでは、15fpsなど記録フレーム間の移動が大きい場合に同じ制限を使うと
+「位置には届くが1フレームでは追いつけない」だけでIK失敗になるため、プレビュー専用の
+`robot.preview_max_joint_step_deg`（既定10度）を使います。これは表示用の追従量で、
+実機の安全上限ではありません。`--preview-max-step-deg` で一時的に変更できます。
+計画JSONとレポートには実機上限とプレビュー上限の両方を保存します。
 初期姿勢の影響を調べるときは、同じデータセットに対して `--start-pose work` と
 `--start-pose backwards` で別々の計画・レポートを作成し、`metrics-csv` で比較してください。
 `work`・`backwards`・`config` のどれを使ったかは計画JSON・評価レポート・関節角データセットの

@@ -17,12 +17,17 @@ def parser():
         "capture", help="Record raw camera and mocopi streams; no IK or robot connection"
     )
     capture.add_argument("--output", required=True, help="New local session folder")
-    capture.add_argument("--duration", type=float, default=30)
+    capture.add_argument(
+        "--duration",
+        type=float,
+        default=30,
+        help="Maximum recording seconds; press q to finish the usable task early",
+    )
     capture.add_argument(
         "--trim-end",
         type=float,
         default=0,
-        help="Seconds to discard from the end; record this extra buffer after the usable task",
+        help="Seconds recorded after q or the maximum duration, then discarded from usable data",
     )
     capture.add_argument("--task", required=True, help="Description of the demonstrated task")
     capture.add_argument("--camera", type=camera_device, help="Camera index or device path")
@@ -62,15 +67,25 @@ def parser():
     verify.add_argument("--dataset", required=True, help="Finalized mocopi dataset folder")
     verify.add_argument("--sample-frames", type=int, default=8, help="Sampled frames per episode (1..200)")
     verify.add_argument("--output", help="Optional JSON report")
-    edit = sub.add_parser("edit", help="Visually select keep ranges in a converted dataset")
-    edit.add_argument("--dataset", required=True, help="Finalized human mocopi dataset folder")
-    edit.add_argument("--selection", required=True, help="Selection JSON to create or resume")
-    edit.add_argument("--episode", type=int, default=0, help="Initial episode to display")
-    edit.add_argument(
-        "--resume", action="store_true", help="Load and continue editing an existing selection JSON"
+    rerun = sub.add_parser("rerun", help="Open video, poses, actions, and timing in Rerun")
+    rerun.add_argument("--dataset", required=True, help="Finalized human mocopi dataset folder")
+    rerun.add_argument("--episode", type=int, help="Episode to view; omit to view all episodes")
+    rerun.add_argument("--selection", help="Optional selection JSON to highlight included frames")
+    rerun.add_argument("--save", help="Write a new Rerun .rrd recording")
+    rerun.add_argument("--no-spawn", action="store_true", help="Do not launch the Rerun viewer")
+    rerun.add_argument("--max-frames", type=int, default=0, help="Limit logged frames; zero means all")
+    select = sub.add_parser("select", help="Create keep ranges from episode-local frame numbers")
+    select.add_argument("--dataset", required=True, help="Finalized human mocopi dataset folder")
+    select.add_argument(
+        "--range",
+        action="append",
+        required=True,
+        metavar="EPISODE:START:END",
+        help="Half-open local frame range (END is exclusive); repeat for multiple ranges",
     )
+    select.add_argument("--output", required=True, help="New selection JSON to write")
     apply_edit = sub.add_parser("apply-edit", help="Create a new dataset from a saved selection JSON")
-    apply_edit.add_argument("--selection", required=True, help="Selection JSON created by edit")
+    apply_edit.add_argument("--selection", required=True, help="Selection JSON created by select")
     apply_edit.add_argument("--output", required=True, help="New local edited dataset folder")
     apply_edit.add_argument("--repo-id", required=True, help="Local repo id, e.g. local/mocopi-edited")
     replay = sub.add_parser("replay-sim", help="Replay an episode in MuJoCo and quantify tracking")
@@ -79,6 +94,11 @@ def parser():
     replay.add_argument("--headless", action="store_true")
     replay.add_argument("--fast", action="store_true", help="Do not wait for recorded frame times")
     replay.add_argument("--slowdown", type=int, default=1, help="Hold each frame for 1..10 simulation ticks")
+    replay.add_argument(
+        "--preview-max-step-deg",
+        type=float,
+        help="Simulation-only IK catch-up per source frame; hardware limits are unchanged",
+    )
     replay.add_argument("--no-camera", action="store_true", help="Do not open the recorded camera window")
     replay.add_argument("--left-urdf", help="Override the left-arm URDF for this replay")
     replay.add_argument("--right-urdf", help="Override the right-arm URDF for this replay")
@@ -209,14 +229,25 @@ def main():
             if result["errors"]:
                 print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
                 parser().exit(1, f"Error: dataset verification failed: {', '.join(result['errors'])}\n")
-        elif args.command == "edit":
-            from .editor import load_dataset, load_selection, run_editor
+        elif args.command == "rerun":
+            from .rerun_view import log_dataset_to_rerun
+
+            result = log_dataset_to_rerun(
+                args.dataset,
+                episode=args.episode,
+                selection_path=args.selection,
+                save_path=args.save,
+                spawn=not args.no_spawn,
+                max_frames=args.max_frames,
+            )
+        elif args.command == "select":
+            from .editor import create_selection, load_dataset, save_selection
 
             dataset, _ = load_dataset(args.dataset)
-            selection = load_selection(
-                args.selection, dataset, args.dataset, resume=args.resume
-            )
-            result = run_editor(dataset, selection, args.selection, initial_episode=args.episode)
+            result = create_selection(args.dataset, dataset, args.range)
+            if Path(args.output).exists():
+                raise FileExistsError(f"Selection output already exists: {args.output}")
+            save_selection(args.output, result)
         elif args.command == "apply-edit":
             from .editor import apply_dataset_selection
 
@@ -252,6 +283,7 @@ def main():
                 sim_model=sim_model,
                 start_pose=args.start_pose,
                 obstacles=args.obstacles,
+                preview_max_step_deg=args.preview_max_step_deg,
             )
             for path, document in ((args.plan, plan), (args.report, result)):
                 if path:

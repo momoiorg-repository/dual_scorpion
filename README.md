@@ -29,6 +29,8 @@ and motion measurements without a robot connection, IK, or gripper measurements.
 Raw sessions can be evaluated for timing and converted into local LeRobot datasets;
 their actions describe measured human hand poses, not robot joint commands. The
 dataset can be replayed in the updated native MuJoCo model with tracking metrics.
+Rerun can inspect the recorded video, converted actions, timing offsets, and
+selection ranges; selected ranges can be exported as a new non-destructive dataset.
 Its joint limits and physical motor mapping are unverified, so plans from this
 model are restricted to simulation; the previous per-arm URDFs remain optional.
 Operator-declared obstacle boxes can be added to the native-model collision

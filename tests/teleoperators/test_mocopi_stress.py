@@ -76,6 +76,7 @@ def _write_two_minute_session(root, cfg, fps, frame_count):
         mocopi_frames=frame_count - 12,
         mocopi_discarded=12,
         mocopi_bad_packets=12,
+        mocopi_waiting_for_skdf_packets=3,
         logical_duration_s=(frame_count - 1) / fps,
     )
     metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -99,6 +100,7 @@ def test_two_minute_jitter_and_dropouts_survive_dataset_roundtrip(tmp_path):
     assert quality["camera_frames"] == frame_count
     assert quality["mocopi_frames"] == frame_count - 12
     assert quality["mocopi_bad_packets"] == 12
+    assert quality["mocopi_waiting_for_skdf_packets"] == 3
     assert quality["unsynchronized_samples"] == 12
     assert quality["usable_segments"] == 4
     assert quality["usable_dataset_frames"] == frame_count - 16

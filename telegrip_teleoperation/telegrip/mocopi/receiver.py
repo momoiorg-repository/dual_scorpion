@@ -18,6 +18,10 @@ REQUIRED = set(range(19))
 CONTAINERS = {b"head", b"skdf", b"bons", b"bndt", b"fram", b"btrs", b"btdt", b"sndf"}
 
 
+class WaitingForSkeletonError(ValueError):
+    """Packets sent before the mocopi skeleton definition has arrived."""
+
+
 def chunks(data, depth=0):
     if depth > 8:
         raise ValueError("Excessively nested packet")
@@ -79,7 +83,7 @@ class MocopiDecoder:
             return None
         local = bone_transforms(tree, b"btdt")
         if not self.rest:
-            raise ValueError("Waiting for skdf: restart SEND in mocopi app")
+            raise WaitingForSkeletonError("Waiting for skdf: restart SEND in mocopi app")
         if not local.keys() >= REQUIRED:
             raise ValueError("Incomplete motion frame")
         numbers = list(flatten(tree, b"fnum"))
@@ -108,6 +112,7 @@ class MocopiReceiver:
         self.source_ip = source_ip
         self.offset_s = offset_s
         self.bad_packets = 0
+        self.waiting_for_skdf_packets = 0
         self.frames = 0
         self.started = time.monotonic()
         self.last_warning = 0.0
@@ -127,6 +132,11 @@ class MocopiReceiver:
                 if sample:
                     out.append(sample)
                     self.frames += 1
+            except WaitingForSkeletonError as exc:
+                self.waiting_for_skdf_packets += 1
+                if now - self.last_warning > 1.0:
+                    LOG.warning("mocopi waiting for skdf: %s", exc)
+                    self.last_warning = now
             except (ValueError, KeyError, struct.error) as exc:
                 self.bad_packets += 1
                 if now - self.last_warning > 1.0:

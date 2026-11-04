@@ -52,6 +52,7 @@ def replay_sim(
     sim_model="legacy",
     start_pose=None,
     obstacles=None,
+    preview_max_step_deg=None,
 ):
     """Play an episode, returning a reviewable joint plan and simulation metrics."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -76,6 +77,16 @@ def replay_sim(
     robot_config = config["robot"]
     if start_pose is not None and start_pose != robot_config.get("start_pose", "config"):
         robot_config = {**robot_config, "start_pose": start_pose}
+    preview_step = (
+        float(preview_max_step_deg)
+        if preview_max_step_deg is not None
+        else float(robot_config.get("preview_max_joint_step_deg", robot_config["max_joint_step_deg"]))
+        if sim_model == "full"
+        else float(robot_config["max_joint_step_deg"])
+    )
+    if not np.isfinite(preview_step) or preview_step <= 0:
+        raise ValueError("preview_max_step_deg must be positive")
+    simulation_robot_config = {**robot_config, "max_joint_step_deg": preview_step}
     root = Path(dataset_path)
     manifest_path = root / "meta" / "mocopi_dataset.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -108,7 +119,9 @@ def replay_sim(
         "urdf_sha256": model_fingerprint(config) if sim_model == "legacy" else None,
         "joint_names": [f"joint{i}" for i in range(7)],
         "gripper_included": False,
-        "max_joint_step_deg": float(config["robot"]["max_joint_step_deg"]),
+        "max_joint_step_deg": preview_step,
+        "preview_max_joint_step_deg": preview_step,
+        "hardware_max_joint_step_deg": float(config["robot"]["max_joint_step_deg"]),
         "frames": [],
         "failures": [],
     }
@@ -126,7 +139,9 @@ def replay_sim(
     collision_max_penetration_m = 0.0
     collision_body_pairs = {}
     simulation = Simulation(
-        robot_config, gui=gui, **({"obstacles": obstacle_scene} if sim_model == "full" else {})
+        simulation_robot_config,
+        gui=gui,
+        **({"obstacles": obstacle_scene} if sim_model == "full" else {}),
     )
     camera_window = None
     try:
@@ -229,7 +244,7 @@ def replay_sim(
         return float(np.max(values)) if values else None
 
     position_tolerance = float(config["robot"]["position_tolerance_m"])
-    step_limit = float(config["robot"]["max_joint_step_deg"])
+    step_limit = preview_step
     collision_scope = (
         "Native MJCF floor, non-adjacent robot bodies, and operator-declared obstacles"
         if sim_model == "full" and obstacle_scene
@@ -240,10 +255,12 @@ def replay_sim(
     feasibility = {
         "criteria": (
             "no IK failures, position error <= robot.position_tolerance_m, and joint step <= "
-            "robot.max_joint_step_deg" + (", and no modeled collisions" if sim_model == "full" else "")
+            "the simulation preview step limit"
+            + (", and no modeled collisions" if sim_model == "full" else "")
         ),
         "position_tolerance_m": position_tolerance,
         "max_joint_step_limit_deg": step_limit,
+        "hardware_max_joint_step_deg": float(config["robot"]["max_joint_step_deg"]),
         "ik_failures": len(plan["failures"]),
         "max_position_error_m": worst([value for side in errors for value in errors[side]["position_m"]]),
         "max_orientation_error_deg": worst(

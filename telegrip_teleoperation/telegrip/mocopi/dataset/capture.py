@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import sys
 import threading
 import time
 from contextlib import ExitStack
@@ -67,6 +68,48 @@ class FakeCamera:
         pass
 
 
+class QuitKeyWatcher:
+    """Watch for a single ``q`` key while the main thread records camera frames."""
+
+    def __init__(self, stop):
+        self.stop = stop
+        self._thread = None
+        self._watcher_stop = threading.Event()
+        self._old_termios = None
+        self._fd = None
+
+    def _watch(self):
+        import select
+
+        while not self._watcher_stop.is_set() and not self.stop.is_set():
+            if select.select([sys.stdin], [], [], 0.05)[0] and sys.stdin.read(1).lower() == "q":
+                self.stop.set()
+                break
+
+    def __enter__(self):
+        if not sys.stdin.isatty():
+            return self
+        import termios
+        import tty
+
+        self._fd = sys.stdin.fileno()
+        self._old_termios = termios.tcgetattr(self._fd)
+        tty.setcbreak(self._fd)
+        self._thread = threading.Thread(target=self._watch, name="capture-quit-key", daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self._watcher_stop.set()
+        if self._thread:
+            self._thread.join(timeout=1)
+        if self._old_termios is not None:
+            import termios
+
+            termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_termios)
+        return False
+
+
 class FakeMocopi:
     def __init__(self, fps):
         self.period = 1 / float(fps)
@@ -118,6 +161,7 @@ def capture_session(
     calibration=None,
     reference_id=None,
     trim_end_s=0.0,
+    manual_stop=None,
 ):
     """Write one immutable raw session. Each stream keeps its acquisition times.
 
@@ -145,6 +189,7 @@ def capture_session(
         "task": task.strip(),
         "requested_duration_s": float(duration),
         "trim_end_s": float(trim_end_s),
+        "stop_method": "duration",
         "camera": {
             "device": str(config_camera["device"]),
             "width": config_camera["width"],
@@ -179,6 +224,7 @@ def capture_session(
 
     save_metadata()
     stop = threading.Event()
+    manual_stop = manual_stop if manual_stop is not None else threading.Event()
     ready = threading.Event()
     slam_ready = threading.Event()
     usable_end_s = -np.inf
@@ -332,7 +378,11 @@ def capture_session(
         metadata["camera"]["frame_id_source"] = (
             "bridge_sequence" if hasattr(camera, "last_frame_id") else "recorder_sequence"
         )
-        print(f"Recording {duration:g} s to {output} (head camera + mocopi, no robot/gripper)", flush=True)
+        print(
+            f"Recording up to {duration:g} s to {output} "
+            "(head camera + mocopi, no robot/gripper); press q to finish",
+            flush=True,
+        )
         import cv2
 
         start = time.monotonic()
@@ -342,27 +392,51 @@ def capture_session(
         metadata["usable_end_s"] = usable_end_s
         previous_camera = -np.inf
         with (output / "camera.jsonl").open("w", encoding="utf-8") as file:
-            while time.monotonic() - start < duration and not stop.is_set():
-                stamp, image = camera.read()
-                if image.shape != (int(config_camera["height"]), int(config_camera["width"]), 3):
-                    raise ValueError(f"Unexpected camera image shape: {image.shape}")
-                if image.dtype != np.uint8 or not np.isfinite(stamp):
-                    raise ValueError("Camera must provide a finite timestamp and uint8 BGR image")
-                if stamp <= previous_camera:
-                    raise ValueError("Camera timestamps must increase")
-                name = f"images/{counts['camera_frames']:08d}.jpg"
-                jpeg = getattr(camera, "last_jpeg", None)
-                if jpeg is not None:
-                    (output / name).write_bytes(jpeg)
-                elif not cv2.imwrite(str(output / name), image, [cv2.IMWRITE_JPEG_QUALITY, 95]):
-                    raise OSError(f"Failed to save camera frame {name}")
-                source_frame_id = getattr(camera, "last_frame_id", counts["camera_frames"])
-                if source_frame_id is None:
-                    raise ValueError("Head camera frame has no source frame id")
-                relative_stamp = stamp - origin
-                _json_line(file, {"timestamp_s": relative_stamp, "file": name, "frame_id": source_frame_id})
-                previous_camera = stamp
-                counts["camera_frames"] += 1
+            manual_deadline = None
+            with QuitKeyWatcher(manual_stop):
+                while True:
+                    now = time.monotonic()
+                    if stop.is_set():
+                        break
+                    if manual_stop.is_set():
+                        if manual_deadline is None:
+                            metadata["stop_method"] = "q"
+                            metadata["manual_stop_time_s"] = now - origin
+                            usable_end_s = now - origin
+                            metadata["usable_end_s"] = usable_end_s
+                            manual_deadline = now + trim_end_s
+                            print(
+                                f"q received; finishing after {trim_end_s:g} s trim buffer",
+                                flush=True,
+                            )
+                        if now >= manual_deadline:
+                            break
+                    elif now - start >= duration:
+                        break
+
+                    stamp, image = camera.read()
+                    if image.shape != (int(config_camera["height"]), int(config_camera["width"]), 3):
+                        raise ValueError(f"Unexpected camera image shape: {image.shape}")
+                    if image.dtype != np.uint8 or not np.isfinite(stamp):
+                        raise ValueError("Camera must provide a finite timestamp and uint8 BGR image")
+                    if stamp <= previous_camera:
+                        raise ValueError("Camera timestamps must increase")
+                    name = f"images/{counts['camera_frames']:08d}.jpg"
+                    jpeg = getattr(camera, "last_jpeg", None)
+                    if jpeg is not None:
+                        (output / name).write_bytes(jpeg)
+                    elif not cv2.imwrite(str(output / name), image, [cv2.IMWRITE_JPEG_QUALITY, 95]):
+                        raise OSError(f"Failed to save camera frame {name}")
+                    source_frame_id = getattr(camera, "last_frame_id", counts["camera_frames"])
+                    if source_frame_id is None:
+                        raise ValueError("Head camera frame has no source frame id")
+                    relative_stamp = stamp - origin
+                    _json_line(file, {"timestamp_s": relative_stamp, "file": name, "frame_id": source_frame_id})
+                    previous_camera = stamp
+                    counts["camera_frames"] += 1
+        recording_end_s = time.monotonic() - origin
+        metadata["recording_end_s"] = recording_end_s
+        metadata["actual_recording_duration_s"] = recording_end_s - recording_start_s
         # Retain a brief tail so the last camera frame can pair with a later UDP frame.
         stop.wait(
             config["tracking"]["timeout_s"]
@@ -391,6 +465,9 @@ def capture_session(
                 metadata["usable_slam_frames"] = _count_rows_until(output / "slam.jsonl", usable_end_s)
         if receiver:
             metadata["mocopi_bad_packets"] = int(getattr(receiver, "bad_packets", 0))
+            metadata["mocopi_waiting_for_skdf_packets"] = int(
+                getattr(receiver, "waiting_for_skdf_packets", 0)
+            )
             receiver.close()
         if slam_receiver:
             metadata["slam_bad_packets"] = int(getattr(slam_receiver, "invalid", 0))
