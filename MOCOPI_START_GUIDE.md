@@ -35,23 +35,16 @@ export VIRTUAL_ENV="$PWD/.venv"
 export PYTHONPATH="$PWD/telegrip_teleoperation${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
-まだこのリポジトリの実行環境を作っていない場合だけ、続けてインストールします。
-Python 3.12とuvが必要です。
+まだこのリポジトリの実行環境を作っていない場合、または依存を更新したい場合は、
+続けてインストールします。Python 3.12とuvが必要です。
 
 ```bash
-uv sync --locked
-uv pip install --python .venv/bin/python -e './telegrip_teleoperation[mujoco]' pytest
+uv sync --locked --all-packages --extra all
 git lfs install && git lfs pull
 ```
 
-すでに実行環境がある場合も、MuJoCoをまだ入れていなければ次の1行だけ実行してください。
-
-```bash
-uv pip install --python .venv/bin/python -e './telegrip_teleoperation[mujoco]'
-```
-
 以降は `uv run --no-sync --active` を付けて実行します。
-`--no-sync` は、追加で入れたTelegripの依存関係を起動時の同期で削除しないための指定です。
+すべての依存は上の `uv sync` でまとめて入ります。
 
 ## 2. まずPCだけで起動する
 

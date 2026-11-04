@@ -71,17 +71,14 @@ comparison table and dependency-free SVG plots are defined in
 
 ### Requirements
 - Linux or macOS host with Python 3.12+.
-- `pip`, `venv`, and a recent `git`.
+- `uv` and a recent `git`.
 - Feetech/BX servo buses (through the `[feetech]` extra).
 
 ### Install
 ```bash
 git clone https://github.com/momoiorg-repository/dual_scorpion.git
 cd dual_scorpion
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e ".[core_scripts,feetech]"
+uv sync --locked --all-packages --extra all
 ```
 
 ### Optional: authenticate with Hugging Face

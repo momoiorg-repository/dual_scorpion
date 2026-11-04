@@ -67,8 +67,7 @@ export PYTHONPATH="$PWD/telegrip_teleoperation${PYTHONPATH:+:$PYTHONPATH}"
 # uvがなければ最初に実行
 # curl -LsSf https://astral.sh/uv/install.sh | sh
 
-uv sync --locked
-uv pip install --python .venv/bin/python -e ./telegrip_teleoperation pytest
+uv sync --locked --all-packages --extra all
 uv run --no-sync --active python -m telegrip.mocopi doctor
 uv run --no-sync --active python -m telegrip.mocopi run --fake --sim
 ```

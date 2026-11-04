@@ -199,8 +199,8 @@ class MujocoSimulation(DualSimulation):
             import mujoco
         except ImportError as exc:
             raise ImportError(
-                "MuJoCo is not installed. Run: uv pip install --python .venv/bin/python "
-                "-e './telegrip_teleoperation[mujoco]' ; or use --sim-backend pybullet"
+                "MuJoCo is not installed. Run: uv sync --locked --all-packages --extra all ; "
+                "or use --sim-backend pybullet"
             ) from exc
 
         self.mujoco = mujoco

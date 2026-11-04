@@ -23,6 +23,9 @@ source = "https://github.com/huggingface/lerobot"
 issues = "https://github.com/huggingface/lerobot/issues"
 discord = "https://discord.gg/s3KuuzsPFb"
 
+[tool.uv.workspace]
+members = ["telegrip_teleoperation"]
+
 [project]
 name = "lerobot"
 version = "0.5.2"
@@ -123,6 +126,16 @@ core_scripts = ["lerobot[dataset]", "lerobot[hardware]", "lerobot[viz]"]
 evaluation = ["lerobot[av-dep]"]
 # lerobot-dataset-viz, lerobot-imgtransform-viz
 dataset_viz = ["lerobot[dataset]", "lerobot[viz]"]
+# Dual Scorpion MOCOPI recording, conversion, and MuJoCo preview workflow.
+# The telegrip package itself is imported from telegrip_teleoperation/ via PYTHONPATH.
+mocopi = [
+    "lerobot[dataset]",
+    "mujoco>=3.3,<4",
+    "pybullet>=3.2.5,<4",
+    "websockets>=13.0,<16",
+    "scipy>=1.14.0,<2.0.0",
+    "PyYAML>=6.0.0,<7.0.0",
+]
 
 # Common
 av-dep = ["av>=15.0.0,<16.0.0"]
@@ -234,6 +247,7 @@ all = [
     "lerobot[training]",
     "lerobot[hardware]",
     "lerobot[viz]",
+    "lerobot[mocopi]",
     # NOTE(resolver hint): scipy is pulled in transitively via lerobot[scipy-dep] through
     # multiple extras (aloha, metaworld, pi, wallx, phone). Listing it explicitly
     # helps pip's resolver converge by constraining scipy early, before it encounters

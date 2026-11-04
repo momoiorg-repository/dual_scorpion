@@ -183,11 +183,8 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 
 ## LeRobot形式へ変換する
 
-LeRobotのdataset依存関係を用意します。
-
-```bash
-uv pip install --python .venv/bin/python -e '.[dataset]'
-```
+初期設定で `uv sync --locked --all-packages --extra all` を使っていれば、
+LeRobotのdataset依存はすでに含まれています。
 
 複数の作業を一つのデータセットにまとめる場合は `--input` を繰り返します。
 同じ `--reference-id` を付けた記録を指定します。SLAM使用時は頭の校正値も同じ必要があります。

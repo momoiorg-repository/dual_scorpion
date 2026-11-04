@@ -61,10 +61,7 @@ Full details in [`docs/source/so101.mdx`](./docs/source/so101.mdx) and [`docs/so
 **4.1 Install**
 
 ```bash
-pip install 'lerobot[feetech]'              # SO-100/SO-101 motor stack
-# pip install 'lerobot[all]'                # everything
-# pip install 'lerobot[aloha,pusht]'        # specific features
-# pip install 'lerobot[smolvla]'            # add SmolVLA deps
+uv sync --locked --all-packages --extra all
 git lfs install && git lfs pull
 hf auth login                               # required to push datasets/policies
 ```

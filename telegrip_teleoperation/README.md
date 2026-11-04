@@ -30,11 +30,7 @@ does not ship another robot implementation.
 git clone https://github.com/momoiorg-repository/dual_scorpion.git
 cd dual_scorpion
 
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e ".[core_scripts,feetech]"
-pip install -e ./telegrip_teleoperation
+uv sync --locked --all-packages --extra all
 ```
 
 Open `telegrip_teleoperation/config.yaml` and set:
@@ -158,9 +154,9 @@ For the demonstration recording and LeRobot dataset work, see
 [MOCOPI_DATASET_GUIDE.md](../MOCOPI_DATASET_GUIDE.md).
 Start with the Japanese [MOCOPI_START_GUIDE.md](../MOCOPI_START_GUIDE.md).
 MuJoCo is the default viewer, using the assembly URDF's STL visuals and the
-existing corrected per-arm FK/IK. Install the optional viewer with
-`uv pip install --python .venv/bin/python -e './telegrip_teleoperation[mujoco]'`
-from the repository root; `--sim-backend pybullet` selects the previous viewer.
+existing corrected per-arm FK/IK. Install all dependencies with
+`uv sync --locked --all-packages --extra all` from the repository root;
+`--sim-backend pybullet` selects the previous viewer.
 See the Japanese [HOW_TO_USE.md](../HOW_TO_USE.md) for camera calibration,
 external stella_vslam integration, guided scale/extrinsic calibration, and
 fake/replay commands. Robot motor control is disabled for this path.
