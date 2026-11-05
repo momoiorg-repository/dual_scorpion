@@ -184,6 +184,60 @@ def test_dataset_editor_selection_creates_trimmed_dataset(tmp_path):
     assert report["status"] == "ok", report
 
 
+def test_build_robot_dataset_end_to_end(tmp_path):
+    pytest.importorskip("cv2")
+    pytest.importorskip("mujoco")
+    dataset_type = pytest.importorskip("lerobot.datasets.lerobot_dataset").LeRobotDataset
+    from telegrip.mocopi.dataset.convert import convert_sessions
+    from telegrip.mocopi.dataset.rerun_view import log_robot_dataset_to_rerun
+    from telegrip.mocopi.dataset.robot_pipeline import build_robot_dataset
+
+    cfg = load_config(CONFIG)
+    cfg["camera"].update(width=96, height=64, fps=20)
+    raw = tmp_path / "robot-pipeline-raw"
+    capture_session(cfg, raw, 0.45, "move cup", fake=True)
+    source = tmp_path / "robot-pipeline-human"
+    convert_sessions([raw], source, "local/robot-pipeline-human", fps=20)
+    output = tmp_path / "robot-pipeline-robot"
+    result = build_robot_dataset(
+        cfg,
+        source,
+        output,
+        "local/robot-pipeline-robot",
+        episodes=[0],
+        plan_dir=tmp_path / "plans",
+        report_dir=tmp_path / "reports",
+        preview_max_step_deg=20,
+    )
+    assert result["dataset_role"] == "robot_imitation_kinematic"
+    assert result["robot_state_source"] == "kinematic_simulation_not_real_encoders"
+    assert result["gripper_commanded"] is False and result["gripper_fixed_zero"] is True
+    assert result["validation"]["collision_frames"] == []
+    assert result["validation"]["ik_failure_frames"] == []
+    assert result["retarget_validation"]["verification"]["tcp_physical_alignment"] == "not_externally_measured"
+    retarget = result["retarget_validation"]
+    assert retarget["quaternion_order"] == "xyzw"
+    assert retarget["verification"]["left_right_pairing"] == "passed"
+    assert retarget["episodes"][0]["sides"]["left"]["measured_translation_scale"]["median"] == pytest.approx(
+        0.8, abs=1e-5
+    )
+    dataset = dataset_type("local/robot-pipeline-robot", root=output, video_backend="pyav")
+    row = dataset[0]
+    assert row["observation.state"].shape == (14,)
+    assert row["observation.robot.tcp_pose"].shape == (14,)
+    assert row["observation.robot.target_pose"].shape == (14,)
+    assert row["observation.robot.error"].shape == (4,)
+    assert row["observation.robot.warning"].shape == (2,)
+    assert np.isfinite(float(row["observation.capture.camera_time_s"]))
+    assert not any("gripper" in name.lower() for name in dataset.meta.features)
+    assert result["post_export_verification"]["status"] in ("ok", "warning")
+    rerun_file = tmp_path / "robot-pipeline.rrd"
+    rerun = log_robot_dataset_to_rerun(
+        output, episode=0, save_path=rerun_file, spawn=False, max_frames=2
+    )
+    assert rerun["logged_frames"] == 2 and rerun_file.stat().st_size > 0
+
+
 def test_gaps_split_episodes_instead_of_compressing_time():
     from types import SimpleNamespace
 

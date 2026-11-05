@@ -42,6 +42,14 @@ def _hand_action(values):
     }
 
 
+def _tcp_pair(values):
+    poses = np.asarray(values, dtype=float).reshape(2, 7)
+    return {
+        "right": {"position": poses[0, :3], "quaternion": poses[0, 3:7]},
+        "left": {"position": poses[1, :3], "quaternion": poses[1, 3:7]},
+    }
+
+
 def _pose_error(current, expected):
     position_m = float(np.linalg.norm(current["position"] - expected["position"]))
     relative = Rotation.from_quat(current["quaternion"]).inv() * Rotation.from_quat(
@@ -343,3 +351,161 @@ def log_dataset_to_rerun(
         }
     )
     return summary
+
+
+def log_robot_dataset_to_rerun(
+    dataset_path,
+    *,
+    episode=None,
+    save_path=None,
+    spawn=True,
+    max_frames=0,
+):
+    """Log robot target/actual TCP trajectories and MuJoCo joint states to Rerun."""
+    import rerun as rr
+
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    root = Path(dataset_path).resolve()
+    manifest = json.loads((root / "meta" / "mocopi_joint_dataset.json").read_text(encoding="utf-8"))
+    dataset = LeRobotDataset(manifest["repo_id"], root=root, video_backend="pyav")
+    if episode is not None and (
+        not isinstance(episode, int) or isinstance(episode, bool) or not 0 <= episode < dataset.num_episodes
+    ):
+        raise ValueError(f"episode must be between 0 and {dataset.num_episodes - 1}")
+    if save_path is not None:
+        save_path = Path(save_path)
+        if save_path.exists():
+            raise FileExistsError(f"Rerun output already exists: {save_path}")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+    blueprint = _blueprint(rr)
+    recording = rr.RecordingStream("dual_scorpion_robot_dataset")
+    if save_path is not None:
+        recording.save(save_path, default_blueprint=blueprint)
+    if spawn:
+        recording.spawn(default_blueprint=blueprint)
+    recording.send_blueprint(blueprint)
+    episodes = [episode] if episode is not None else list(range(dataset.num_episodes))
+    recording.log(
+        "/info/summary",
+        rr.TextDocument(
+            "\n".join(
+                [
+                    f"robot dataset: {root}",
+                    f"repo_id: {dataset.repo_id}",
+                    f"source: {manifest.get('source_dataset_repo_id')}",
+                    f"fps: {dataset.fps:g}",
+                    f"episodes: {episodes}",
+                    f"quality status: {manifest.get('validation', {}).get('status')}",
+                    "",
+                    "3D: red/cyan=target TCP, green/yellow=MuJoCo actual TCP",
+                    "Plots: target/actual TCP, joint angles, TCP error, capture timing",
+                ]
+            )
+        ),
+        static=True,
+    )
+    recording.log("/robot", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+    global_index = 0
+    logged = 0
+    for episode_index in episodes:
+        episode_start = int(dataset.meta.episodes[episode_index]["dataset_from_index"])
+        episode_end = int(dataset.meta.episodes[episode_index]["dataset_to_index"])
+        for local_frame, index in enumerate(range(episode_start, episode_end)):
+            if max_frames and logged >= max_frames:
+                break
+            row = dataset[index]
+            recording.set_time("dataset_time", timestamp=global_index / float(dataset.fps))
+            recording.set_time("episode_time", timestamp=float(row["timestamp"]))
+            recording.set_time("frame", sequence=global_index)
+            recording.set_time("episode", sequence=episode_index)
+            recording.set_time("local_frame", sequence=local_frame)
+            recording.log("/camera/image", rr.Image(_image_rgb(row["observation.images.head"])))
+            target = _tcp_pair(row["observation.robot.target_pose"])
+            actual = _tcp_pair(row["observation.robot.tcp_pose"])
+            _log_hands(recording, rr, "/robot/target/points", target, (255, 90, 90), 0.012, "target")
+            _log_hands(recording, rr, "/robot/actual/points", actual, (90, 230, 150), 0.009, "actual")
+            _log_pose_axes(recording, rr, "/robot/actual/axes", actual)
+            for side, pose in target.items():
+                recording.log(
+                    f"/robot/target/{side}/delta",
+                    rr.Arrows3D(
+                        vectors=(pose["position"] - actual[side]["position"])[None, :],
+                        origins=actual[side]["position"][None, :],
+                        colors=[(255, 90, 90)],
+                        radii=[0.004],
+                    ),
+                )
+            joints = np.asarray(row["observation.state"], dtype=float)
+            errors = np.asarray(row["observation.robot.error"], dtype=float)
+            warnings = np.asarray(row["observation.robot.warning"], dtype=float)
+            collisions = np.asarray(row["observation.robot.collision"], dtype=float)
+            for joint_index, value in enumerate(joints):
+                recording.log(
+                    f"/plots/joints/{manifest['joint_names'][joint_index]}",
+                    rr.Scalars([float(value)]),
+                )
+            for side_index, side in enumerate(("right", "left")):
+                for axis_index, axis in enumerate("xyz"):
+                    recording.log(
+                        f"/plots/tcp/{side}/target_{axis}",
+                        rr.Scalars([float(target[side]["position"][axis_index])]),
+                    )
+                    recording.log(
+                        f"/plots/tcp/{side}/actual_{axis}",
+                        rr.Scalars([float(actual[side]["position"][axis_index])]),
+                    )
+                recording.log(
+                    f"/plots/error/{side}_position_m",
+                    rr.Scalars([float(errors[side_index * 2])]),
+                )
+                recording.log(
+                    f"/plots/error/{side}_orientation_deg",
+                    rr.Scalars([float(errors[side_index * 2 + 1])]),
+                )
+                recording.log(
+                    f"/plots/warning/{side}_orientation",
+                    rr.Scalars([float(warnings[side_index])]),
+                )
+            recording.log("/plots/collision/count", rr.Scalars([float(collisions[0])]))
+            camera_time = float(row["observation.capture.camera_time_s"])
+            mocopi_time = float(row["observation.capture.mocopi_time_s"])
+            grid_time = float(row["observation.capture.grid_time_s"])
+            recording.log(
+                "/plots/timing/camera_mocopi_abs_ms",
+                rr.Scalars([abs(camera_time - mocopi_time) * 1000]),
+            )
+            recording.log(
+                "/plots/timing/grid_camera_abs_ms",
+                rr.Scalars([abs(camera_time - grid_time) * 1000]),
+            )
+            lines = [
+                f"episode {episode_index}, local frame {local_frame}, dataset index {index}",
+                f"time {float(row['timestamp']):.4f}s",
+                f"task: {row['task']}",
+                f"quality: {manifest.get('validation', {}).get('status')}",
+                f"gripper: fixed at zero; feature included: {manifest.get('gripper_feature_included')}",
+            ]
+            for side_index, side in enumerate(("right", "left")):
+                target_position = target[side]["position"]
+                lines.append(
+                    f"{side} target xyz: {target_position[0]:.3f}, {target_position[1]:.3f}, "
+                    f"{target_position[2]:.3f} m; position error {errors[side_index * 2] * 1000:.3f} mm; "
+                    f"orientation error {errors[side_index * 2 + 1]:.3f} deg; "
+                    f"warning={bool(warnings[side_index])}"
+                )
+            recording.log("/info/frame", rr.TextLog("\n".join(lines)))
+            logged += 1
+            global_index += 1
+        if max_frames and logged >= max_frames:
+            break
+    recording.flush()
+    return {
+        "dataset": str(root),
+        "repo_id": dataset.repo_id,
+        "fps": float(dataset.fps),
+        "episodes": episodes,
+        "logged_frames": logged,
+        "quality_status": manifest.get("validation", {}).get("status"),
+        "rrd": None if save_path is None else str(save_path),
+    }

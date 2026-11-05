@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from ..obstacles import obstacles_sha256
 
@@ -61,9 +62,56 @@ def verify_dataset(dataset_path, sample_frames=8):
     if kind == "joints":
         check("joint_unit_degrees", manifest.get("joint_unit") == "degree", manifest.get("joint_unit"))
         check(
+            "robot_dataset_role",
+            manifest.get("dataset_role") == "robot_imitation_kinematic",
+            manifest.get("dataset_role"),
+        )
+        check(
             "kinematic_state_labelled",
             manifest.get("robot_state_source") == "kinematic_simulation_not_real_encoders",
             manifest.get("robot_state_source"),
+        )
+        check(
+            "human_actions_kept_distinct",
+            isinstance(manifest.get("human_action_semantics"), str)
+            and "next measured" in manifest["human_action_semantics"],
+            manifest.get("human_action_semantics"),
+        )
+        check(
+            "gripper_not_commanded",
+            manifest.get("gripper_commanded") is False and manifest.get("gripper_fixed_zero") is True,
+            manifest.get("gripper_commanded"),
+        )
+        check(
+            "tcp_metadata_present",
+            isinstance(manifest.get("tcp"), dict)
+            and manifest["tcp"].get("frame") == "l_link_8/r_link_8 origin",
+            manifest.get("tcp"),
+        )
+        validation = manifest.get("validation", {})
+        check(
+            "quality_status_reported",
+            validation.get("status") in ("ok", "ok_with_orientation_warnings"),
+            validation.get("status"),
+        )
+        check(
+            "ik_failures_not_hidden",
+            isinstance(validation.get("ik_failure_frames"), list)
+            and not validation["ik_failure_frames"],
+            validation.get("ik_failure_frames"),
+        )
+        check(
+            "collision_failures_not_hidden",
+            isinstance(validation.get("collision_frames"), list)
+            and not validation["collision_frames"],
+            validation.get("collision_frames"),
+        )
+        retarget = manifest.get("retarget_validation", {})
+        check("retarget_validation_present", isinstance(retarget, dict) and bool(retarget))
+        check(
+            "tcp_alignment_limitation_reported",
+            retarget.get("verification", {}).get("tcp_physical_alignment") == "not_externally_measured",
+            retarget.get("verification", {}).get("tcp_physical_alignment"),
         )
         # A dataset from the unmeasured CAD preview must never claim hardware replay.
         if manifest.get("model_kind") == "full_mujoco":
@@ -112,6 +160,23 @@ def verify_dataset(dataset_path, sample_frames=8):
         check("raw_mocopi_state_present", "observation.mocopi.raw_state" in features)
     else:
         check("sim_frame_present", "observation.sim.frame" in features)
+    if kind == "joints":
+        for name in (
+            "observation.robot.tcp_pose",
+            "observation.robot.target_pose",
+            "observation.robot.error",
+            "observation.robot.status",
+            "observation.robot.collision",
+            "observation.robot.warning",
+            "observation.robot.plan_time_s",
+        ):
+            check(f"{name}_present", name in features)
+        check(
+            "capture_features_present",
+            "observation.capture.camera_time_s" in features
+            and "observation.capture.mocopi_time_s" in features
+            and "observation.capture.grid_time_s" in features,
+        )
 
     bounds = [
         (
@@ -136,12 +201,54 @@ def verify_dataset(dataset_path, sample_frames=8):
         )
     image_shape = tuple(features["observation.images.head"]["shape"])
     mismatches, image_shapes, grid_error = 0.0, set(), 0.0
+    robot_error_mismatch = robot_status_invalid = robot_collision_nonzero = 0
     for index in sampled:
         row = dataset[index]
         state = np.asarray(row["observation.state"], dtype=float)
         action = np.asarray(row["action"], dtype=float)
         if not (np.isfinite(state).all() and np.isfinite(action).all()):
             mismatches = float("inf")
+        if kind == "joints":
+            for name in (
+                "observation.robot.tcp_pose",
+                "observation.robot.target_pose",
+                "observation.robot.error",
+                "observation.robot.status",
+                "observation.robot.collision",
+                "observation.robot.warning",
+                "observation.robot.plan_time_s",
+            ):
+                if not np.isfinite(np.asarray(row[name], dtype=float)).all():
+                    mismatches = float("inf")
+            target = np.asarray(row["observation.robot.target_pose"], dtype=float).reshape(2, 7)
+            actual = np.asarray(row["observation.robot.tcp_pose"], dtype=float).reshape(2, 7)
+            recorded_error = np.asarray(row["observation.robot.error"], dtype=float)
+            expected_error = []
+            for pose_index in range(2):
+                expected_error.extend(
+                    (
+                        np.linalg.norm(target[pose_index, :3] - actual[pose_index, :3]),
+                        np.rad2deg(
+                            Rotation.from_matrix(
+                                Rotation.from_quat(target[pose_index, 3:]).as_matrix().T
+                                @ Rotation.from_quat(actual[pose_index, 3:]).as_matrix()
+                            ).magnitude()
+                        ),
+                    )
+                )
+            robot_error_mismatch = max(
+                robot_error_mismatch, float(np.max(np.abs(recorded_error - np.asarray(expected_error))))
+            )
+            status = np.asarray(row["observation.robot.status"], dtype=float)
+            if (
+                status.shape != (6,)
+                or not np.allclose(status[[0, 3]], 1.0, atol=1e-6)
+                or not np.allclose(status[[1, 2, 4, 5]], 0.0, atol=1e-6)
+            ):
+                robot_status_invalid += 1
+            collision = np.asarray(row["observation.robot.collision"], dtype=float)
+            if collision.shape != (2,) or collision[0] != 0:
+                robot_collision_nonzero += 1
         image = row["observation.images.head"]
         image_shapes.add(tuple(image.shape))
         grid_error = max(
@@ -168,6 +275,10 @@ def verify_dataset(dataset_path, sample_frames=8):
         difference <= 1e-5,
         f"max abs difference {difference:g}",
     )
+    if kind == "joints":
+        check("robot_tcp_error_matches_pose", robot_error_mismatch <= 1e-4, robot_error_mismatch)
+        check("robot_ik_status_valid", robot_status_invalid == 0, robot_status_invalid)
+        check("robot_collision_count_zero", robot_collision_nonzero == 0, robot_collision_nonzero)
 
     capture_grid_error_s = camera_mocopi_error_s = None
     if kind == "human":
@@ -234,6 +345,13 @@ def verify_dataset(dataset_path, sample_frames=8):
             )
             check("capture_frame_ids_nondecreasing", finite and frame_ids_ordered)
 
+    status = "failed" if any(not item["ok"] for item in checks) else "ok"
+    if (
+        status == "ok"
+        and kind == "joints"
+        and manifest.get("validation", {}).get("status") == "ok_with_orientation_warnings"
+    ):
+        status = "warning"
     return {
         "schema": "dual_scorpion.mocopi.verify.v1",
         "dataset": str(root),
@@ -245,7 +363,11 @@ def verify_dataset(dataset_path, sample_frames=8):
         "max_sync_s": manifest.get("max_sync_s") if kind == "human" else None,
         "capture_grid_error_s": capture_grid_error_s,
         "camera_mocopi_error_s": camera_mocopi_error_s,
-        "status": "ok" if all(item["ok"] for item in checks) else "failed",
+        "status": status,
+        "quality_status": manifest.get("validation", {}).get("status") if kind == "joints" else None,
+        "quality_warnings": manifest.get("validation", {}).get("orientation_warning_ranges")
+        if kind == "joints"
+        else None,
         "checks": checks,
         "errors": [item["check"] for item in checks if not item["ok"]],
         "note": "Read-only structural and semantic checks; not a measurement of mocopi or robot accuracy",

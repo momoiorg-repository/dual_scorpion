@@ -128,6 +128,25 @@ def parser():
     joints.add_argument("--mujoco-model", help="Full MuJoCo XML used by the plans")
     joints.add_argument("--max-sim-error-m", type=float, default=0.025)
     joints.add_argument("--max-sim-orientation-error-deg", type=float)
+    build_robot = sub.add_parser(
+        "build-robot",
+        help="Run retargeting, Full-model IK, MuJoCo validation, and robot dataset export",
+    )
+    build_robot.add_argument("--dataset", required=True, help="Source human mocopi dataset")
+    build_robot.add_argument(
+        "--episode",
+        action="append",
+        type=int,
+        help="Episode to convert; repeat for multiple episodes; omit for all",
+    )
+    build_robot.add_argument("--output", required=True, help="New robot dataset folder")
+    build_robot.add_argument("--repo-id", required=True, help="Local robot dataset repo id")
+    build_robot.add_argument("--plan-dir", help="New folder for generated plan JSON files")
+    build_robot.add_argument("--report-dir", help="New folder for generated validation reports")
+    build_robot.add_argument("--preview-max-step-deg", type=float)
+    build_robot.add_argument("--slowdown", type=int, default=1)
+    build_robot.add_argument("--max-sim-error-m", type=float, default=0.025)
+    build_robot.add_argument("--max-sim-orientation-error-deg", type=float)
     feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
     feedback.add_argument(
         "--run", action="append", nargs=2, metavar=("PLAN", "REPORT"), required=True, help="Repeat per run"
@@ -230,16 +249,29 @@ def main():
                 print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
                 parser().exit(1, f"Error: dataset verification failed: {', '.join(result['errors'])}\n")
         elif args.command == "rerun":
-            from .rerun_view import log_dataset_to_rerun
+            if (Path(args.dataset) / "meta" / "mocopi_joint_dataset.json").is_file():
+                if args.selection:
+                    raise ValueError("--selection applies to human datasets, not robot joint datasets")
+                from .rerun_view import log_robot_dataset_to_rerun
 
-            result = log_dataset_to_rerun(
-                args.dataset,
-                episode=args.episode,
-                selection_path=args.selection,
-                save_path=args.save,
-                spawn=not args.no_spawn,
-                max_frames=args.max_frames,
-            )
+                result = log_robot_dataset_to_rerun(
+                    args.dataset,
+                    episode=args.episode,
+                    save_path=args.save,
+                    spawn=not args.no_spawn,
+                    max_frames=args.max_frames,
+                )
+            else:
+                from .rerun_view import log_dataset_to_rerun
+
+                result = log_dataset_to_rerun(
+                    args.dataset,
+                    episode=args.episode,
+                    selection_path=args.selection,
+                    save_path=args.save,
+                    spawn=not args.no_spawn,
+                    max_frames=args.max_frames,
+                )
         elif args.command == "select":
             from .editor import create_selection, load_dataset, save_selection
 
@@ -306,6 +338,22 @@ def main():
                 args.plan,
                 args.output,
                 args.repo_id,
+                max_sim_error_m=args.max_sim_error_m,
+                max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
+            )
+        elif args.command == "build-robot":
+            from .robot_pipeline import build_robot_dataset
+
+            result = build_robot_dataset(
+                config,
+                args.dataset,
+                args.output,
+                args.repo_id,
+                episodes=args.episode,
+                plan_dir=args.plan_dir,
+                report_dir=args.report_dir,
+                preview_max_step_deg=args.preview_max_step_deg,
+                slowdown=args.slowdown,
                 max_sim_error_m=args.max_sim_error_m,
                 max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
             )

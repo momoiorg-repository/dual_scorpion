@@ -134,10 +134,13 @@ class FullModelFK:
 class FullModelIK:
     """Position-priority MuJoCo Jacobian IK with preview-only numeric bounds."""
 
-    def __init__(self, model, side, mujoco, *, max_step_deg, tolerance_m):
+    def __init__(self, model, side, mujoco, *, max_step_deg, tolerance_m, orientation_weight=0.08):
         self.fk_solver = FullModelFK(model, side, mujoco)
         self.max_step = float(max_step_deg)
         self.tolerance = float(tolerance_m)
+        self.orientation_weight = float(orientation_weight)
+        if not np.isfinite(self.orientation_weight) or self.orientation_weight <= 0:
+            raise ValueError("orientation_weight must be positive")
         self.last_solve_info = {}
 
     def arm_state(self, joints):
@@ -179,9 +182,10 @@ class FullModelIK:
                     jac = [jp]
                     if use_orientation:
                         residual.append(
-                            0.08 * Rotation.from_matrix(rotation @ desired_rotation.T).as_rotvec()
+                            self.orientation_weight
+                            * Rotation.from_matrix(rotation @ desired_rotation.T).as_rotvec()
                         )
-                        jac.append(0.08 * jr)
+                        jac.append(self.orientation_weight * jr)
                     # Favor a nearby solution in the redundant arm.
                     residual.append(0.002 * (values - initial))
                     jac.append(0.002 * np.eye(7))
@@ -254,6 +258,7 @@ class FullMujocoSimulation:
                 mujoco,
                 max_step_deg=config["max_joint_step_deg"],
                 tolerance_m=config["position_tolerance_m"],
+                orientation_weight=config.get("ik_orientation_weight", 0.08),
             )
             arm = SafeIK(
                 solver, joints, lower, upper, config["max_joint_step_deg"], config["position_tolerance_m"]

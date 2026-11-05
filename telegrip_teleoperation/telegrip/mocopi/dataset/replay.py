@@ -122,6 +122,16 @@ def replay_sim(
         "max_joint_step_deg": preview_step,
         "preview_max_joint_step_deg": preview_step,
         "hardware_max_joint_step_deg": float(config["robot"]["max_joint_step_deg"]),
+        "ik_orientation_weight": float(robot_config.get("ik_orientation_weight", 0.08)),
+        "coordinate_frame": manifest.get("coordinate_frame"),
+        "raw_mocopi_coordinate_frame": manifest.get("raw_mocopi_coordinate_frame"),
+        "quaternion_order": manifest.get("quaternion_order"),
+        "retarget": config["retarget"],
+        "tcp": {
+            "left": {"link": "l_link_8", "joint": "joint7_L", "origin": "link_frame"},
+            "right": {"link": "r_link_8", "joint": "joint7_R", "origin": "link_frame"},
+            "joint7_semantics": "gripper; fixed at zero and excluded from robot actions",
+        },
         "frames": [],
         "failures": [],
     }

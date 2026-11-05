@@ -92,9 +92,17 @@ def validate_plan(
         not np.isfinite(max_sim_orientation_error_deg) or not 0 < max_sim_orientation_error_deg <= 180
     ):
         raise ValueError("max_sim_orientation_error_deg must be in (0, 180]")
-    # At most 0.5 degrees per frame and 15 degrees/second, including if a
-    # higher-rate dataset was generated with a different configuration.
-    step_limit = min(0.5, 15.0 / fps, float(config["robot"]["max_joint_step_deg"]))
+    # Full-model plans are simulation-only and use the preview step recorded in
+    # the plan. Legacy plans are eligible for hardware validation and keep the
+    # hardware rate limit.
+    if model_kind == "full_mujoco":
+        step_limit = float(plan.get("preview_max_joint_step_deg", plan.get("max_joint_step_deg", 0)))
+        hardware_step_limit = float(plan.get("hardware_max_joint_step_deg", config["robot"]["max_joint_step_deg"]))
+        if not np.isfinite(step_limit) or not 0 < step_limit <= 180:
+            raise ValueError("Full-model plan has an invalid preview joint step")
+    else:
+        step_limit = min(0.5, 15.0 / fps, float(config["robot"]["max_joint_step_deg"]))
+        hardware_step_limit = step_limit
     positions, orientations, previous = {side: [] for side in SIDES}, {side: [] for side in SIDES}, None
     for index, frame in enumerate(frames):
         if not np.isfinite(frame.get("time_s", np.nan)) or abs(frame["time_s"] - index / fps) > 1e-5:
@@ -164,6 +172,7 @@ def validate_plan(
         "frames": len(frames),
         "fps": fps,
         "max_joint_step_deg": step_limit,
+        "hardware_max_joint_step_deg": hardware_step_limit,
         "simulated_position_error_m": {side: _summary(positions[side]) for side in SIDES},
         "simulated_orientation_error_deg": {side: _summary(orientations[side]) for side in SIDES},
     }
