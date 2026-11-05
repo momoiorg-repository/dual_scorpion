@@ -51,7 +51,7 @@
 |---|---|---|---|
 | `tracking.*.position_m` | ‖p_FK(q) − p_target‖（各更新、min/mean/p95/max） | m | 内部整合性。人が示した手の位置にどれだけ近い関節角を生成できたか |
 | `tracking.*.orientation_deg` | 測地角 acos((tr(R_err)−1)/2)（R_err=R_FK R_target^T）の度換算 | deg | 手首回転の追従。位置優先のため逸脱しうる |
-| `tracking.*.max_joint_step_deg` | 1更新あたり max_k \|q_k − q_{k−1}\| | deg | 指令の滑らかさ。新CADの表示プレビューでは `robot.preview_max_joint_step_deg`（既定10）、実機検証では `robot.max_joint_step_deg`（既定0.5）を使う |
+| `tracking.*.max_joint_step_deg` | 1更新あたり max_k \|q_k − q_{k−1}\| | deg | 指令の滑らかさ。新CADの表示プレビューでは `robot.preview_max_joint_step_deg`（既定20）、実機検証では `robot.max_joint_step_deg`（既定0.5）を使う |
 | `tracking.*.joint_limit_margin_deg` | min_k(min(q_k−lower_k, upper_k−q_k)) | deg | **旧URDFのみ**。新CADモデルは限界未測定のため `null` |
 | `ik_failures` | 安全ゲートでHOLDしたフレーム数（リスト、`.count` で数えられる） | 件 | NaN・未到達・急変による計画の穴 |
 | `workspace_clamped_frames` | 手の目標が到達可能領域へ圧縮されたフレーム数 | フレーム | **旧URDF（`workspace_clamp_measured: true`）のみ**。新CADモデルのプレビューにはclamp段がなく、`null`（未評価） |
@@ -71,6 +71,15 @@
 `urdf_sha256`）が計画とモデルの同一性を示します。
 `convert-joints` は `feasibility` とは別に、既定25 mmの位置誤差上限（`--max-sim-error-m`）で
 変換を拒否できます。判定基準はレポート内の `criteria` と合わせて必ず確認してください。
+
+### ロボット用データセットの品質状態
+
+`build-robot` はPlanと検証レポートを保存し、検証を通ったフレームだけを関節角データセットへ
+書き出します。IK失敗・自己接触がある場合は出力データセットを作りません。位置は許容内でも
+手首姿勢誤差が30度を超えるフレームは削除せず、`observation.robot.warning` と
+`validation.orientation_warning_ranges` に残します。この場合、`verify` は構造検証の成功と
+姿勢品質を区別して `status: warning` を返します。メタデータには元データ・Plan・レポート・
+MJCFのハッシュ、Retarget設定、軸対応、実測移動量比、TCPリンク、グリッパー固定状態も保存します。
 
 新CADモデルの関節限界が未測定である理由: MJCFは全関節が `limited="false"` で出力され、
 実機の可動範囲・原点・回転方向の対応も未確認です。このため計算上の±180度を仮置きし、

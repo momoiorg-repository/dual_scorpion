@@ -359,7 +359,7 @@ IK失敗、手の目標が制限されたフレーム数が入ります。
 実機向けの関節ステップ上限は `robot.max_joint_step_deg`（既定0.5度）です。
 シミュレーションでは、15fpsなど記録フレーム間の移動が大きい場合に同じ制限を使うと
 「位置には届くが1フレームでは追いつけない」だけでIK失敗になるため、プレビュー専用の
-`robot.preview_max_joint_step_deg`（既定10度）を使います。これは表示用の追従量で、
+`robot.preview_max_joint_step_deg`（既定20度）を使います。これは表示用の追従量で、
 実機の安全上限ではありません。`--preview-max-step-deg` で一時的に変更できます。
 計画JSONとレポートには実機上限とプレビュー上限の両方を保存します。
 初期姿勢の影響を調べるときは、同じデータセットに対して `--start-pose work` と
@@ -399,7 +399,39 @@ YAMLでは各箱の `center_m`・`half_size_m`・任意の `rotation_deg` を、
 ### 計画から関節角のLeRobotデータを作る
 
 人の姿勢を保存した元データはそのまま残し、MuJoCoで確認した計画から、別のデータセットを作れます。
-先ほどの `replay-sim` で計画を生成した後、次を実行します。
+通常は、Retargeting・FullモデルIK・MuJoCo検証・生成・再検証をまとめて行う
+`build-robot` を使います。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset build-robot \
+  --dataset outputs/mocopi/datasets/episode-001-fps15-sync16 \
+  --episode 0 \
+  --output outputs/mocopi/datasets/episode-001-robot \
+  --repo-id local/mocopi-episode-001-robot \
+  --plan-dir outputs/mocopi/plans/build-robot-episode-001 \
+  --report-dir outputs/mocopi/reports/build-robot-episode-001
+```
+
+IK失敗またはモデル上の自己接触が残る場合は、ロボット用データセットを作らず、
+失敗したエピソード・フレームをレポートに残して終了します。
+手首姿勢の誤差が30度を超えるフレームは削除せず、`observation.robot.warning` と
+`meta/mocopi_joint_dataset.json` の警告範囲に記録します。品質状態が警告の場合は
+`verify` も `status: warning` を返し、構造検証の成功と姿勢品質の成功を混同しません。
+
+生成したロボット用データセットはRerunで確認できます。人間用データセットと
+自動判定され、目標TCPとMuJoCo実測TCP、関節角、姿勢誤差、警告フラグ、
+camera/mocopi時刻を表示します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset rerun \
+  --dataset outputs/mocopi/datasets/episode-001-robot \
+  --episode 0
+```
+
+3D表示では赤・水色が目標TCP、緑・黄色がMuJoCoで計算した実測TCPです。
+
+計画と変換を分けて実行する場合は、先ほどの `replay-sim` で計画を生成した後、
+次を実行します。
 
 ```bash
 uv run --no-sync --active python -m telegrip.mocopi.dataset convert-joints \
@@ -423,6 +455,13 @@ IK失敗や制限があった計画、位置誤差が既定の25 mmを超える�
 | `observation.images.head` | 対応する人の頭カメラ映像 |
 | `observation.mocopi.state` / `raw_state` | 対応する補正後・補正前の人の姿勢 |
 | `observation.sim.frame` | 計画フレーム番号と元の人の記録フレーム番号 |
+| `observation.robot.tcp_pose` | MuJoCo FKで求めた左右TCP位置・姿勢（14値、xyzw） |
+| `observation.robot.target_pose` | Retargeting後の左右TCP目標位置・姿勢（14値、xyzw） |
+| `observation.robot.error` | 左右TCPの位置誤差(m)・姿勢誤差(deg) |
+| `observation.robot.status` | 左右のIK成功率、workspace/retarget制限フラグ |
+| `observation.robot.collision` | モデル上の接触数・最大めり込み |
+| `observation.robot.warning` | 左右の姿勢誤差30度超えフラグ |
+| `observation.capture.*` | 元のカメラ・mocopi取得時刻とフレームID |
 
 関節の並びは右 `joint0`〜`joint6`、次に左 `joint0`〜`joint6` で、単位は度です。
 グリッパー値は含みません。`--slowdown` を使った計画では、元の人の画像・姿勢が複数フレームに
@@ -431,7 +470,11 @@ IK失敗や制限があった計画、位置誤差が既定の25 mmを超える�
 これらの関節角は**モデルとIKによる運動学上の計画**であり、実機のエンコーダー観測ではありません。
 映像も実機カメラではなく、記録時の人の頭カメラです。実機での学習・制御に使う前に、
 関節の原点・回転方向・単位、実機側のカメラ配置と観測の対応、実際の追従結果を確認する必要があります。
-由来は出力の `meta/mocopi_joint_dataset.json` に保存されます。
+由来は出力の `meta/mocopi_joint_dataset.json` に保存されます。このメタデータには
+元データ・Plan・検証レポート・MJCFのハッシュ、Retarget設定、IK設定、左右対応、
+軸相関、実測された移動量比、TCPリンク、姿勢警告範囲、検証状態を保存します。
+人間データセットの `action` は次フレームのWRIST姿勢のままであり、ロボットデータセットの
+`action` は次フレームの14関節角です。両者を同じ意味として扱いません。
 
 ## データセットを読み込み・検証する
 
