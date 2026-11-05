@@ -430,6 +430,12 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset rerun \
 
 3D表示では赤・水色が目標TCP、緑・黄色がMuJoCoで計算した実測TCPです。
 
+現在の初期位置合わせは、ロボットの初期TCPを基準に人間の相対移動を写す方式です。
+人間の据付位置からロボットbaseへの物理変換は未計測のため、絶対的な初期位置を一致させた
+とは主張しません。左右方向はFullモデルの`l_link`/`r_link`配置に合わせ、人間の前・左・上を
+ロボット`+Y`・`-X`・`+Z`へ写します。`translation_scale`は設定値を使い、実測比が異なっても
+自動変更しません。検証値は`meta/mocopi_joint_dataset.json`の`retarget_validation`に保存します。
+
 計画と変換を分けて実行する場合は、先ほどの `replay-sim` で計画を生成した後、
 次を実行します。
 

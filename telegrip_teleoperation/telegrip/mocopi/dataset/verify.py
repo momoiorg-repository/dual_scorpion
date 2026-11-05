@@ -113,6 +113,12 @@ def verify_dataset(dataset_path, sample_frames=8):
             retarget.get("verification", {}).get("tcp_physical_alignment") == "not_externally_measured",
             retarget.get("verification", {}).get("tcp_physical_alignment"),
         )
+        check(
+            "initial_alignment_limitation_reported",
+            retarget.get("verification", {}).get("initial_absolute_alignment")
+            == "not_externally_measured",
+            retarget.get("verification", {}).get("initial_absolute_alignment"),
+        )
         # A dataset from the unmeasured CAD preview must never claim hardware replay.
         if manifest.get("model_kind") == "full_mujoco":
             check(

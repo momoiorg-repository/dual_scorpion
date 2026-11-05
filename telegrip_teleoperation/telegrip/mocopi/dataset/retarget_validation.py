@@ -185,6 +185,8 @@ def validate_retargeting(dataset_path, plans):
             "left_right_pairing": "passed" if not warnings else "failed",
             "quaternion_order_source": "xyzw" if manifest.get("quaternion_order") == "xyzw" else "failed",
             "configured_scale_applied_without_measurement_change": True,
+            "initial_absolute_alignment": "not_externally_measured",
+            "initial_anchor_mode": retarget.get("initial_anchor", "robot_pose"),
             "tcp_physical_alignment": "not_externally_measured",
             "warnings": warnings,
         },

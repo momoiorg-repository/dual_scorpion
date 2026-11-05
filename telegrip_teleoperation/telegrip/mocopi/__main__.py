@@ -81,16 +81,35 @@ def head_calibration(cfg, streams, guided=True):
     return calibration
 
 
-def anchors(cfg, simulation, hands, head, sample):
+def anchors(cfg, simulation, hands, head, sample, *, initial_anchor=False):
     mappings = {}
     retarget = cfg["retarget"]
     rotation, source = alignment_rotation(
         head, sample, retarget["world_to_robot_rotation"], retarget["alignment_mode"]
     )
     landmarks = world_arm_landmarks(head, sample)
+    robot_shoulders = {
+        side: robot_arm_state(arm.solver, arm.last_valid_target)[0]
+        for side, arm in simulation.arms.items()
+    }
+    robot_shoulder_mid = np.mean(list(robot_shoulders.values()), axis=0)
+    human_shoulder_mid = (
+        np.mean([landmarks["left_shoulder"][:3, 3], landmarks["right_shoulder"][:3, 3]], axis=0)
+        if "left_shoulder" in landmarks and "right_shoulder" in landmarks
+        else None
+    )
     for side, arm in simulation.arms.items():
         p, q = arm.solver.fk_solver.compute(arm.last_valid_target)
         robot = pose(p, q)
+        if (
+            initial_anchor
+            and retarget.get("initial_anchor", "robot_pose") == "human_torso"
+            and human_shoulder_mid is not None
+        ):
+            position = robot_shoulder_mid + retarget["translation_scale"] * rotation @ (
+                hands[side][:3, 3] - human_shoulder_mid
+            )
+            robot = pose(position, q)
         arm_posture = None
         if retarget["arm_posture"] == "upper-arm":
             if side + "_shoulder" in landmarks and side + "_elbow" in landmarks:

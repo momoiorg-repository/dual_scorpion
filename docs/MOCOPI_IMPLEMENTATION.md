@@ -121,7 +121,7 @@ IKは既存Telegripの左右solver、左右URDF joint limits、TCP link7を再�
 初期姿勢は前方workを既定とし、`--start-pose backwards/config`で変更可能。
 body alignmentはworld上の肩の左右ベクトルを水平面へ投影してoperator frameを決める。
 肩のない旧入力はrootの前方軸を使用し、world modeは従来の固定変換を直接使用。
-operator forward/left/upをrobot -Y/+X/+Zへ写す。Enter時に手の位置/回転offsetとheadingを保存し、
+operator forward/left/upをrobot +Y/-X/+Zへ写す。Enter時に手の位置/回転offsetとheadingを保存し、
 開始後は相対動作だけを送る。再Enterは現在のrobot TCPから再anchorし、IKのorientation authorityをリセットする。
 出力関節角はdegree、内部poseはSE(3)、rotationはmatrix/xyzw。
 SimulationはMuJoCoを既定にし、`--sim-backend pybullet`で従来表示を選択可能。

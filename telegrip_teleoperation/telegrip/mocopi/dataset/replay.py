@@ -40,6 +40,24 @@ def _pose_vector(frame):
     return np.r_[frame[:3, 3], Rotation.from_matrix(frame[:3, :3]).as_quat()].tolist()
 
 
+def _align_initial_targets(simulation, targets):
+    """Solve the initial pose without applying the per-frame preview rate cap."""
+    saved = []
+    for arm in simulation.arms.values():
+        saved.append((arm, arm.max_step, getattr(arm.solver, "max_step", None)))
+        arm.max_step = 180.0
+        if hasattr(arm.solver, "max_step"):
+            arm.solver.max_step = 180.0
+    try:
+        simulation.update(targets, True, None)
+        return all(arm.valid for arm in simulation.arms.values())
+    finally:
+        for arm, arm_step, solver_step in saved:
+            arm.max_step = arm_step
+            if solver_step is not None:
+                arm.solver.max_step = solver_step
+
+
 def replay_sim(
     config,
     dataset_path,
@@ -161,7 +179,22 @@ def replay_sim(
             camera_window = CameraWindow()
         first = _sample(dataset.hf_dataset[start]["observation.state"], 0)
         head = first.bones[10]
-        mappings = anchors(config, simulation, world_hands(head, first), head, first)
+        initial_hands = world_hands(head, first)
+        mappings = anchors(
+            config,
+            simulation,
+            initial_hands,
+            head,
+            first,
+            initial_anchor=sim_model == "full",
+        )
+        initial_targets = {
+            side: mapping.target(initial_hands[side]) for side, mapping in mappings.items()
+        }
+        if sim_model == "full" and not _align_initial_targets(simulation, initial_targets):
+            raise RuntimeError("Cannot align Full-model initial TCP pose to the measured human start pose")
+        if sim_model == "full" and not obstacle_scene and simulation.collision_report()["count"]:
+            raise RuntimeError("Measured human start pose causes a modeled robot self-collision")
         gate = TrackingGate(config["tracking"])
         start_wall = time.monotonic()
         for step in range((end - start) * slowdown):

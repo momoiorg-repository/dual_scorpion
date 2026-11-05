@@ -50,9 +50,13 @@ retarget:
   # Match the measured hand rotation; 0.5 would halve wrist motion.
   orientation_scale: 1.0
   orientation_enabled: true
-  # Operator forward -> robot -Y; operator left -> robot +X; up -> +Z.
+  # Operator forward -> robot +Y; operator left -> robot -X; up -> +Z.
+  # This follows the Full model's l_link/r_link lateral placement.
   # body mode first removes the operator's neutral heading in the world.
-  world_to_robot_rotation: [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]
+  world_to_robot_rotation: [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
+  # No measured human-rig-to-robot-base transform is available. Use the
+  # robot's initial TCP as the initial anchor and map measured relative motion.
+  initial_anchor: robot_pose
   max_translation_m: 0.35
 robot:
   # Hands forward with bent elbows, matching the operator's requested neutral pose.
