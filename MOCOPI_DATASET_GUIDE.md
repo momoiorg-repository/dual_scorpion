@@ -325,7 +325,7 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
 ```
 
 記録した頭カメラ映像とMuJoCo画面が開きます。エピソード0の最初の人の姿勢を、
-設定したロボット初期姿勢へ合わせ、各フレームの手・上腕をIKで再生します。
+Retarget専用のロボット初期姿勢へ相対対応付けし、各フレームの手・上腕をIKで再生します。
 表示なしで数値だけ確認するときは `--headless --fast` を追加します。
 
 レポートには左右の目標手先とFK結果の位置・回転誤差、関節の1更新あたりの動き、
@@ -362,10 +362,11 @@ IK失敗、手の目標が制限されたフレーム数が入ります。
 `robot.preview_max_joint_step_deg`（既定20度）を使います。これは表示用の追従量で、
 実機の安全上限ではありません。`--preview-max-step-deg` で一時的に変更できます。
 計画JSONとレポートには実機上限とプレビュー上限の両方を保存します。
-初期姿勢の影響を調べるときは、同じデータセットに対して `--start-pose work` と
-`--start-pose backwards` で別々の計画・レポートを作成し、`metrics-csv` で比較してください。
-`work`・`backwards`・`config` のどれを使ったかは計画JSON・評価レポート・関節角データセットの
-メタデータに保存されます。
+机回避用のホーム姿勢は `robot.start_pose`（既定`work`）として保持し、Retarget/IKの開始姿勢は
+`robot.retarget_start_pose`（既定`neutral`、全関節0度）として分離しています。ホーム姿勢の
+`joint0`/`joint3`の曲げを人間の初期姿勢へ流用しません。比較時は `--start-pose neutral`、
+`work`、`backwards`、`config` を指定でき、IK開始姿勢とホーム姿勢の両方を計画JSON・
+評価レポート・関節角データセットのメタデータに保存します。
 
 旧モデルを使うには `--sim-model legacy` を指定します。旧モデルのURDFを更新した場合は
 `--left-urdf 新しい左腕.urdf --right-urdf 新しい右腕.urdf` を追加します。

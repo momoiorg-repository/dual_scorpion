@@ -89,9 +89,10 @@ def replay_sim(
     obstacle_scene = [] if obstacles is None else load_obstacles(obstacles)
     if obstacle_scene and sim_model != "full":
         raise ValueError("Obstacle scenes require the full MuJoCo model")
-    selected_start_pose = start_pose or config["robot"].get("start_pose", "config")
-    if selected_start_pose not in ("work", "backwards", "config"):
-        raise ValueError("start_pose must be work, backwards or config")
+    home_start_pose = config["robot"].get("start_pose", "config")
+    selected_start_pose = start_pose or config["robot"].get("retarget_start_pose", home_start_pose)
+    if selected_start_pose not in ("work", "backwards", "neutral", "config"):
+        raise ValueError("start_pose must be work, backwards, neutral or config")
     robot_config = config["robot"]
     if start_pose is not None and start_pose != robot_config.get("start_pose", "config"):
         robot_config = {**robot_config, "start_pose": start_pose}
@@ -104,7 +105,11 @@ def replay_sim(
     )
     if not np.isfinite(preview_step) or preview_step <= 0:
         raise ValueError("preview_max_step_deg must be positive")
-    simulation_robot_config = {**robot_config, "max_joint_step_deg": preview_step}
+    simulation_robot_config = {
+        **robot_config,
+        "start_pose": selected_start_pose,
+        "max_joint_step_deg": preview_step,
+    }
     root = Path(dataset_path)
     manifest_path = root / "meta" / "mocopi_dataset.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -129,6 +134,8 @@ def replay_sim(
         "expected_frames": (end - start) * slowdown,
         "model_kind": "full_mujoco" if sim_model == "full" else "legacy_urdf",
         "start_pose": selected_start_pose,
+        "retarget_start_pose": selected_start_pose,
+        "home_start_pose": home_start_pose,
         "hardware_replay_allowed": sim_model == "legacy",
         "mujoco_model_sha256": _file_hash(full_model_path(config["robot"])) if sim_model == "full" else None,
         "obstacles": obstacle_scene,
@@ -340,6 +347,8 @@ def replay_sim(
         "task": plan["task"],
         "model_kind": plan["model_kind"],
         "start_pose": plan["start_pose"],
+        "retarget_start_pose": plan.get("retarget_start_pose", plan["start_pose"]),
+        "home_start_pose": plan.get("home_start_pose"),
         "hardware_replay_allowed": plan["hardware_replay_allowed"],
         "joint_limit_source": "unmeasured" if sim_model == "full" else "legacy_urdf",
         "mujoco_model_sha256": plan["mujoco_model_sha256"],

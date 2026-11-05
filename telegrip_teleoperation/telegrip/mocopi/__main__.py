@@ -418,7 +418,9 @@ def build_parser():
     execute.add_argument("--record")
     execute.add_argument("--calibration", help="Override calibration, e.g. replay.jsonl.calibration.yaml")
     execute.add_argument(
-        "--start-pose", choices=["work", "backwards", "config"], help="Robot neutral preset; overrides YAML"
+        "--start-pose",
+        choices=["work", "backwards", "neutral", "config"],
+        help="Robot neutral preset; overrides YAML",
     )
     execute.add_argument(
         "--alignment", choices=["body", "world"], help="Neutral body heading or configured world axes"

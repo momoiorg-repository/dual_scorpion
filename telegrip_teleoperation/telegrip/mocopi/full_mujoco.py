@@ -34,6 +34,7 @@ def full_model_path(config):
 
 # Preview poses for this CAD frame. They are not calibrated hardware positions.
 FULL_START_POSES = {
+    "neutral": {side: [0, 0, 0, 0, 0, 0, 0, 0] for side in SUFFIX},
     "work": {side: [80, 0, 0, -30, 0, 0, 0, 0] for side in SUFFIX},
     "backwards": {side: [0, 0, 0, -30, 0, 0, 0, 0] for side in SUFFIX},
 }
@@ -240,8 +241,8 @@ class FullMujocoSimulation:
         self.model = build_full_model(full_model_path(config), mujoco, self.obstacles)
         self.data = mujoco.MjData(self.model)
         preset = config.get("start_pose", "config")
-        if preset not in ("work", "backwards", "config"):
-            raise ValueError("robot.start_pose must be work, backwards or config")
+        if preset not in ("work", "backwards", "neutral", "config"):
+            raise ValueError("robot.start_pose must be work, backwards, neutral or config")
         self.start_pose = preset
         initial = config["initial_joints_deg"] if preset == "config" else FULL_START_POSES[preset]
         self.qpos_indices = {}

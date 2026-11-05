@@ -107,7 +107,7 @@ def parser():
     replay.add_argument("--mujoco-model", help="Override the full MuJoCo XML model path")
     replay.add_argument(
         "--start-pose",
-        choices=["work", "backwards", "config"],
+        choices=["work", "backwards", "neutral", "config"],
         help="Override the configured initial robot pose for this plan",
     )
     replay.add_argument(

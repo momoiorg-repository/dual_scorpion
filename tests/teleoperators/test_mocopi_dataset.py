@@ -504,8 +504,9 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
         cfg, stationary_output, gui=False, realtime=False, slowdown=2, sim_model="full"
     )
     assert full_plan["model_kind"] == "full_mujoco" and not full_plan["hardware_replay_allowed"]
-    assert full_plan["start_pose"] == cfg["robot"]["start_pose"] == "work"
-    assert full_report["start_pose"] == "work"
+    assert full_plan["start_pose"] == "neutral"
+    assert full_plan["home_start_pose"] == cfg["robot"]["start_pose"] == "work"
+    assert full_report["start_pose"] == "neutral"
     assert full_plan["urdf_sha256"] is None and full_report["joint_limit_source"] == "unmeasured"
     assert full_report["tracking"]["left"]["joint_limit_margin_deg"]["max"] is None
     assert full_report["feasibility"]["ik_failures"] == len(full_report["ik_failures"])
@@ -539,8 +540,9 @@ def test_quality_metrics_workspace_and_real_lerobot_roundtrip(tmp_path):
         max_sim_error_m=0.1,
     )
     assert full_joints["model_kind"] == "full_mujoco" and not full_joints["hardware_replay_allowed"]
-    assert full_joints["start_pose"] == "work"
-    assert full_joints["episodes"][0]["start_pose"] == "work"
+    assert full_joints["start_pose"] == "neutral"
+    assert full_joints["home_start_pose"] == "work"
+    assert full_joints["episodes"][0]["start_pose"] == "neutral"
     assert full_joints["obstacles"] == [] and full_joints["obstacle_count"] == 0
     assert full_joints["obstacles_sha256"] == full_plan["obstacles_sha256"]
 

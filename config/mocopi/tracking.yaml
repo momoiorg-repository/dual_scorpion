@@ -61,6 +61,10 @@ retarget:
 robot:
   # Hands forward with bent elbows, matching the operator's requested neutral pose.
   start_pose: work
+  # Keep the table-safe home pose separate from the pose used to start IK.
+  # Replaying human motion starts from the neutral model pose instead of the
+  # table-clearance home posture.
+  retarget_start_pose: neutral
   # Native full CAD model. Joint 7 on each side is the gripper and remains fixed.
   mujoco_full_model: ../../dual_scorpion_Full_urdf/mujoco/scorpion.xml
   # CAD visuals/meshes from the full assembly; FK/IK use the corrected per-arm trees below.

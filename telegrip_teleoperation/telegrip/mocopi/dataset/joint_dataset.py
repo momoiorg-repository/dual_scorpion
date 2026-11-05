@@ -293,6 +293,8 @@ def export_joint_dataset(
         "gripper_feature_included": False,
         "model_kind": plans[0].get("model_kind", "legacy_urdf"),
         "start_pose": plans[0].get("start_pose", "config"),
+        "home_start_pose": plans[0].get("home_start_pose"),
+        "retarget_start_pose": plans[0].get("retarget_start_pose", plans[0].get("start_pose")),
         "hardware_replay_allowed": not full_model,
         "mujoco_model_sha256": plans[0].get("mujoco_model_sha256"),
         "obstacles": plans[0].get("obstacles", []),
@@ -384,6 +386,8 @@ def export_joint_dataset(
                 {
                     "source_episode": plan["episode"],
                     "start_pose": plan.get("start_pose", "config"),
+                    "home_start_pose": plan.get("home_start_pose"),
+                    "retarget_start_pose": plan.get("retarget_start_pose", plan.get("start_pose")),
                     "obstacles_sha256": plan.get("obstacles_sha256"),
                     "plan_sha256": plan_hash(plan),
                     "plan_file": str(Path(plan_paths[len(result["episodes"])]).resolve()),

@@ -41,6 +41,9 @@ def load_config(path, *, camera=None):
     cfg["robot"].setdefault("start_pose", "config")
     if cfg["robot"]["start_pose"] not in ("work", "backwards", "config"):
         raise ValueError("robot.start_pose must be work, backwards or config")
+    cfg["robot"].setdefault("retarget_start_pose", "neutral")
+    if cfg["robot"]["retarget_start_pose"] not in ("work", "backwards", "neutral", "config"):
+        raise ValueError("robot.retarget_start_pose must be work, backwards, neutral or config")
     for key in ("intrinsics", "stella_config", "head_calibration"):
         cfg["slam"][key] = str((path.parent / cfg["slam"][key]).resolve())
     cfg["robot"]["urdf"] = {

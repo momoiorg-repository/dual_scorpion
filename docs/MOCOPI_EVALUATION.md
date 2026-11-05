@@ -57,7 +57,7 @@
 | `workspace_clamped_frames` | 手の目標が到達可能領域へ圧縮されたフレーム数 | フレーム | **旧URDF（`workspace_clamp_measured: true`）のみ**。新CADモデルのプレビューにはclamp段がなく、`null`（未評価） |
 | `retarget_clamped_frames` | 手の目標が相対動作の上限を超えたフレーム数 | フレーム | 人の動作がロボットの作業領域を超えた量の代理指標（両モデルで計算） |
 | `frames` / `requested_frames` / `source_frames` | 生成フレーム数 / 要求フレーム数 / 元フレーム数 | フレーム | `--slowdown` 倍で保持 |
-| `start_pose` | MuJoCo IKを開始した設定 (`work` / `backwards` / `config`) | — | 初期姿勢依存の比較に必要な実験条件。開始姿勢そのものの良し悪しを示さない |
+| `start_pose` / `retarget_start_pose` / `home_start_pose` | IKを開始した姿勢 / Retarget用初期姿勢 / 机回避を含むホーム姿勢 | — | `start_pose`はIK開始条件。`home_start_pose`は物理レイアウト用で、人間動作の初期姿勢へ流用しない |
 | `collision_check.contact_count` | MuJoCo接触判定で `contact.dist < 0` となった接触の総数 | 件 | **新CAD MJCFのみ**。床、親子関係にないロボットリンク間、およびYAMLで明示指定した箱形状を対象 |
 | `collision_check.frames_with_collisions` | 1フレームでも接触があった更新回数 | フレーム | 同上。`--slowdown` の繰り返しフレームも1更新として数える |
 | `collision_check.max_penetration_m` | max(−contact.dist) | m | モデル上の最大めり込み深さ。0は「指定されたモデル内では接触なし」 |

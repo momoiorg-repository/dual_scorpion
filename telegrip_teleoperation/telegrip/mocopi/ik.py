@@ -9,6 +9,7 @@ from .geometry import pose, validate_pose
 
 LOG = logging.getLogger(__name__)
 START_POSES = {
+    "neutral": {side: [0, 0, 0, 0, 0, 0, 0, 0] for side in ("left", "right")},
     "work": {side: [20, 0, 0, 0, 0, 0, 0, 0] for side in ("left", "right")},
     "backwards": {
         "left": [-20, 0, -80, 0, 0, 0, 0, 0],
@@ -86,8 +87,8 @@ class DualSimulation:
         from ..core.visualizer import PyBulletVisualizer
 
         preset = config.get("start_pose", "config")
-        if preset not in ("work", "backwards", "config"):
-            raise ValueError("robot.start_pose must be work, backwards or config")
+        if preset not in ("work", "backwards", "neutral", "config"):
+            raise ValueError("robot.start_pose must be work, backwards, neutral or config")
         initial_joints = config["initial_joints_deg"] if preset == "config" else START_POSES[preset]
         self.viz = PyBulletVisualizer(config["urdf"], use_gui=gui, log_level="info")
         if not self.viz.setup():
