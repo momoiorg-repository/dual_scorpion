@@ -567,6 +567,80 @@ MuJoCoの画面録画や新しいGUIは追加していません。必要な映�
 [tests/teleoperators/test_mocopi_ik_modes.py](tests/teleoperators/test_mocopi_ik_modes.py) で
 確認します。手元に変更前のv12計画と実収録データがある場合は、全関節角の完全一致も検証します。
 
+### Full CADの14関節データを実機で再生する
+
+`episode-001-robot-*` のようなFull CADモデルの関節角データセットは、これまで
+シミュレーション専用でした。新しい `replay-dataset` は、**実機で検証済みの関節マッピング**
+がある場合に限り、既存のFollower安全制限を使って再生します。新しいIKは使いません。
+
+#### 1. 実機の関節対応を検証する
+
+トルクを切った状態でロボットを手で支え、表示されるデータセットの姿勢に合わせます。
+このコマンドはモーターを動かしません。較正ファイルの変更を検出するため、`--robot-id` と
+現在の較正ファイルのSHA-256をマッピングに保存します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --episode 0 \
+  --output config/mocopi/hardware/robot-001-mapping.yaml \
+  --robot-id <校正済みrobot-id> \
+  --left-port /dev/ttyACM0 \
+  --right-port /dev/ttyACM1
+```
+
+既定ではエピソード内の5フレームを順に表示します。各フレームでロボットを手で同じ姿勢に
+合わせてEnterを押してください。モデル関節角とモーター角から、関節ごとに
+`motor = sign × model + offset` を最小二乗で求めます。次の場合は検証失敗として
+マッピングを書きません。
+
+- スロープが±1から10%以上ずれる（関節順序・対応・モデルの不一致）
+- 関節の可変範囲が5度未満で符号を判定できない
+- 残差が既定3度を超える（手動姿勢合わせの誤差を含む）
+
+基準姿勢を変える場合は `--reference-frame` を3回以上指定します。検証結果は
+`--report` にJSONで保存できます。マッピングには較正ファイルのハッシュ、使用データ、
+参照フレーム、各関節の傾き・切片・残差が入ります。
+
+#### 2. モーターを動かさずに事前検証する
+
+`--execute` を付けない場合は、ポートを開かず、データセット・マッピング・較正範囲・
+モデルのSHA-256・IK失敗/衝突/関節ステップを検証します。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --mapping config/mocopi/hardware/robot-001-mapping.yaml \
+  --robot-id <校正済みrobot-id> \
+  --calibration-dir <較正ディレクトリ>
+```
+
+#### 3. 実機で再生する
+
+`--execute` を付けた場合だけ、Followerへ接続して7関節×左右を指令します。
+開始姿勢はマッピング後のデータセット先頭フレームと2度以内に合わせてください。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --mapping config/mocopi/hardware/robot-001-mapping.yaml \
+  --robot-id <校正済みrobot-id> \
+  --left-port /dev/ttyACM0 \
+  --right-port /dev/ttyACM1 \
+  --execute \
+  --report outputs/mocopi/reports/episode-001-hardware-replay.json
+```
+
+安全制限は既存のFollower実装をそのまま使います。1指令0.5度以下、関節速度15度/s以下、
+開始誤差2度以内、追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
+グリッパーは読み書きしません。関節ステップが大きいFullモデルデータでは、補間して
+速度制限内に収めるため再生時間が長くなります。レポートの `time_scale`、`control_steps`、
+`max_observed_speed_deg_s` を確認してください。較正ファイルが変わった場合はマッピングを
+作り直すまで再生を拒否します。
+
+この機能はシミュレーション由来の関節角を実機のエンコーダー観測と混同しません。
+実機での関節対応・追従・衝突安全性は、上記の検証と実際の低速度試験で確認してください。
+
 ## データセットを読み込み・検証する
 
 生成したデータセットは、学習や共有の前に読み込みと整合性の確認ができます。

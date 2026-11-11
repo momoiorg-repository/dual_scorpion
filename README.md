@@ -59,6 +59,12 @@ upper-arm guidance. `ik-compare` runs the same episode under all modes and
 writes per-mode plans, per-frame metrics, summary CSV/JSON, a fairness check,
 300 dpi PNG/SVG figures, and a factual comparison report. Omitting `--ik-mode`
 keeps the previous mocopi behaviour and its numerical output.
+Full-CAD 14-joint datasets can also be replayed on the follower through
+`verify-dataset-mapping` and `replay-dataset`. The mapping is fitted from
+manually posed robot joints and refused when the calibrated ranges, signs,
+offsets, or calibration hash do not match; playback retains the existing
+0.5-degree step, 15-degree/s speed, 2-degree start, and 5-degree HOLD limits.
+The 14-joint dataset remains a kinematic simulation source, not encoder data.
 
 ## Contents
 - [Highlights](#highlights)
