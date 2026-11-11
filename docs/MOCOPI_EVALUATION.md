@@ -92,7 +92,59 @@ MJCFのハッシュ、Retarget設定、軸対応、実測移動量比、TCPリ�
 未入力のテーブル・人・工具は評価されないため、`collision_check` の0は「指定されたモデル内
 では接触なし」を意味し、実機作業空間の衝突安全や未計測障害物の不存在を示しません。
 
-## C. 実機再生の誤差（`replay-real` → `dual_scorpion.mocopi.real_metrics.v1`）
+## C. IKモードの比較（`ik-compare` → `dual_scorpion.mocopi.ik_comparison.v1`）
+
+入力: 同じ人間用mocopiデータセットの同一エピソード。`ik-compare` は次の4条件を別々に
+MuJoCoで実行し、同じフレーム番号で比較します。元データセットは変更しません。
+
+| モード | 手先位置 | 手先回転 | 上腕・肘の補助目標 |
+| --- | --- | --- | --- |
+| `default` | 使用 | 使用（従来経路） | 使用（従来の`upper-arm`） |
+| `position-only` | 使用 | 使わない | 使わない |
+| `hand-6dof` | 使用 | 使用（15度以内） | 使わない |
+| `hand-6dof-upper-arm` | 使用 | 使用（15度以内） | 6DoFを優先した冗長自由度で使用 |
+
+`default` は既存のMocopi IKをそのまま使う参考条件です。研究の主比較は `hand-6dof` と
+`hand-6dof-upper-arm` で、両者は同じTCP目標、関節限界、位置・回転許容値、初期関節姿勢、
+プレビュー関節ステップを使います。違いは上腕・肘の補助目標の有無だけです。この条件一致は
+`comparison/fairness_check.json` に、TCP目標の最大差、初期関節角の最大差、制限値の一致、
+C条件の成功フレームが許容内かどうか、B/Cのロボット関節軌道差（平均・最大・RMS）として
+保存します。
+
+既存 `default` は従来どおり、上腕姿勢を渡すときの初回IKで手先回転を目標にせず、
+必要に応じて位置のみへフォールバックする経路を維持します。一方、研究用のB/Cは同じ
+6DoF初期解から開始し、Cだけがその後に冗長自由度で上腕・肘姿勢を補正します。この差は
+既存動作を変更しないためのもので、B/Cの比較条件には持ち込みません。
+
+| 指標 | 定義（計算式） | 単位 | 意味と限界 |
+|---|---|---|---|
+| `position_error_mm` | ‖p_FK(q) − p_target‖×1000 | mm | 計画上のTCP目標とMuJoCo FKの差。実機の絶対精度ではない |
+| `orientation_error_deg` | 測地角(R_FK, R_target) | deg | 手首姿勢の差。`position-only` は回転をIK目標にしないため参考値 |
+| `ik_success_rate` | 成功フレーム数 / 評価フレーム数 | 割合 | 位置許容値と、6DoF条件では回転許容値を満たした割合 |
+| `unreachable_count` / `unreachable_rate` | 位置誤差が許容値を超えたフレーム数 / その割合 | フレーム・割合 | 到達不能・IK未収束。失敗を成功として保存しない |
+| `hold_count` / `fallback_count` | HOLDしたフレーム数 / 位置のみへフォールバックした数 | フレーム | 研究用モードはフォールバックを禁止し、発生時は失敗として記録 |
+| `shoulder_elbow_angle_error_deg` | 肩→肘方向ベクトル間の角度差 | deg | 人体とロボットの上腕方向を共通座標系で比較。Mocopi肘は人体モデル推定 |
+| `arm_plane_angle_error_deg` | 肩・肘・手首で作る腕平面の法線間の角度差 | deg | 腕の面の向き。肘が一直線に近いフレームは欠損になりうる |
+| `swivel_angle_error_deg` | 肩→手首軸まわりの肘角の差（[-180,180]度に折返し） | deg | 同じTCPでも異なる肘姿勢を区別する。人体の関節角そのものではない |
+| `upper_arm_orientation_error_deg` | 初期上腕フレームで対応付けた後の測地角誤差 | deg | 上腕の回転。初期対応付けに依存する |
+| `posture_tcp_position_delta_mm` | C条件で上腕姿勢補正の前後におけるTCP位置の変化 | mm | 6DoF目標を優先できたかの確認。採用した補正は0.5 mm以内 |
+| `elbow_pose_different_frames` | 肩→肘方向誤差が10度を超えた成功フレーム数 | フレーム | 人間と異なる肘姿勢になった回数 |
+| `joint_speed_abs_deg_s` / `joint_acceleration_abs_deg_s2` | 時刻に対する関節角の1次・2次差分の絶対値 | deg/s・deg/s² | 計画軌道の滑らかさ。実機の速度・加速度指令値ではない |
+| `joint_reversal_count` | 連続する関節速度の符号反転（両方15 deg/s以上） | 回 | 急な姿勢反転の目安 |
+| `joint_limit_margin_deg` | min(min(q−lower), min(upper−q)) | deg | Full MJCFの仮関節限界への余裕。実機の限界は未測定 |
+| `self_collision_contacts` / `cross_arm_collision_contacts` / `obstacle_collision_contacts` | モデル上の接触数 | 件 | 床・非隣接リンク・宣言した箱のみ。未入力の机・人・工具は評価しない |
+| `frames` / `missing` | 評価フレーム数 / 欠損した値の数 | フレーム | 評価不能な姿勢は補間せず欠損として数える |
+
+`summary.csv` と `summary.json` には各指標のMean、Median、標準偏差、RMSE、P95、最大、最小、
+件数、欠損数を保存します。`per_frame_comparison.csv` は全モード・左右・全フレームの値を
+持ちます。図は `comparison/graphs/` にPNG（300 dpi）とSVGで保存し、軸・単位・凡例を明記します。
+`report.md` は実験条件、データ・モデルのハッシュ、指標定義、数値、失敗区間、限界を記載し、
+数値に基づかない優劣の結論は自動生成しません。
+
+この比較はシミュレーション上の運動学評価です。実機エンコーダー、実機のたわみ、実機の
+関節限界、未入力の障害物は含みません。上腕・肘の姿勢はMocopiの人体モデル推定を含みます。
+
+## D. 実機再生の誤差（`replay-real` → `dual_scorpion.mocopi.real_metrics.v1`）
 
 入力: 実機のエンコーダー読み取り値と送信指令（実行時）、計画。
 
@@ -106,7 +158,7 @@ MJCFのハッシュ、Retarget設定、軸対応、実測移動量比、TCPリ�
 
 安全ゲート: 開始位置の2度以内一致、関節あたり1更新0.5度、毎秒15度、計画から5度超の遅れで停止。
 
-## D. 実機とシミュレーションの比較（`compare-real` → `dual_scorpion.mocopi.comparison.v1`）
+## E. 実機とシミュレーションの比較（`compare-real` → `dual_scorpion.mocopi.comparison.v1`）
 
 | 指標 | 定義（計算式） | 単位 | 意味と限界 |
 |---|---|---|---|
@@ -121,7 +173,7 @@ MJCFのハッシュ、Retarget設定、軸対応、実測移動量比、TCPリ�
 対応点を、計画と同じ座標系・単位（m）で記入します。時点・座標系を合わせられない測定値は
 比較しません。いずれの指標も、計測点が手先の代表点でない場合は回転精度を評価しません。
 
-## E. 再現と比較の手順
+## F. 再現と比較の手順
 
 ```bash
 # 1件の収録を評価（品質）
@@ -142,6 +194,11 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
   --dataset outputs/mocopi/datasets/demo-001 --episode 0 --headless --fast --slowdown 3 \
   --start-pose backwards --plan outputs/mocopi/plans/e1-backwards.json \
   --report outputs/mocopi/reports/e1-backwards-sim.json
+
+# IKモード比較（default / position-only / hand-6dof / hand-6dof-upper-arm）
+uv run --no-sync --active python -m telegrip.mocopi.dataset ik-compare \
+  --dataset outputs/mocopi/datasets/demo-001 --episode 0 \
+  --output outputs/ik_comparison/experiment_001 --preview-max-step-deg 20
 
 # 複数レポートを1つの比較表へ（品質・シミュレーション・実機・比較のどのレポートも可）
 uv run --no-sync --active python -m telegrip.mocopi.dataset metrics-csv \

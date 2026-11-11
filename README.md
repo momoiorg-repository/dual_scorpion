@@ -53,6 +53,12 @@ dataset and explains their different cameras, state and action semantics.
 Quantitative metrics for every stage, their units and limits, and the CSV
 comparison table and dependency-free SVG plots are defined in
 [docs/MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md).
+For controlled retargeting experiments, `replay-sim --ik-mode` can select the
+unchanged `default` path, position-only, hand 6-DoF, or hand 6-DoF plus
+upper-arm guidance. `ik-compare` runs the same episode under all modes and
+writes per-mode plans, per-frame metrics, summary CSV/JSON, a fairness check,
+300 dpi PNG/SVG figures, and a factual comparison report. Omitting `--ik-mode`
+keeps the previous mocopi behaviour and its numerical output.
 
 ## Contents
 - [Highlights](#highlights)

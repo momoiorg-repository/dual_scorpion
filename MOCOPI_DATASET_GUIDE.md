@@ -483,6 +483,90 @@ IK失敗や制限があった計画、位置誤差が既定の25 mmを超える�
 人間データセットの `action` は次フレームのWRIST姿勢のままであり、ロボットデータセットの
 `action` は次フレームの14関節角です。両者を同じ意味として扱いません。
 
+### IKモードを切り替えて研究用に比較する
+
+`replay-sim` と `build-robot` は `--ik-mode` を受け付けます。**指定しない場合は
+`default`** で、従来のMocopi処理（手首位置・回転に加えて肩・肘・上腕の姿勢を利用、
+`retarget.arm_posture: upper-arm`、`arm_posture_gain: 0.8`、
+`orientation_enabled: true`）を変更しません。`--ik-mode default` も引数なしと同じ結果に
+なります。
+
+| モード | IKの内容 |
+| --- | --- |
+| `default` | 既存のMocopi IK経路。従来の計画・関節軌道・データセット出力を維持 |
+| `position-only` | 手先位置3DoFのみ。手首回転はIK目標に使わない |
+| `hand-6dof` | 手先位置・回転6DoFのみ |
+| `hand-6dof-upper-arm` | 手先6DoFを優先し、冗長自由度で上腕・肘姿勢を補助目標として調整 |
+
+```bash
+# 既存どおり（引数なし）
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
+  --dataset outputs/mocopi/datasets/episode-001-fps15-sync16 --episode 0 \
+  --headless --fast --preview-max-step-deg 20 \
+  --plan outputs/mocopi/plans/e1-default.json \
+  --report outputs/mocopi/reports/e1-default-sim.json
+
+# 研究用6DoF条件
+uv run --no-sync --active python -m telegrip.mocopi.dataset replay-sim \
+  --dataset outputs/mocopi/datasets/episode-001-fps15-sync16 --episode 0 \
+  --headless --fast --preview-max-step-deg 20 --ik-mode hand-6dof \
+  --plan outputs/mocopi/plans/e1-hand6dof.json \
+  --report outputs/mocopi/reports/e1-hand6dof-sim.json
+```
+
+`--arm-posture` は従来との互換性のために残しています。`position-only` と `hand-6dof` は
+`hand-only`、`hand-6dof-upper-arm` は `upper-arm` と組み合わせてください。矛盾する指定は
+推測で解釈せず、エラーになります。研究用6DoFモードの回転許容値は
+`--orientation-tolerance-deg`（既定15度、`robot.ik_orientation_tolerance_deg`）です。
+許容値を超えたフレームは成功として保存せず、HOLD・失敗種別として記録します。
+
+同じエピソードを全モードで実行し、卒論用のCSV・JSON・グラフ・レポートをまとめて作るには
+`ik-compare` を使います。出力先は新規フォルダに限り、元の人間用データセットは変更しません。
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.dataset ik-compare \
+  --dataset outputs/mocopi/datasets/episode-001-fps15-sync16 \
+  --episode 0 \
+  --output outputs/ik_comparison/experiment_001 \
+  --preview-max-step-deg 20
+```
+
+実測したテーブルなどの箱形状を全モードへ同じ条件で入れる場合は、`replay-sim` と同じ
+`--obstacles config/mocopi/obstacles.example.yaml` を `ik-compare` にも追加します。
+
+主比較は `hand-6dof` と `hand-6dof-upper-arm` です。両者は同じTCP目標、関節限界、
+許容誤差、初期関節姿勢、プレビュー運動制限を使い、上腕・肘の補助目標の有無だけを変えます。
+`ik-compare` はこの条件一致を `comparison/fairness_check.json` と `metadata.json` に記録します。
+既存 `default` の「上腕姿勢指定時の初回IKと位置フォールバック」はそのまま残し、
+研究用B/Cには適用しません。
+
+```text
+outputs/ik_comparison/experiment_001/
+  metadata.json
+  default/                  plan.json, report.json, evaluation.json, per_frame.csv, joint_trajectory.csv
+  position_only/
+  hand_6dof/
+  hand_6dof_upper_arm/
+  comparison/
+    summary.csv
+    summary.json
+    per_frame_comparison.csv
+    fairness_check.json
+    report.md
+    graphs/                 PNG (300 dpi) と SVG
+```
+
+グラフはTCP位置・回転誤差、肩→肘方向、Swivel角、左右14関節の軌道、関節速度・加速度、
+成功率・HOLD・フォールバック、衝突、統計比較を含みます。各指標のMean・Median・標準偏差・
+RMSE・P95・最大・最小・欠損数・評価フレーム数は `summary.csv` と `summary.json` に入ります。
+MuJoCoの画面録画や新しいGUIは追加していません。必要な映像はユーザー側で録画してください。
+実行したIKモードはコンソールと各 `plan.json` / `report.json` / `evaluation.json` に表示されます。
+指標の定義と限界は [docs/MOCOPI_EVALUATION.md](docs/MOCOPI_EVALUATION.md) のIK比較の節を
+参照してください。
+デフォルト経路の数値回帰は
+[tests/teleoperators/test_mocopi_ik_modes.py](tests/teleoperators/test_mocopi_ik_modes.py) で
+確認します。手元に変更前のv12計画と実収録データがある場合は、全関節角の完全一致も検証します。
+
 ## データセットを読み込み・検証する
 
 生成したデータセットは、学習や共有の前に読み込みと整合性の確認ができます。
