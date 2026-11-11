@@ -757,11 +757,12 @@ def test_arm_posture_retarget_maps_backwards_elbow_and_axial_twist(heading_deg):
     baseline = mapping.target(shoulder, elbow)
     np.testing.assert_allclose(baseline.elbow, robot[1])
     np.testing.assert_allclose(baseline.upper_rotation, robot[2], atol=1e-12)
-    # Pulling the human elbow backwards (-forward) moves it to robot +Y.
+    # Pulling the human elbow backwards (-forward) moves it to robot -Y
+    # under the current operator-forward -> robot +Y axis mapping.
     pulled = elbow.copy()
     pulled[:3, 3] += heading @ [-0.06, 0, 0]
     target = mapping.target(shoulder, pulled)
-    assert target.elbow[1] > baseline.elbow[1] + 0.03
+    assert target.elbow[1] < baseline.elbow[1] - 0.03
     np.testing.assert_allclose(target.elbow[[0, 2]], baseline.elbow[[0, 2]])
     # Axial upper-arm rotation must remain observable even with fixed points.
     twisted = shoulder.copy()
