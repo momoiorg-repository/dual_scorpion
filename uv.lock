@@ -2817,6 +2817,7 @@ diffusion = [
 dual-scorpion = [
     { name = "accelerate" },
     { name = "av" },
+    { name = "contourpy" },
     { name = "datasets" },
     { name = "debugpy" },
     { name = "deepdiff" },
@@ -2826,6 +2827,7 @@ dual-scorpion = [
     { name = "ipykernel" },
     { name = "jsonlines" },
     { name = "jupyter" },
+    { name = "matplotlib" },
     { name = "mock-serial", marker = "sys_platform != 'win32'" },
     { name = "mujoco" },
     { name = "mypy" },
@@ -2936,8 +2938,10 @@ metaworld = [
 ]
 mocopi = [
     { name = "av" },
+    { name = "contourpy" },
     { name = "datasets" },
     { name = "jsonlines" },
+    { name = "matplotlib" },
     { name = "mujoco" },
     { name = "pandas" },
     { name = "pyarrow" },
@@ -3151,6 +3155,7 @@ requires-dist = [
     { name = "lerobot", extras = ["lekiwi"], marker = "extra == 'all'" },
     { name = "lerobot", extras = ["libero"], marker = "sys_platform == 'linux' and extra == 'all'" },
     { name = "lerobot", extras = ["matplotlib-dep"], marker = "extra == 'async'" },
+    { name = "lerobot", extras = ["matplotlib-dep"], marker = "extra == 'mocopi'" },
     { name = "lerobot", extras = ["matplotlib-dep"], marker = "extra == 'sarm'" },
     { name = "lerobot", extras = ["matplotlib-dep"], marker = "extra == 'unitree-g1'" },
     { name = "lerobot", extras = ["metaworld"], marker = "extra == 'all'" },

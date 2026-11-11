@@ -28,6 +28,9 @@ def build_robot_dataset(
     plan_dir=None,
     report_dir=None,
     preview_max_step_deg=None,
+    ik_mode="default",
+    arm_posture=None,
+    orientation_tolerance_deg=None,
     slowdown=1,
     max_sim_error_m=0.025,
     max_sim_orientation_error_deg=None,
@@ -66,6 +69,9 @@ def build_robot_dataset(
                 slowdown=slowdown,
                 sim_model="full",
                 preview_max_step_deg=preview_max_step_deg,
+                ik_mode=ik_mode,
+                arm_posture=arm_posture,
+                orientation_tolerance_deg=orientation_tolerance_deg,
             )
             _write_new_json(plan_path, plan)
             _write_new_json(report_path, report)
@@ -83,12 +89,8 @@ def build_robot_dataset(
                 "ik_failures": failures,
                 "collision_frames": collision.get("frames_with_collisions"),
                 "max_position_error_m": report.get("feasibility", {}).get("max_position_error_m"),
-                "max_orientation_error_deg": report.get("feasibility", {}).get(
-                    "max_orientation_error_deg"
-                ),
-                "within_preview_tolerance": report.get("feasibility", {}).get(
-                    "within_preview_tolerance"
-                ),
+                "max_orientation_error_deg": report.get("feasibility", {}).get("max_orientation_error_deg"),
+                "within_preview_tolerance": report.get("feasibility", {}).get("within_preview_tolerance"),
             }
             summaries.append(summary)
             if failures or collision.get("frames_with_collisions"):
@@ -118,6 +120,9 @@ def build_robot_dataset(
         exported["pipeline"] = {
             "command": "build-robot",
             "source_dataset": str(Path(dataset_path).resolve()),
+            "ik_mode": ik_mode,
+            "arm_posture": arm_posture,
+            "orientation_tolerance_deg": orientation_tolerance_deg,
             "episodes": summaries,
             "status": "ok_with_orientation_warnings"
             if exported.get("validation", {}).get("orientation_warning_count")
@@ -136,6 +141,9 @@ def build_robot_dataset(
             "status": "failed",
             "reason": str(exc),
             "dataset": str(Path(dataset_path).resolve()),
+            "ik_mode": ik_mode,
+            "arm_posture": arm_posture,
+            "orientation_tolerance_deg": orientation_tolerance_deg,
             "episodes": summaries,
         }
         _write_new_json(report_dir / "pipeline-failure.json", failure)

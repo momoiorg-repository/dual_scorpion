@@ -55,8 +55,7 @@ def _tcp_error_vector(frame):
         rotation_error = float(
             np.rad2deg(
                 Rotation.from_matrix(
-                    Rotation.from_quat(target[3:]).as_matrix().T
-                    @ Rotation.from_quat(actual[3:]).as_matrix()
+                    Rotation.from_quat(target[3:]).as_matrix().T @ Rotation.from_quat(actual[3:]).as_matrix()
                 ).magnitude()
             )
         )
@@ -304,11 +303,15 @@ def export_joint_dataset(
         "coordinate_frame": manifest.get("coordinate_frame"),
         "raw_mocopi_coordinate_frame": manifest.get("raw_mocopi_coordinate_frame"),
         "quaternion_order": manifest.get("quaternion_order"),
-        "retarget": config["retarget"],
+        "ik_mode": plans[0].get("ik_mode", "default"),
+        "arm_posture": plans[0].get("arm_posture", config["retarget"].get("arm_posture")),
+        "retarget": plans[0].get("retarget", config["retarget"]),
         "ik": {
             "preview_max_joint_step_deg": plans[0].get("preview_max_joint_step_deg"),
             "hardware_max_joint_step_deg": plans[0].get("hardware_max_joint_step_deg"),
             "position_tolerance_m": float(config["robot"]["position_tolerance_m"]),
+            "orientation_tolerance_deg": plans[0].get("ik_orientation_tolerance_deg"),
+            "orientation_weight": plans[0].get("ik_orientation_weight"),
             "joint_limit_source": "full_mujoco_urdf_unmeasured" if full_model else "legacy_urdf",
             "gripper_joint_fixed_rad": 0.0,
         },

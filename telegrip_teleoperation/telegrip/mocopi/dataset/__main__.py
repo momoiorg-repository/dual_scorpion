@@ -91,6 +91,17 @@ def parser():
     replay = sub.add_parser("replay-sim", help="Replay an episode in MuJoCo and quantify tracking")
     replay.add_argument("--dataset", required=True)
     replay.add_argument("--episode", type=int, default=0)
+    replay.add_argument(
+        "--ik-mode",
+        choices=["default", "position-only", "hand-6dof", "hand-6dof-upper-arm"],
+        default="default",
+    )
+    replay.add_argument(
+        "--arm-posture",
+        choices=["upper-arm", "hand-only"],
+        help="Legacy posture selector; incompatible combinations with --ik-mode are rejected",
+    )
+    replay.add_argument("--orientation-tolerance-deg", type=float)
     replay.add_argument("--headless", action="store_true")
     replay.add_argument("--fast", action="store_true", help="Do not wait for recorded frame times")
     replay.add_argument("--slowdown", type=int, default=1, help="Hold each frame for 1..10 simulation ticks")
@@ -144,9 +155,36 @@ def parser():
     build_robot.add_argument("--plan-dir", help="New folder for generated plan JSON files")
     build_robot.add_argument("--report-dir", help="New folder for generated validation reports")
     build_robot.add_argument("--preview-max-step-deg", type=float)
+    build_robot.add_argument(
+        "--ik-mode",
+        choices=["default", "position-only", "hand-6dof", "hand-6dof-upper-arm"],
+        default="default",
+    )
+    build_robot.add_argument("--arm-posture", choices=["upper-arm", "hand-only"])
+    build_robot.add_argument("--orientation-tolerance-deg", type=float)
     build_robot.add_argument("--slowdown", type=int, default=1)
     build_robot.add_argument("--max-sim-error-m", type=float, default=0.025)
     build_robot.add_argument("--max-sim-orientation-error-deg", type=float)
+    compare_ik = sub.add_parser(
+        "ik-compare",
+        help="Run controlled IK-mode comparisons and generate thesis-ready metrics and plots",
+    )
+    compare_ik.add_argument("--dataset", required=True, help="Source human mocopi dataset")
+    compare_ik.add_argument("--episode", type=int, default=0)
+    compare_ik.add_argument("--output", required=True, help="New experiment output folder")
+    compare_ik.add_argument(
+        "--mode",
+        action="append",
+        choices=["default", "position-only", "hand-6dof", "hand-6dof-upper-arm"],
+        help="Mode to run; repeat for multiple modes; omit for all",
+    )
+    compare_ik.add_argument("--preview-max-step-deg", type=float)
+    compare_ik.add_argument("--slowdown", type=int, default=1)
+    compare_ik.add_argument("--orientation-tolerance-deg", type=float)
+    compare_ik.add_argument(
+        "--obstacles",
+        help="Optional measured box-obstacle YAML used by every compared mode",
+    )
     feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
     feedback.add_argument(
         "--run", action="append", nargs=2, metavar=("PLAN", "REPORT"), required=True, help="Repeat per run"
@@ -316,6 +354,9 @@ def main():
                 start_pose=args.start_pose,
                 obstacles=args.obstacles,
                 preview_max_step_deg=args.preview_max_step_deg,
+                ik_mode=args.ik_mode,
+                arm_posture=args.arm_posture,
+                orientation_tolerance_deg=args.orientation_tolerance_deg,
             )
             for path, document in ((args.plan, plan), (args.report, result)):
                 if path:
@@ -353,9 +394,26 @@ def main():
                 plan_dir=args.plan_dir,
                 report_dir=args.report_dir,
                 preview_max_step_deg=args.preview_max_step_deg,
+                ik_mode=args.ik_mode,
+                arm_posture=args.arm_posture,
+                orientation_tolerance_deg=args.orientation_tolerance_deg,
                 slowdown=args.slowdown,
                 max_sim_error_m=args.max_sim_error_m,
                 max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
+            )
+        elif args.command == "ik-compare":
+            from .ik_experiment import run_ik_comparison
+
+            result = run_ik_comparison(
+                config,
+                args.dataset,
+                args.output,
+                episode=args.episode,
+                modes=args.mode,
+                preview_max_step_deg=args.preview_max_step_deg,
+                slowdown=args.slowdown,
+                orientation_tolerance_deg=args.orientation_tolerance_deg,
+                obstacles=args.obstacles,
             )
         elif args.command == "convert-real":
             from .real_dataset import export_real_dataset

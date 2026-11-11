@@ -147,6 +147,7 @@ mocopi = [
     "websockets>=13.0,<16",
     "scipy>=1.14.0,<2.0.0",
     "PyYAML>=6.0.0,<7.0.0",
+    "lerobot[matplotlib-dep]",
 ]
 
 # Common
