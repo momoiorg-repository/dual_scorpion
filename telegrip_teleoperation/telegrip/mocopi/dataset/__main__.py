@@ -185,6 +185,45 @@ def parser():
         "--obstacles",
         help="Optional measured box-obstacle YAML used by every compared mode",
     )
+    verify_map = sub.add_parser(
+        "verify-dataset-mapping",
+        help="Verify full-CAD model joints against manually posed real robot joints",
+    )
+    verify_map.add_argument("--dataset", required=True, help="Full-CAD joint dataset")
+    verify_map.add_argument("--episode", type=int, default=0)
+    verify_map.add_argument("--output", required=True, help="New verified mapping YAML")
+    verify_map.add_argument(
+        "--reference-frame",
+        type=int,
+        action="append",
+        help="Episode frame to pose by hand; repeat at least three times; omit for five evenly spaced frames",
+    )
+    verify_map.add_argument("--max-fit-residual-deg", type=float, default=3.0)
+    verify_map.add_argument("--min-model-range-deg", type=float, default=5.0)
+    verify_map.add_argument("--left-port", required=True, help="Left follower serial device")
+    verify_map.add_argument("--right-port", required=True, help="Right follower serial device")
+    verify_map.add_argument("--robot-id", required=True, help="Existing calibrated robot id")
+    verify_map.add_argument("--calibration-dir", help="Override the existing calibration directory")
+    verify_map.add_argument("--report", help="Optional verification report JSON")
+    replay_dataset = sub.add_parser(
+        "replay-dataset",
+        help="Replay a verified full-CAD 14-joint dataset on the real follower",
+    )
+    replay_dataset.add_argument("--dataset", required=True, help="Full-CAD joint dataset")
+    replay_dataset.add_argument("--episode", type=int, default=0)
+    replay_dataset.add_argument("--mapping", required=True, help="Verified hardware joint mapping YAML")
+    replay_dataset.add_argument("--execute", action="store_true", help="Connect and move the real arms")
+    replay_dataset.add_argument("--left-port", help="Left follower serial device")
+    replay_dataset.add_argument("--right-port", help="Right follower serial device")
+    replay_dataset.add_argument("--robot-id", required=True, help="Existing calibrated robot id")
+    replay_dataset.add_argument("--calibration-dir", help="Override the existing calibration directory")
+    replay_dataset.add_argument("--report", help="New JSON output for measured real replay results")
+    replay_dataset.add_argument("--max-start-error-deg", type=float, default=2.0)
+    replay_dataset.add_argument("--max-tracking-error-deg", type=float, default=5.0)
+    replay_dataset.add_argument("--max-joint-speed-deg-s", type=float, default=15.0)
+    replay_dataset.add_argument("--control-hz", type=float, default=20.0)
+    replay_dataset.add_argument("--max-sim-error-m", type=float, default=0.025)
+    replay_dataset.add_argument("--max-sim-orientation-error-deg", type=float)
     feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
     feedback.add_argument(
         "--run", action="append", nargs=2, metavar=("PLAN", "REPORT"), required=True, help="Repeat per run"
@@ -465,6 +504,61 @@ def main():
                 output.parent.mkdir(parents=True, exist_ok=True)
                 with output.open("x", encoding="utf-8") as file:
                     file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+        elif args.command == "verify-dataset-mapping":
+            from .hardware_dataset import load_joint_episode, verify_dataset_mapping
+            from .real import arm_only_follower
+
+            episode = load_joint_episode(args.dataset, args.episode)
+            robot = arm_only_follower(
+                args.left_port,
+                args.right_port,
+                args.robot_id,
+                config["robot"]["max_joint_step_deg"],
+                args.calibration_dir,
+            )
+            result = verify_dataset_mapping(
+                episode,
+                robot,
+                args.output,
+                reference_frames=args.reference_frame,
+                max_residual_deg=args.max_fit_residual_deg,
+                min_model_range_deg=args.min_model_range_deg,
+                report=args.report,
+            )
+        elif args.command == "replay-dataset":
+            from .hardware_dataset import replay_joint_dataset
+
+            real_result = replay_joint_dataset(
+                config,
+                args.dataset,
+                args.episode,
+                mapping_path=args.mapping,
+                execute=args.execute,
+                left_port=args.left_port,
+                right_port=args.right_port,
+                robot_id=args.robot_id,
+                calibration_dir=args.calibration_dir,
+                report=args.report,
+                max_start_error_deg=args.max_start_error_deg,
+                max_tracking_error_deg=args.max_tracking_error_deg,
+                max_joint_speed_deg_s=args.max_joint_speed_deg_s,
+                control_hz=args.control_hz,
+                max_sim_error_m=args.max_sim_error_m,
+                max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
+            )
+            if args.execute:
+                result = {
+                    "mode": "real",
+                    "status": real_result["status"],
+                    "frames": len(real_result["frames"]),
+                    "control_steps": real_result["control_steps"],
+                    "time_scale": real_result["time_scale"],
+                    "max_observed_speed_deg_s": real_result["max_observed_speed_deg_s"],
+                    "tracking": real_result["tracking"],
+                    "report": args.report,
+                }
+            else:
+                result = real_result
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     except (ValueError, RuntimeError, OSError) as exc:
         parser().exit(1, f"Error: {exc}\n")

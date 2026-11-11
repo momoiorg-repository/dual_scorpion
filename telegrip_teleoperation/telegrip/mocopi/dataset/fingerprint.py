@@ -12,7 +12,7 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
-def dataset_fingerprint(root):
+def dataset_fingerprint(root, manifest_name="mocopi_dataset.json"):
     """Hash metadata, frame data, and videos, including their relative paths.
 
     This identifies finalized v3 mocopi datasets, not arbitrary cache or
@@ -24,7 +24,7 @@ def dataset_fingerprint(root):
     )
     data = sorted((root / "data").rglob("*.parquet"))
     videos = sorted((root / "videos").rglob("*.mp4"))
-    if not (root / "meta" / "info.json").is_file() or not (root / "meta" / "mocopi_dataset.json").is_file():
+    if not (root / "meta" / "info.json").is_file() or not (root / "meta" / manifest_name).is_file():
         raise ValueError("A finalized mocopi LeRobot dataset with metadata is required")
     if not data or not videos:
         raise ValueError("Mocopi dataset must contain finalized parquet data and head-camera video")

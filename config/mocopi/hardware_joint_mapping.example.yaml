@@ -1,0 +1,21 @@
+# Example only. Do not use this file for hardware replay.
+# Generate the real mapping with:
+#   python -m telegrip.mocopi.dataset verify-dataset-mapping ...
+schema: dual_scorpion.mocopi.hardware_joint_mapping.v1
+robot_id: CHANGE_ME
+calibration_sha256: CHANGE_ME
+verified: false
+model_kind: full_mujoco
+created_at: null
+verification: null
+sides:
+  right:
+    sign: [1, 1, 1, 1, 1, 1, 1]
+    offset_deg: [0, 0, 0, 0, 0, 0, 0]
+    # Optional tighter limits. If omitted, the calibrated motor range is used.
+    # joint_limits_deg:
+    #   min: [-180, -180, -180, -180, -180, -180, -180]
+    #   max: [180, 180, 180, 180, 180, 180, 180]
+  left:
+    sign: [1, 1, 1, 1, 1, 1, 1]
+    offset_deg: [0, 0, 0, 0, 0, 0, 0]

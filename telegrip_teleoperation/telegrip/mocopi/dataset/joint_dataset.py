@@ -315,6 +315,12 @@ def export_joint_dataset(
             "joint_limit_source": "full_mujoco_urdf_unmeasured" if full_model else "legacy_urdf",
             "gripper_joint_fixed_rad": 0.0,
         },
+        "hardware_replay": {
+            "requires_verified_joint_mapping": True,
+            "mapping_command": "verify-dataset-mapping",
+            "dataset_is_kinematic_simulation": True,
+            "gripper_commanded": False,
+        },
         "tcp": {
             "frame": "l_link_8/r_link_8 origin",
             "human_source": "mocopi WRIST/L bone 14 and WRIST/R bone 18",
