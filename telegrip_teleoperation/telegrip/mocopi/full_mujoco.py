@@ -16,7 +16,7 @@ from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
 
 from .geometry import pose
-from .ik import SafeIK
+from .ik import ResearchSafeIK, SafeIK
 from .mujoco_sim import COLORS, add_orientation_axes
 from .obstacles import normalize_obstacles, obstacles_sha256
 
@@ -135,13 +135,24 @@ class FullModelFK:
 class FullModelIK:
     """Position-priority MuJoCo Jacobian IK with preview-only numeric bounds."""
 
-    def __init__(self, model, side, mujoco, *, max_step_deg, tolerance_m, orientation_weight=0.08):
+    def __init__(
+        self,
+        model,
+        side,
+        mujoco,
+        *,
+        max_step_deg,
+        tolerance_m,
+        orientation_weight=0.08,
+        allow_position_only_fallback=True,
+    ):
         self.fk_solver = FullModelFK(model, side, mujoco)
         self.max_step = float(max_step_deg)
         self.tolerance = float(tolerance_m)
         self.orientation_weight = float(orientation_weight)
         if not np.isfinite(self.orientation_weight) or self.orientation_weight <= 0:
             raise ValueError("orientation_weight must be positive")
+        self.allow_position_only_fallback = bool(allow_position_only_fallback)
         self.last_solve_info = {}
 
     def arm_state(self, joints):
@@ -204,16 +215,26 @@ class FullModelIK:
                 gtol=1e-7,
             )
             solution = np.clip(result.x, lower, upper)
-            position, _ = self.fk_solver.compute(np.rad2deg(solution))
-            return solution, float(np.linalg.norm(position - target_position))
+            position, quaternion = self.fk_solver.compute(np.rad2deg(solution))
+            orientation_error = (
+                Rotation.from_quat(quaternion).inv() * Rotation.from_quat(target_orientation_quat)
+                if target_orientation_quat is not None
+                else None
+            )
+            return (
+                solution,
+                float(np.linalg.norm(position - target_position)),
+                float(np.rad2deg(orientation_error.magnitude())) if orientation_error is not None else None,
+            )
 
-        solution, residual = run(desired_rotation is not None)
+        solution, residual, orientation_error_deg = run(desired_rotation is not None)
         position_only = False
-        if desired_rotation is not None and residual > self.tolerance:
-            solution, residual = run(False)
+        if desired_rotation is not None and residual > self.tolerance and self.allow_position_only_fallback:
+            solution, residual, orientation_error_deg = run(False)
             position_only = True
         self.last_solve_info = {
             "residual_final_m": residual,
+            "orientation_error_deg": orientation_error_deg,
             "workspace_clamped": False,
             "used_position_only": position_only,
             "model": "full_mujoco_preview_unmeasured_limits",
@@ -240,6 +261,8 @@ class FullMujocoSimulation:
         self.obstacles_sha256 = obstacles_sha256(self.obstacles)
         self.model = build_full_model(full_model_path(config), mujoco, self.obstacles)
         self.data = mujoco.MjData(self.model)
+        self.ik_mode = config.get("ik_mode", "default")
+        self.orientation_tolerance_deg = float(config.get("ik_orientation_tolerance_deg", 15.0))
         preset = config.get("start_pose", "config")
         if preset not in ("work", "backwards", "neutral", "config"):
             raise ValueError("robot.start_pose must be work, backwards, neutral or config")
@@ -260,9 +283,25 @@ class FullMujocoSimulation:
                 max_step_deg=config["max_joint_step_deg"],
                 tolerance_m=config["position_tolerance_m"],
                 orientation_weight=config.get("ik_orientation_weight", 0.08),
+                allow_position_only_fallback=self.ik_mode == "default",
             )
-            arm = SafeIK(
-                solver, joints, lower, upper, config["max_joint_step_deg"], config["position_tolerance_m"]
+            safe_ik_type = SafeIK if self.ik_mode == "default" else ResearchSafeIK
+            safe_kwargs = (
+                {}
+                if self.ik_mode == "default"
+                else {
+                    "ik_mode": self.ik_mode,
+                    "orientation_tolerance_deg": self.orientation_tolerance_deg,
+                }
+            )
+            arm = safe_ik_type(
+                solver,
+                joints,
+                lower,
+                upper,
+                config["max_joint_step_deg"],
+                config["position_tolerance_m"],
+                **safe_kwargs,
             )
             self.arms[side] = arm
             self.qpos_indices[side] = solver.fk_solver.qpos

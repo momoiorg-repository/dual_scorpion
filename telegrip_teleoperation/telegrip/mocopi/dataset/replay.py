@@ -71,6 +71,9 @@ def replay_sim(
     start_pose=None,
     obstacles=None,
     preview_max_step_deg=None,
+    ik_mode="default",
+    arm_posture=None,
+    orientation_tolerance_deg=None,
 ):
     """Play an episode, returning a reviewable joint plan and simulation metrics."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -86,6 +89,23 @@ def replay_sim(
 
     if not isinstance(slowdown, int) or not 1 <= slowdown <= 10:
         raise ValueError("slowdown must be an integer from 1 to 10")
+    if ik_mode not in ("default", "position-only", "hand-6dof", "hand-6dof-upper-arm"):
+        raise ValueError(f"Unsupported ik_mode: {ik_mode}")
+    if ik_mode != "default" and sim_model != "full":
+        raise ValueError("Non-default IK comparison modes require the Full MuJoCo model")
+    retarget_config = dict(config["retarget"])
+    if ik_mode == "default":
+        if arm_posture is not None:
+            retarget_config["arm_posture"] = arm_posture
+    else:
+        if ik_mode in ("position-only", "hand-6dof") and arm_posture not in (None, "hand-only"):
+            raise ValueError(f"--ik-mode {ik_mode} conflicts with --arm-posture {arm_posture}")
+        if ik_mode == "hand-6dof-upper-arm" and arm_posture not in (None, "upper-arm"):
+            raise ValueError("--ik-mode hand-6dof-upper-arm requires --arm-posture upper-arm or no override")
+        retarget_config["arm_posture"] = "upper-arm" if ik_mode == "hand-6dof-upper-arm" else "hand-only"
+        retarget_config["orientation_enabled"] = ik_mode != "position-only"
+    config = {**config, "retarget": retarget_config}
+    print(f"IK mode: {ik_mode}; retarget arm_posture: {retarget_config['arm_posture']}")
     obstacle_scene = [] if obstacles is None else load_obstacles(obstacles)
     if obstacle_scene and sim_model != "full":
         raise ValueError("Obstacle scenes require the full MuJoCo model")
@@ -109,6 +129,12 @@ def replay_sim(
         **robot_config,
         "start_pose": selected_start_pose,
         "max_joint_step_deg": preview_step,
+        "ik_mode": ik_mode,
+        "ik_orientation_tolerance_deg": float(
+            orientation_tolerance_deg
+            if orientation_tolerance_deg is not None
+            else robot_config.get("ik_orientation_tolerance_deg", 15.0)
+        ),
     }
     root = Path(dataset_path)
     manifest_path = root / "meta" / "mocopi_dataset.json"
@@ -147,7 +173,11 @@ def replay_sim(
         "max_joint_step_deg": preview_step,
         "preview_max_joint_step_deg": preview_step,
         "hardware_max_joint_step_deg": float(config["robot"]["max_joint_step_deg"]),
+        "position_tolerance_m": float(config["robot"]["position_tolerance_m"]),
         "ik_orientation_weight": float(robot_config.get("ik_orientation_weight", 0.08)),
+        "ik_mode": ik_mode,
+        "ik_orientation_tolerance_deg": simulation_robot_config["ik_orientation_tolerance_deg"],
+        "arm_posture": retarget_config["arm_posture"],
         "coordinate_frame": manifest.get("coordinate_frame"),
         "raw_mocopi_coordinate_frame": manifest.get("raw_mocopi_coordinate_frame"),
         "quaternion_order": manifest.get("quaternion_order"),
@@ -195,11 +225,27 @@ def replay_sim(
             first,
             initial_anchor=sim_model == "full",
         )
-        initial_targets = {
-            side: mapping.target(initial_hands[side]) for side, mapping in mappings.items()
-        }
-        if sim_model == "full" and not _align_initial_targets(simulation, initial_targets):
-            raise RuntimeError("Cannot align Full-model initial TCP pose to the measured human start pose")
+        initial_targets = {side: mapping.target(initial_hands[side]) for side, mapping in mappings.items()}
+        # The initial pose is solved with the same 6-DoF target for both
+        # hand-6dof and hand-6dof-upper-arm.  Upper-arm guidance starts on the
+        # first recorded frame so the two research conditions share an initial
+        # joint configuration and motion limits.
+        if sim_model == "full":
+            posture_optional = ik_mode == "hand-6dof-upper-arm"
+            if posture_optional:
+                for arm in simulation.arms.values():
+                    arm.posture_optional = True
+            try:
+                aligned = _align_initial_targets(simulation, initial_targets)
+            finally:
+                if posture_optional:
+                    for arm in simulation.arms.values():
+                        arm.posture_optional = False
+                        arm.posture_solver = None
+            if not aligned:
+                raise RuntimeError(
+                    "Cannot align Full-model initial TCP pose to the measured human start pose"
+                )
         if sim_model == "full" and not obstacle_scene and simulation.collision_report()["count"]:
             raise RuntimeError("Measured human start pose causes a modeled robot self-collision")
         gate = TrackingGate(config["tracking"])
@@ -259,8 +305,15 @@ def replay_sim(
                         )
                     )
                 if not arm.valid:
-                    plan["failures"].append({"frame": index - start, "side": side, "reason": arm.status})
-                frame["arms"][side] = {
+                    plan["failures"].append(
+                        {
+                            "frame": index - start,
+                            "side": side,
+                            "reason": arm.status,
+                            "failure_kind": getattr(arm, "last_solve", {}).get("failure_kind"),
+                        }
+                    )
+                arm_entry = {
                     "joint_deg": arm.last_valid_target[:7].tolist(),
                     "target_pose": _pose_vector(targets[side]),
                     "simulated_pose": _pose_vector(actual),
@@ -275,6 +328,18 @@ def replay_sim(
                         > mappings[side].limit
                     ),
                 }
+                if ik_mode != "default":
+                    arm_entry.update(
+                        {
+                            "ik_status": arm.status,
+                            "solver_info": arm.solver.last_solve_info,
+                            "posture_info": arm.posture_info,
+                            "research_ik": getattr(arm, "last_solve", {}),
+                        }
+                    )
+                if arm.solver.last_solve_info.get("used_position_only", False):
+                    arm_entry["fallback"] = True
+                frame["arms"][side] = arm_entry
             plan["frames"].append(frame)
             if camera_window:
                 image = dataset[index]["observation.images.head"].permute(1, 2, 0).numpy()
@@ -346,6 +411,9 @@ def replay_sim(
         "episode": episode,
         "task": plan["task"],
         "model_kind": plan["model_kind"],
+        "ik_mode": plan["ik_mode"],
+        "arm_posture": plan["arm_posture"],
+        "ik_orientation_tolerance_deg": plan["ik_orientation_tolerance_deg"],
         "start_pose": plan["start_pose"],
         "retarget_start_pose": plan.get("retarget_start_pose", plan["start_pose"]),
         "home_start_pose": plan.get("home_start_pose"),

@@ -86,4 +86,6 @@ robot:
   preview_max_joint_step_deg: 20.0
   # Position remains primary; this weight only selects among redundant 6D solutions.
   ik_orientation_weight: 0.08
+  # Strict orientation tolerance for research 6DoF comparison modes only.
+  ik_orientation_tolerance_deg: 15.0
   position_tolerance_m: 0.025
