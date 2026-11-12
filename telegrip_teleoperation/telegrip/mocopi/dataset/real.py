@@ -179,8 +179,11 @@ def validate_plan(
     }
 
 
-def arm_only_follower(left_port, right_port, robot_id, max_step, calibration_dir=None):
-    """Construct the existing follower using only joint0..joint6 on each bus."""
+GRIPPER = "gripper"
+
+
+def _configured_follower(left_port, right_port, robot_id, max_step, calibration_dir, include_gripper):
+    """Construct the existing follower with either arm-only or arm+gripper buses."""
     from lerobot.motors.feetech import FeetechMotorsBus
     from lerobot.robots.dual_scorpion_follower import DualScorpionFollower, DualScorpionFollowerConfig
 
@@ -194,17 +197,35 @@ def arm_only_follower(left_port, right_port, robot_id, max_step, calibration_dir
         disable_torque_on_disconnect=False,
     )
     robot = DualScorpionFollower(options)
+    motor_names = (*JOINTS, GRIPPER) if include_gripper else JOINTS
     for side in SIDES:
         previous = getattr(robot, side + "_bus")
-        if not set(JOINTS) <= previous.calibration.keys():
-            raise ValueError(f"Missing {side} arm calibration for {robot_id}; calibrate before replay")
+        if not set(motor_names) <= previous.calibration.keys():
+            missing = sorted(set(motor_names) - set(previous.calibration))
+            raise ValueError(
+                f"Missing {side} calibration for {robot_id}: {missing}; calibrate before replay"
+            )
         bus = FeetechMotorsBus(
             port=previous.port,
-            motors={name: previous.motors[name] for name in JOINTS},
-            calibration={name: previous.calibration[name] for name in JOINTS},
+            motors={name: previous.motors[name] for name in motor_names},
+            calibration={name: previous.calibration[name] for name in motor_names},
         )
         setattr(robot, side + "_bus", bus)
     return robot
+
+
+def arm_only_follower(left_port, right_port, robot_id, max_step, calibration_dir=None):
+    """Construct the existing follower using only joint0..joint6 on each bus."""
+    return _configured_follower(
+        left_port, right_port, robot_id, max_step, calibration_dir, include_gripper=False
+    )
+
+
+def arm_and_gripper_follower(left_port, right_port, robot_id, max_step, calibration_dir=None):
+    """Construct the existing follower with joint0..joint6 and each gripper."""
+    return _configured_follower(
+        left_port, right_port, robot_id, max_step, calibration_dir, include_gripper=True
+    )
 
 
 def _read_joints(robot):

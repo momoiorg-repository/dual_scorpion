@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import yaml
+
+from ...config import GRIPPER_CLOSED_ANGLE, GRIPPER_OPEN_ANGLE
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,20 @@ class RobotSpec:
 
 
 @dataclass(frozen=True)
+class GripperSpec:
+    open_position: float = GRIPPER_OPEN_ANGLE
+    closed_position: float = GRIPPER_CLOSED_ANGLE
+    min_position: float = 0.0
+    max_position: float = 100.0
+    position_tolerance: float = 2.0
+    max_step: float = 2.0
+    settle_s: float = 0.02
+    grasp_timeout_s: float = 2.0
+    load_threshold: float | None = None
+    current_threshold: float | None = None
+
+
+@dataclass(frozen=True)
 class HarnessConfig:
     robot_config_path: Path
     cameras: tuple[CameraSpec, ...]
@@ -43,6 +60,7 @@ class HarnessConfig:
     max_plan_frames: int
     execution_report_dir: Path
     robot: RobotSpec | None = None
+    gripper: GripperSpec = GripperSpec()
     scene_geometry_path: Path | None = None
 
     @classmethod
@@ -57,6 +75,8 @@ class HarnessConfig:
         cameras = tuple(_camera_from_dict(item, config_path.parent) for item in cameras_raw)
         robot_raw = raw.get("robot")
         robot_spec = None if robot_raw is None else _robot_from_dict(robot_raw, config_path.parent)
+        gripper_raw = raw.get("gripper", {})
+        gripper_spec = _gripper_from_dict(gripper_raw)
         scene_value = raw.get("scene_geometry")
         scene_path = None
         if scene_value is not None:
@@ -87,6 +107,7 @@ class HarnessConfig:
             max_plan_frames=max_frames,
             execution_report_dir=report_dir,
             robot=robot_spec,
+            gripper=gripper_spec,
             scene_geometry_path=scene_path,
         )
 
@@ -152,3 +173,43 @@ def _robot_from_dict(value: dict[str, Any], base_dir: Path) -> RobotSpec:
         calibration_dir=calibration_dir.resolve() if calibration_dir else None,
         max_step_deg=max_step,
     )
+
+
+def _gripper_from_dict(value: Any) -> GripperSpec:
+    if value is None:
+        return GripperSpec()
+    if not isinstance(value, dict):
+        raise ValueError("agent.gripper must be an object")
+    spec = GripperSpec(
+        open_position=float(value.get("open_position", 0.0)),
+        closed_position=float(value.get("closed_position", 45.0)),
+        min_position=float(value.get("min_position", 0.0)),
+        max_position=float(value.get("max_position", 100.0)),
+        position_tolerance=float(value.get("position_tolerance", 2.0)),
+        max_step=float(value.get("max_step", 2.0)),
+        settle_s=float(value.get("settle_s", 0.02)),
+        grasp_timeout_s=float(value.get("grasp_timeout_s", 2.0)),
+        load_threshold=value.get("load_threshold"),
+        current_threshold=value.get("current_threshold"),
+    )
+    positive = (
+        spec.position_tolerance,
+        spec.max_step,
+        spec.settle_s,
+        spec.grasp_timeout_s,
+    )
+    if any(not np.isfinite(item) or item <= 0 for item in positive):
+        raise ValueError("gripper tolerance, step, settle, and timeout values must be positive")
+    if not spec.min_position < spec.max_position:
+        raise ValueError("gripper min_position must be less than max_position")
+    if not spec.min_position <= spec.open_position <= spec.max_position:
+        raise ValueError("gripper open_position is outside the normalized range")
+    if not spec.min_position <= spec.closed_position <= spec.max_position:
+        raise ValueError("gripper closed_position is outside the normalized range")
+    if spec.open_position == spec.closed_position:
+        raise ValueError("gripper open and closed positions must differ")
+    for name in ("load_threshold", "current_threshold"):
+        threshold = getattr(spec, name)
+        if threshold is not None and (not np.isfinite(threshold) or threshold <= 0):
+            raise ValueError(f"gripper {name} must be positive when provided")
+    return spec

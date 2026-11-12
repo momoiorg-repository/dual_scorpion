@@ -65,6 +65,39 @@ def evaluate_execution(report: dict[str, Any], plan: Any) -> dict[str, Any]:
                     "reason": "operator_confirmation cannot be inferred from motor feedback",
                 }
             )
+        elif kind == "gripper_position":
+            step_id = condition.get("step_id")
+            tolerance = float(condition["max_value"])
+            side = condition.get("side")
+            rows = _gripper_rows(report, step_id, side)
+            errors = [abs(float(row.get("final_position", np.inf)) - float(condition["expected_position"])) for row in rows]
+            passed = bool(rows) and len(errors) == len(rows) and max(errors, default=np.inf) <= tolerance
+            checks.append(
+                {
+                    "condition": condition,
+                    "passed": passed,
+                    "observed_errors": errors,
+                }
+            )
+        elif kind == "gripper_state":
+            step_id = condition.get("step_id")
+            side = condition.get("side")
+            expected = condition.get("state")
+            rows = _gripper_rows(report, step_id, side)
+            states = [row.get("state") for row in rows]
+            passed = bool(rows) and all(state == expected for state in states)
+            checks.append({"condition": condition, "passed": passed, "observed_states": states})
+        elif kind == "gripper_command_complete":
+            step_id = condition.get("step_id")
+            rows = [item for item in report.get("steps", []) if item.get("step_id") == step_id]
+            passed = bool(rows) and all(item.get("status") == "complete" for item in rows)
+            checks.append({"condition": condition, "passed": passed})
+        elif kind == "grasp_verified":
+            step_id = condition.get("step_id")
+            side = condition.get("side")
+            rows = _gripper_rows(report, step_id, side)
+            passed = bool(rows) and all(bool(row.get("grasp_verified")) for row in rows)
+            checks.append({"condition": condition, "passed": passed, "observed_values": rows})
         else:
             checks.append({"condition": condition, "passed": False, "reason": "unsupported condition"})
     success = report.get("status") == "complete" and bool(checks) and all(item["passed"] for item in checks)
@@ -84,6 +117,18 @@ def evaluate_execution(report: dict[str, Any], plan: Any) -> dict[str, Any]:
         },
         "llm_self_assessment_used": False,
     }
+
+
+def _gripper_rows(report: dict[str, Any], step_id: Any, side: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for step in report.get("steps", []):
+        if step_id is not None and step.get("step_id") != step_id:
+            continue
+        result = step.get("result", {})
+        for row in result.get("results", []):
+            if side is None or row.get("side") == side:
+                rows.append(row)
+    return rows
 
 
 def build_replan_context(

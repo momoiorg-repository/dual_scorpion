@@ -95,6 +95,7 @@ class ArmState:
     timestamp_monotonic_ns: int
     command_error_deg: float | None = None
     gripper_state: str = "not_integrated"
+    gripper_position: float | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ArmState:
@@ -130,6 +131,7 @@ class ArmState:
             timestamp_monotonic_ns=int(value.get("timestamp_monotonic_ns", 0)),
             command_error_deg=None if command_error is None else float(command_error),
             gripper_state=str(value.get("gripper_state", "not_integrated")),
+            gripper_position=_optional_float(value.get("gripper_position"), "gripper_position"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -146,6 +148,7 @@ class ArmState:
             "timestamp_monotonic_ns": self.timestamp_monotonic_ns,
             "command_error_deg": self.command_error_deg,
             "gripper_state": self.gripper_state,
+            "gripper_position": self.gripper_position,
         }
 
 
@@ -214,4 +217,13 @@ def _optional_vector(value: Any, size: int, label: str) -> np.ndarray | None:
     result = np.asarray(value, dtype=float)
     if result.shape != (size,) or not np.isfinite(result).all():
         raise ValueError(f"{label} must contain {size} finite numbers")
+    return result
+
+
+def _optional_float(value: Any, label: str) -> float | None:
+    if value is None:
+        return None
+    result = float(value)
+    if not np.isfinite(result):
+        raise ValueError(f"{label} must be finite")
     return result

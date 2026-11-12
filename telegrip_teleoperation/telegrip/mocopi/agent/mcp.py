@@ -83,6 +83,16 @@ class ScorpionMcpServer:
                 {"type": "object", "properties": {}, "additionalProperties": False},
             ),
             _tool(
+                "read_gripper_state",
+                "Read the calibrated normalized position, state, load, and current of one gripper.",
+                {
+                    "type": "object",
+                    "properties": {"arm": {"type": "string", "enum": ["left", "right"]}},
+                    "required": ["arm"],
+                    "additionalProperties": False,
+                },
+            ),
+            _tool(
                 "list_skills",
                 "List Robot Skills, contracts, hardware requirements, and implementation status.",
                 {"type": "object", "properties": {}, "additionalProperties": False},
@@ -147,6 +157,38 @@ class ScorpionMcpServer:
                 },
             ),
             _tool(
+                "control_gripper",
+                "Open, close, set, hold, release, or attempt a generic monitored grasp on one or both grippers. Requires operator authorization.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["open", "close", "set_position", "hold", "release", "grasp"],
+                        },
+                        "arms": {"type": "string", "enum": ["left", "right", "both"]},
+                        "position": {"type": "number", "minimum": 0, "maximum": 100},
+                        "authorization_token": {"type": "string"},
+                    },
+                    "required": ["action", "arms", "authorization_token"],
+                    "additionalProperties": False,
+                },
+            ),
+            _tool(
+                "execute_task_plan",
+                "Execute a validated task plan in dependency order, combining arm motion and gripper skills. Requires operator authorization.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "plan_id": {"type": "string"},
+                        "authorization_token": {"type": "string"},
+                        "capture_before_after": {"type": "boolean"},
+                    },
+                    "required": ["plan_id", "authorization_token"],
+                    "additionalProperties": False,
+                },
+            ),
+            _tool(
                 "stop_motion",
                 "Set the local stop event for the active execution job.",
                 {"type": "object", "properties": {}, "additionalProperties": False},
@@ -180,6 +222,8 @@ class ScorpionMcpServer:
             return _structured(self.harness.connect_robot(arguments["authorization_token"]))
         if name == "get_world_state":
             return _structured(self.harness.world_state().to_dict())
+        if name == "read_gripper_state":
+            return _structured(self.harness.read_gripper_state(arguments["arm"]))
         if name == "list_skills":
             return _structured({"skills": self.harness.registry.specs()})
         if name == "capture_images":
@@ -208,6 +252,23 @@ class ScorpionMcpServer:
             return _structured(
                 self.harness.execute_motion(
                     arguments["motion_plan_id"],
+                    arguments["authorization_token"],
+                    capture_before_after=arguments.get("capture_before_after", False),
+                )
+            )
+        if name == "control_gripper":
+            return _structured(
+                self.harness.control_gripper(
+                    action=arguments["action"],
+                    arms=arguments["arms"],
+                    position=arguments.get("position"),
+                    authorization_token=arguments["authorization_token"],
+                )
+            )
+        if name == "execute_task_plan":
+            return _structured(
+                self.harness.execute_task_plan(
+                    arguments["plan_id"],
                     arguments["authorization_token"],
                     capture_before_after=arguments.get("capture_before_after", False),
                 )

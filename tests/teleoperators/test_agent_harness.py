@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,11 +15,15 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 from telegrip.mocopi.agent.cameras import CameraService
-from telegrip.mocopi.agent.config import CameraSpec, HarnessConfig
+from telegrip.mocopi.agent.config import CameraSpec, GripperSpec, HarnessConfig
 from telegrip.mocopi.agent.harness import ScorpionAgentHarness
 from telegrip.mocopi.agent.mcp import ScorpionMcpServer
 from telegrip.mocopi.agent.motion import KinematicsService
-from telegrip.mocopi.agent.robot import load_calibration_document, validate_calibration_document
+from telegrip.mocopi.agent.robot import (
+    RealRobotAdapter,
+    load_calibration_document,
+    validate_calibration_document,
+)
 from telegrip.mocopi.agent.safety import AuthorizationManager
 from telegrip.mocopi.agent.scene import SceneGeometry
 from telegrip.mocopi.agent.schema import PLAN_SCHEMA_ID
@@ -144,6 +149,138 @@ class FakeRobot:
         }
 
 
+class FakeGripperBus:
+    def __init__(
+        self,
+        initial_position: float = 0.0,
+        *,
+        stall_position: float | None = None,
+        load: float = 0.0,
+        current: float = 0.0,
+        fail_reads: bool = False,
+    ):
+        from lerobot.motors import MotorCalibration, MotorNormMode
+
+        self.is_connected = True
+        self.is_calibrated = True
+        self.position = float(initial_position)
+        self.stall_position = stall_position
+        self.load = load
+        self.current = current
+        self.fail_reads = fail_reads
+        self.commands = []
+        self.enabled = []
+        self.active_writes = 0
+        self.max_active_writes = 0
+        self.calibration = {
+            **{joint: MotorCalibration(index + 1, 0, 0, 0, 4095) for index, joint in enumerate(JOINTS)},
+            "gripper": MotorCalibration(8, 0, 0, 0, 4095),
+        }
+        self.motors = {
+            **{joint: SimpleNamespace(model="sts3215") for joint in JOINTS},
+            "gripper": SimpleNamespace(model="sts3215", norm_mode=MotorNormMode.RANGE_0_100),
+        }
+
+    def sync_read(self, data_name, motors=None, normalize=True):
+        if self.fail_reads:
+            raise ConnectionError("fake gripper bus disconnected")
+        if data_name == "Present_Position":
+            return {"gripper": self.position}
+        if data_name == "Present_Load":
+            return {"gripper": self.load}
+        if data_name == "Present_Current":
+            return {"gripper": self.current}
+        raise KeyError(data_name)
+
+    def sync_write(self, data_name, values, normalize=True):
+        if data_name != "Goal_Position":
+            raise KeyError(data_name)
+        target = float(values["gripper"])
+        self.active_writes += 1
+        self.max_active_writes = max(self.max_active_writes, self.active_writes)
+        time.sleep(0.01)
+        self.commands.append(target)
+        if (
+            self.stall_position is not None
+            and ((target > self.position and self.stall_position <= target)
+                 or (target < self.position and self.stall_position >= target))
+        ):
+            self.position = float(self.stall_position)
+        else:
+            self.position = target
+        self.active_writes -= 1
+
+    def enable_torque(self, motors):
+        self.enabled.extend(motors)
+
+    def disconnect(self, disable_torque=True):
+        self.is_connected = False
+
+
+class FakeGripperFollower:
+    def __init__(self, left: FakeGripperBus, right: FakeGripperBus):
+        self.left_bus = left
+        self.right_bus = right
+        self.is_calibrated = True
+
+    @property
+    def is_connected(self):
+        return self.left_bus.is_connected and self.right_bus.is_connected
+
+    def get_observation(self):
+        result = {
+            f"{side}_{joint}.pos": 0.0
+            for side in ("left", "right")
+            for joint in JOINTS
+        }
+        result["left_gripper.pos"] = self.left_bus.position
+        result["right_gripper.pos"] = self.right_bus.position
+        return result
+
+
+class FakeCombinedRobot(FakeRobot):
+    def __init__(self, gripper: GripperSpec | None = None):
+        super().__init__()
+        self.adapter = RealRobotAdapter(
+            left_port="/dev/null",
+            right_port="/dev/null",
+            robot_id="fake",
+            gripper=gripper or GripperSpec(max_step=50.0, settle_s=0.001, grasp_timeout_s=0.2),
+            follower=FakeGripperFollower(FakeGripperBus(0.0), FakeGripperBus(10.0)),
+        )
+
+    def read(self):
+        reading = self.adapter.read()
+        return SimpleNamespace(
+            connected=True,
+            calibrated=True,
+            joints_deg=reading.joints_deg,
+            timestamp_monotonic_ns=reading.timestamp_monotonic_ns,
+            gripper_positions=reading.gripper_positions,
+        )
+
+    def read_gripper_state(self, side):
+        return self.adapter.read_gripper_state(side)
+
+    def open_gripper(self, side, *, stop_event=None):
+        return self.adapter.open_gripper(side, stop_event=stop_event)
+
+    def close_gripper(self, side, *, stop_event=None):
+        return self.adapter.close_gripper(side, stop_event=stop_event)
+
+    def set_gripper_position(self, side, position, *, stop_event=None):
+        return self.adapter.set_gripper_position(side, position, stop_event=stop_event)
+
+    def hold_gripper(self, side, *, stop_event=None):
+        return self.adapter.hold_gripper(side, stop_event=stop_event)
+
+    def release_gripper(self, side, *, stop_event=None):
+        return self.adapter.release_gripper(side, stop_event=stop_event)
+
+    def grasp(self, side, *, stop_event=None):
+        return self.adapter.grasp(side, stop_event=stop_event)
+
+
 class FakeCamera:
     def read(self):
         image = np.zeros((4, 6, 3), dtype=np.uint8)
@@ -162,6 +299,7 @@ def _harness(tmp_path: Path, *, robot: Any | None = None) -> ScorpionAgentHarnes
         max_feedback_age_s=0.5,
         max_plan_frames=240,
         execution_report_dir=tmp_path / "reports",
+        gripper=GripperSpec(max_step=50.0, settle_s=0.001, grasp_timeout_s=0.2),
     )
     return ScorpionAgentHarness(
         config,
@@ -181,8 +319,7 @@ def test_plan_schema_rejects_direct_motor_commands_and_unavailable_skills(tmp_pa
 
     unavailable = _plan()
     unavailable["steps"][0]["parameters"] = {}
-    unavailable["steps"][0]["skill"] = "set_gripper"
-    unavailable["steps"][0]["parameters"] = {"arm": "left", "closed": True}
+    unavailable["steps"][0]["skill"] = "not_a_real_skill"
     result = harness.submit_task_plan(unavailable)
     assert result["status"] == "rejected"
     assert any("unavailable skill" in error for error in result["errors"])
@@ -490,16 +627,28 @@ def test_agent_skill_structure_and_references_exist():
     assert "description:" in text
     assert (skill_root / "references" / "mcp-tools.md").is_file()
     assert (skill_root / "references" / "safety.md").is_file()
-    for tool_name in ("get_status", "capture_images", "submit_task_plan", "execute_motion", "stop_motion"):
+    for tool_name in (
+        "get_status",
+        "capture_images",
+        "submit_task_plan",
+        "execute_motion",
+        "read_gripper_state",
+        "control_gripper",
+        "execute_task_plan",
+        "stop_motion",
+    ):
         assert tool_name in (skill_root / "references" / "mcp-tools.md").read_text(encoding="utf-8")
-    assert "unavailable" in text
+    assert "unverified" in text
 
 
 def test_example_agent_config_resolves_paths_without_hardcoding_devices():
     root = Path(__file__).parents[2]
     config = HarnessConfig.from_file(root / "config" / "mocopi" / "agent.example.yaml")
     assert config.robot_config_path == (root / "config" / "mocopi" / "tracking.yaml").resolve()
-    assert [camera.camera_id for camera in config.cameras] == ["head", "left_wrist", "right_wrist"]
+    assert [camera.camera_id for camera in config.cameras] == ["camera"]
+    assert config.cameras[0].device == "/dev/video2"
+    assert config.gripper.open_position == 0.0
+    assert config.gripper.closed_position == 45.0
     assert all(camera.device for camera in config.cameras)
     assert config.authorization_token_file is not None
     assert config.robot is not None
@@ -561,6 +710,40 @@ def test_lerobot_calibration_file_is_validated_without_recalibration(tmp_path):
     )
     assert invalid_direction["status"] == "invalid"
     assert any("drive_mode" in error for error in invalid_direction["errors"])
+
+    broken_gripper = dict(document)
+    broken_gripper["left_gripper"] = asdict(broken_gripper["left_gripper"])
+    broken_gripper["left_gripper"]["id"] = 9
+    invalid_gripper_id = validate_calibration_document(
+        broken_gripper,
+        robot_id="test_dual_scorpion",
+        path=calibration_path,
+    )
+    assert invalid_gripper_id["status"] == "invalid"
+    assert any("left_gripper motor ID 9" in error for error in invalid_gripper_id["errors"])
+
+    broken_gripper["left_gripper"] = dict(broken_gripper["left_gripper"], id=8, range_min=4000, range_max=100)
+    invalid_gripper_range = validate_calibration_document(
+        broken_gripper,
+        robot_id="test_dual_scorpion",
+        path=calibration_path,
+    )
+    assert invalid_gripper_range["status"] == "invalid"
+    assert any("left_gripper calibrated range is invalid" in error for error in invalid_gripper_range["errors"])
+
+    broken_gripper["left_gripper"] = dict(
+        broken_gripper["left_gripper"],
+        range_min=0,
+        range_max=4095,
+        drive_mode=3,
+    )
+    invalid_gripper_direction = validate_calibration_document(
+        broken_gripper,
+        robot_id="test_dual_scorpion",
+        path=calibration_path,
+    )
+    assert invalid_gripper_direction["status"] == "invalid"
+    assert any("left_gripper drive_mode" in error for error in invalid_gripper_direction["errors"])
 
 
 def test_harness_constructs_real_adapter_and_reports_calibration_without_connecting(tmp_path):
@@ -629,6 +812,238 @@ def test_connect_reads_current_encoders_and_never_homes_or_commands_motors(tmp_p
     assert result["joints_deg"]["left"] == [1.0] * 7
     assert result["joints_deg"]["right"] == [-1.0] * 7
     assert robot.actions == []
+
+
+def test_gripper_open_close_set_hold_release_and_read_state(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(tmp_path, robot=robot)
+
+    opened = harness.control_gripper(
+        action="open",
+        arms="left",
+        authorization_token="operator-token",
+    )
+    assert opened["status"] == "complete"
+    assert opened["results"][0]["final_position"] == pytest.approx(0.0)
+
+    closed = harness.control_gripper(
+        action="close",
+        arms="right",
+        authorization_token="operator-token",
+    )
+    assert closed["status"] == "complete"
+    assert closed["results"][0]["final_position"] == pytest.approx(45.0)
+
+    set_result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=25.0,
+        authorization_token="operator-token",
+    )
+    assert set_result["results"][0]["final_position"] == pytest.approx(25.0)
+
+    hold_result = harness.control_gripper(
+        action="hold",
+        arms="left",
+        authorization_token="operator-token",
+    )
+    assert hold_result["results"][0]["final_position"] == pytest.approx(25.0)
+
+    release_result = harness.control_gripper(
+        action="release",
+        arms="right",
+        authorization_token="operator-token",
+    )
+    assert release_result["results"][0]["final_position"] == pytest.approx(0.0)
+
+    left_state = harness.read_gripper_state("left")
+    right_state = harness.read_gripper_state("right")
+    assert left_state["position"] == pytest.approx(25.0)
+    assert left_state["state"] == "intermediate"
+    assert right_state["position"] == pytest.approx(0.0)
+    assert right_state["state"] == "open"
+    assert left_state["calibration"]["id"] == 8
+    assert left_state["calibration"]["normalization"] == "range_0_100"
+    assert robot.adapter.follower.left_bus.commands
+    assert robot.adapter.follower.right_bus.commands
+
+
+def test_gripper_rejects_out_of_range_and_operates_left_right_independently(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(tmp_path, robot=robot)
+    with pytest.raises(ValueError, match="outside"):
+        harness.control_gripper(
+            action="set_position",
+            arms="left",
+            position=101.0,
+            authorization_token="operator-token",
+        )
+
+    result = harness.control_gripper(
+        action="set_position",
+        arms="both",
+        position=20.0,
+        authorization_token="operator-token",
+    )
+    assert result["status"] == "complete"
+    assert robot.adapter.follower.left_bus.position == pytest.approx(20.0)
+    assert robot.adapter.follower.right_bus.position == pytest.approx(20.0)
+    assert robot.adapter.follower.left_bus.commands == [20.0]
+    assert robot.adapter.follower.right_bus.commands == [20.0]
+
+
+def test_gripper_stop_and_communication_errors_are_reported(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(tmp_path, robot=robot)
+    harness.safety.request_stop()
+    stopped = harness.control_gripper(
+        action="close",
+        arms="both",
+        authorization_token="operator-token",
+    )
+    assert stopped["status"] == "stopped"
+    assert robot.adapter.follower.left_bus.commands == []
+    assert robot.adapter.follower.right_bus.commands == []
+    harness.safety.clear_stop()
+
+    robot.adapter.follower.left_bus.fail_reads = True
+    with pytest.raises(ConnectionError, match="fake gripper bus disconnected"):
+        harness.control_gripper(
+            action="close",
+            arms="left",
+            authorization_token="operator-token",
+        )
+
+
+def test_grasp_is_unverified_without_threshold_evidence(tmp_path):
+    robot = FakeCombinedRobot()
+    robot.adapter.follower.left_bus.stall_position = 30.0
+    robot.adapter.follower.left_bus.load = 100.0
+    robot.adapter.follower.left_bus.current = 100.0
+    harness = _harness(tmp_path, robot=robot)
+    result = harness.control_gripper(
+        action="grasp",
+        arms="left",
+        authorization_token="operator-token",
+    )
+    row = result["results"][0]
+    assert row["position_reached"] is False
+    assert row["grasp_verified"] is False
+    assert row["grasp_state"] == "unverified"
+    assert row["verification_basis"] == ["encoder_position_only"]
+
+
+def test_grasp_can_use_configured_load_and_current_threshold_evidence(tmp_path):
+    spec = GripperSpec(
+        open_position=0.0,
+        closed_position=45.0,
+        position_tolerance=2.0,
+        max_step=50.0,
+        settle_s=0.001,
+        grasp_timeout_s=0.2,
+        load_threshold=10.0,
+        current_threshold=10.0,
+    )
+    robot = FakeCombinedRobot(spec)
+    robot.adapter.follower.left_bus.stall_position = 30.0
+    robot.adapter.follower.left_bus.load = 100.0
+    robot.adapter.follower.left_bus.current = 100.0
+    harness = _harness(tmp_path, robot=robot)
+    result = harness.control_gripper(
+        action="grasp",
+        arms="left",
+        authorization_token="operator-token",
+    )
+    row = result["results"][0]
+    assert row["position_reached"] is False
+    assert row["grasp_verified"] is True
+    assert row["grasp_state"] == "threshold_verified"
+    assert "configured_present_load_threshold" in row["verification_basis"]
+
+
+def test_concurrent_gripper_commands_are_serialized_by_the_shared_bus_lock(tmp_path):
+    robot = FakeCombinedRobot()
+    adapter = robot.adapter
+    threads = [
+        threading.Thread(target=adapter.set_gripper_position, args=("left", 20.0)),
+        threading.Thread(target=adapter.set_gripper_position, args=("left", 40.0)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+    assert adapter.follower.left_bus.max_active_writes == 1
+    assert adapter.follower.left_bus.position in {20.0, 40.0}
+
+
+def test_task_plan_combines_arm_motion_and_gripper_with_dependencies(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(tmp_path, robot=robot)
+    plan = _plan()
+    plan["steps"] = [
+        plan["steps"][0],
+        {
+            "id": "close_left",
+            "skill": "set_gripper",
+            "arms": "left",
+            "depends_on": ["move"],
+            "parameters": {"action": "close"},
+        },
+    ]
+    plan["success_conditions"] = [
+        {"type": "gripper_command_complete", "step_id": "close_left"},
+    ]
+    submitted = harness.submit_task_plan(plan)
+    assert submitted["status"] == "valid"
+
+    execution = harness.execute_task_plan(
+        submitted["plan_id"],
+        "operator-token",
+    )
+    job = harness.jobs[execution["execution_id"]]
+    job.thread.join(timeout=3)
+    report = harness.execution_report(execution["execution_id"])
+    assert report["status"] == "complete"
+    assert [step["step_id"] for step in report["report"]["steps"]] == ["move", "close_left"]
+    assert all(step["status"] == "complete" for step in report["report"]["steps"])
+    assert robot.adapter.follower.left_bus.position == pytest.approx(45.0)
+
+
+def test_mcp_exposes_gripper_state_and_control_tools(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(tmp_path, robot=robot)
+    server = ScorpionMcpServer(harness)
+    listed = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    names = {tool["name"] for tool in listed["result"]["tools"]}
+    assert {"read_gripper_state", "control_gripper", "execute_task_plan"} <= names
+
+    state = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "read_gripper_state", "arguments": {"arm": "left"}},
+        }
+    )
+    assert state["result"]["structuredContent"]["position"] == pytest.approx(0.0)
+
+    controlled = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "control_gripper",
+                "arguments": {
+                    "action": "close",
+                    "arms": "left",
+                    "authorization_token": "operator-token",
+                },
+            },
+        }
+    )
+    assert controlled["result"]["structuredContent"]["status"] == "complete"
+    assert robot.adapter.follower.left_bus.position == pytest.approx(45.0)
 
 
 def test_execution_job_can_capture_before_and_after_images(tmp_path):

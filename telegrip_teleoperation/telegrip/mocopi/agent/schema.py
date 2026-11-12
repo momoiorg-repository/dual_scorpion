@@ -23,6 +23,13 @@ FORBIDDEN_PARAMETER_KEYS = {
     "gripper_command",
     "gripper_deg",
 }
+GRIPPER_SKILLS = {
+    "set_gripper",
+    "read_gripper_state",
+    "hold_gripper",
+    "release_gripper",
+    "grasp",
+}
 
 
 class PlanValidationError(ValueError):
@@ -200,14 +207,41 @@ def validate_task_plan(
             vector = np.asarray(step.parameters["relative_position_m"], dtype=float)
             if vector.shape != (3,) or not np.isfinite(vector).all() or np.linalg.norm(vector) > 0.35:
                 errors.append(f"step {step.id!r} relative_position_m is invalid or exceeds 0.35 m")
+        if step.skill in GRIPPER_SKILLS:
+            errors.extend(_validate_gripper_step(step))
     for condition in plan.success_conditions:
         kind = condition.get("type")
-        if kind not in {"tcp_position_error", "joint_tracking_error", "operator_confirmation", "no_stop"}:
+        if kind not in {
+            "tcp_position_error",
+            "joint_tracking_error",
+            "operator_confirmation",
+            "no_stop",
+            "gripper_position",
+            "gripper_state",
+            "gripper_command_complete",
+            "grasp_verified",
+        }:
             errors.append(f"unknown success condition type {kind!r}")
-        if kind in {"tcp_position_error", "joint_tracking_error"}:
+        if kind in {"tcp_position_error", "joint_tracking_error", "gripper_position"}:
             tolerance = condition.get("max_value")
             if not _positive_finite(tolerance):
                 errors.append(f"success condition {kind!r} requires positive max_value")
+    return errors
+
+
+def _validate_gripper_step(step: PlanStep) -> list[str]:
+    errors: list[str] = []
+    if step.skill == "set_gripper":
+        action = step.parameters.get("action")
+        if action not in {"open", "close", "set_position"}:
+            errors.append(f"step {step.id!r} set_gripper action must be open, close, or set_position")
+        if action == "set_position":
+            position = step.parameters.get("position")
+            if not isinstance(position, (int, float)) or isinstance(position, bool) or not 0 <= position <= 100:
+                errors.append(f"step {step.id!r} set_position requires position in [0, 100]")
+    elif step.skill in {"read_gripper_state", "hold_gripper", "release_gripper", "grasp"}:
+        if step.parameters:
+            errors.append(f"step {step.id!r} {step.skill} does not accept parameters")
     return errors
 
 

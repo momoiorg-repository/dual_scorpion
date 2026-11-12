@@ -5,9 +5,8 @@ robot_config: tracking.yaml
 # robots/dual_scorpion_follower/<robot.id>.json lookup; no values are rewritten.
 robot:
   id: dual_scorpion_follower_2026_1026
-  # Replace both paths with stable /dev/serial/by-id device paths.
-  left_port: /dev/serial/by-id/EDIT_ME_LEFT
-  right_port: /dev/serial/by-id/EDIT_ME_RIGHT
+  left_port: /dev/ttyACM1
+  right_port: /dev/ttyACM0
   max_step_deg: 0.5
   # Omit calibration_dir to use LeRobot's standard calibration root. Set it
   # only when the robot host uses a different calibrated robot ID.
@@ -16,27 +15,29 @@ robot:
 # Replace the device IDs on the machine that runs the robot. They are examples
 # only and are not inferred from the connected hardware.
 cameras:
-  - id: head
-    device: /dev/video0
-    width: 640
-    height: 480
-    fps: 30
-    fourcc: MJPG
-    coordinate_frame: head_camera_uncalibrated
-  - id: left_wrist
+  - id: camera
     device: /dev/video2
     width: 640
     height: 480
     fps: 30
     fourcc: MJPG
-    coordinate_frame: left_wrist_camera_uncalibrated
-  - id: right_wrist
-    device: /dev/video4
-    width: 640
-    height: 480
-    fps: 30
-    fourcc: MJPG
-    coordinate_frame: right_wrist_uncalibrated
+    coordinate_frame: camera_uncalibrated
+
+# Existing teleoperation gripper semantics, expressed in LeRobot's
+# RANGE_0_100 normalized units. These are reused, not recalibrated.
+gripper:
+  open_position: 0.0
+  closed_position: 45.0
+  min_position: 0.0
+  max_position: 100.0
+  position_tolerance: 2.0
+  # Conservative software slew limit; physical response is not yet verified.
+  max_step: 2.0
+  settle_s: 0.02
+  grasp_timeout_s: 2.0
+  # Optional raw Feetech thresholds. Leave unset unless measured for this robot.
+  load_threshold: null
+  current_threshold: null
 
 # The operator creates this file outside Git and supplies its value to the MCP
 # tool only when motion is intentionally enabled. The LLM cannot discover it.
