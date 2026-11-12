@@ -177,7 +177,7 @@ def load_joint_episode(dataset_path, episode=0):
     frames.append(
         JointFrame(
             plan_frame=frames[-1].plan_frame + 1,
-            source_frame=None,
+            source_frame=(frames[-1].source_frame + 1 if frames[-1].source_frame is not None else None),
             time_s=frames[-1].time_s + 1.0 / float(dataset.fps),
             joints=final_joints,
             target_pose=dict.fromkeys(JOINT_SIDES),
@@ -648,7 +648,7 @@ def execute_joint_episode(
                     f"{side} robot start pose differs from the mapped dataset first frame by more than "
                     f"{max_start_error_deg:g} degrees"
                 )
-        robot.send_action(_actions(current))
+        initial_sent = robot.send_action(_actions(current))
         active = True
         for side in SIDES:
             getattr(robot, side + "_bus").enable_torque(list(JOINTS))
@@ -656,6 +656,55 @@ def execute_joint_episode(
         start_time = time.monotonic()
         next_tick = start_time
         previous_sent = {side: current[side].copy() for side in SIDES}
+        initial_frame = episode.frames[0]
+        initial_sent_motor = {
+            side: np.array([initial_sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
+            for side in SIDES
+        }
+        initial_measured_model = {side: unmap_joints(document, side, current[side]) for side in SIDES}
+        initial_sample = {
+            "plan_frame": initial_frame.plan_frame,
+            "source_frame": initial_frame.source_frame,
+            "source_time_s": initial_frame.time_s,
+            "elapsed_s": 0.0,
+            "control_steps": 0,
+            "segment_duration_s": 0.0,
+            "requested_duration_s": 1.0 / episode.fps,
+            "time_scale": 0.0,
+            "arms": {},
+        }
+        for side in SIDES:
+            target_pose = _target_pose_for_frame(simulation, initial_frame, side)
+            position, quaternion = simulation.arms[side].solver.fk_solver.compute(
+                np.r_[initial_measured_model[side], 0.0]
+            )
+            target = pose(target_pose[:3], target_pose[3:])
+            actual = pose(position, quaternion)
+            tcp_position_error = float(np.linalg.norm(position - target[:3, 3]))
+            tcp_orientation_error = float(
+                np.rad2deg(Rotation.from_matrix(target[:3, :3] @ actual[:3, :3].T).magnitude())
+            )
+            if tcp_position_error > max_sim_error_m:
+                tcp_warning_frames.append(0)
+            if (
+                max_sim_orientation_error_deg is not None
+                and tcp_orientation_error > max_sim_orientation_error_deg
+            ):
+                tcp_orientation_warning_frames.append(0)
+            initial_sample["arms"][side] = {
+                "planned_model_joint_deg": initial_frame.joints[side].tolist(),
+                "mapped_motor_joint_deg": map_joints(document, side, initial_frame.joints[side]).tolist(),
+                "sent_motor_joint_deg": initial_sent_motor[side].tolist(),
+                "measured_motor_joint_deg": current[side].tolist(),
+                "measured_model_joint_deg": initial_measured_model[side].tolist(),
+                "max_joint_error_deg": float(
+                    np.max(np.abs(map_joints(document, side, initial_frame.joints[side]) - current[side]))
+                ),
+                "tcp_position_error_m": tcp_position_error,
+                "tcp_orientation_error_deg": tcp_orientation_error,
+                "target_pose_source": "dataset",
+            }
+        report["frames"].append(initial_sample)
         for index in range(len(episode.frames) - 1):
             first_frame, following = episode.frames[index], episode.frames[index + 1]
             previous_motor = {side: map_joints(document, side, first_frame.joints[side]) for side in SIDES}

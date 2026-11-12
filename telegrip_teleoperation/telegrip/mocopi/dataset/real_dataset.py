@@ -6,8 +6,12 @@ from pathlib import Path
 
 import numpy as np
 
+from .fingerprint import dataset_fingerprint
 from .joint_dataset import JOINT_NAMES, JOINT_SIDES
 from .real import JOINTS, plan_hash
+
+HARDWARE_REPORT_SCHEMA = "dual_scorpion.mocopi.hardware_dataset_replay.v1"
+HARDWARE_FEEDBACK_SCHEMA = "dual_scorpion.mocopi.hardware_replay_feedback_dataset.v1"
 
 
 def _vector(sample, key):
@@ -15,6 +19,72 @@ def _vector(sample, key):
     if any(part.shape != (len(JOINTS),) or not np.isfinite(part).all() for part in parts):
         raise ValueError(f"Invalid {key} in robot feedback")
     return np.concatenate(parts)
+
+
+def _hardware_vector(sample, key):
+    parts = [np.asarray(sample["arms"][side][key], dtype=np.float32) for side in JOINT_SIDES]
+    if any(part.shape != (len(JOINTS),) or not np.isfinite(part).all() for part in parts):
+        raise ValueError(f"Invalid {key} in hardware replay feedback")
+    return np.concatenate(parts)
+
+
+def _hardware_dataset_frames(dataset, report):
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    metadata_path = Path(report["dataset"]) / "meta" / "mocopi_joint_dataset.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("model_kind") != "full_mujoco":
+        raise ValueError("Hardware replay feedback requires a full-CAD joint dataset")
+    if report.get("mujoco_model_sha256") != metadata.get("mujoco_model_sha256"):
+        raise ValueError("Hardware report model hash does not match the source dataset")
+    root = Path(report["dataset"]).resolve()
+    current_hash = dataset_fingerprint(root, "mocopi_joint_dataset.json")
+    if report.get("dataset_sha256") != current_hash:
+        raise ValueError("Hardware report source dataset hash does not match the current dataset")
+    source = LeRobotDataset(metadata["repo_id"], root=root, video_backend="pyav")
+    states = np.asarray(source.hf_dataset["observation.state"], dtype=float)
+    actions = np.asarray(source.hf_dataset["action"], dtype=float)
+    samples = []
+    previous_frame = -1
+    previous_elapsed = -1.0
+    for sample in report.get("frames", []):
+        plan_frame = sample.get("plan_frame")
+        source_frame = sample.get("source_frame")
+        elapsed = sample.get("elapsed_s")
+        if (
+            isinstance(plan_frame, bool)
+            or not isinstance(plan_frame, int)
+            or plan_frame != previous_frame + 1
+            or isinstance(source_frame, bool)
+            or not isinstance(source_frame, int)
+            or source_frame < 0
+            or isinstance(elapsed, bool)
+            or not isinstance(elapsed, (int, float))
+            or not np.isfinite(elapsed)
+            or elapsed < 0
+            or elapsed <= previous_elapsed
+        ):
+            raise ValueError(
+                "Hardware replay frames must have contiguous plan frames and increasing elapsed times"
+            )
+        previous_frame, previous_elapsed = plan_frame, elapsed
+        sample = dict(sample)
+        sample["_planned"] = _hardware_vector(sample, "planned_model_joint_deg")
+        sample["_mapped"] = _hardware_vector(sample, "mapped_motor_joint_deg")
+        sample["_sent"] = _hardware_vector(sample, "sent_motor_joint_deg")
+        sample["_measured"] = _hardware_vector(sample, "measured_motor_joint_deg")
+        sample["_model_measured"] = _hardware_vector(sample, "measured_model_joint_deg")
+        expected = states[plan_frame] if plan_frame < len(states) else actions[-1]
+        if plan_frame > len(states):
+            raise ValueError("Hardware report references an unavailable source plan frame")
+        if not np.allclose(sample["_planned"], expected, atol=1e-4, rtol=0):
+            raise ValueError(f"Hardware report planned joints do not match dataset plan frame {plan_frame}")
+        samples.append(sample)
+    if len(samples) < 2:
+        raise ValueError("Hardware replay report needs at least two frames")
+    episode = int(report.get("episode", 0))
+    task = source.meta.episodes[episode]["tasks"][0]
+    return samples, int(source.fps), task
 
 
 def export_real_dataset(runs, output, repo_id):
@@ -218,6 +288,169 @@ def export_real_dataset(runs, output, repo_id):
     finally:
         destination.finalize()
     (root / "meta" / "mocopi_real_feedback_dataset.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
+def export_hardware_replay_dataset(runs, output, repo_id):
+    """Convert full-CAD hardware replay reports without collapsing their spaces.
+
+    ``observation.state`` is the encoder measurement in calibrated motor
+    degrees.  ``observation.model.measured_state`` is that measurement mapped
+    back through the verified hardware mapping.  Planned model joints, mapped
+    motor targets, and actually sent motor commands remain separate features.
+    """
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    if not runs or not repo_id.strip():
+        raise ValueError("At least one dataset/report pair and a nonempty repo_id are required")
+    root = Path(output).resolve()
+    if root.exists():
+        raise FileExistsError(f"Dataset output already exists: {root}")
+    validated, fps_values, model_hashes, dataset_hashes = [], set(), [], []
+    for dataset_path, report_path in runs:
+        report_bytes = Path(report_path).read_bytes()
+        report = json.loads(report_bytes)
+        if (
+            report.get("schema") != HARDWARE_REPORT_SCHEMA
+            or report.get("gripper_commanded") is not False
+            or report.get("status") not in ("complete", "aborted")
+            or not isinstance(report.get("frames"), list)
+        ):
+            raise ValueError("Unsupported hardware replay report or unexpected gripper data")
+        report["dataset"] = str(Path(dataset_path).resolve())
+        samples, fps, task = _hardware_dataset_frames(dataset_path, report)
+        if len(samples) < 2:
+            raise ValueError("Hardware replay report needs at least two feedback frames")
+        if not (
+            isinstance(report.get("dataset_sha256"), str)
+            and report["dataset_sha256"]
+            and isinstance(report.get("mujoco_model_sha256"), str)
+            and report["mujoco_model_sha256"]
+        ):
+            raise ValueError("Hardware replay report must identify its dataset and model")
+        report_sha256 = hashlib.sha256(report_bytes).hexdigest()
+        validated.append((report, samples, task, report_sha256))
+        fps_values.add(fps)
+        model_hashes.append(report["mujoco_model_sha256"])
+        dataset_hashes.append(report["dataset_sha256"])
+    if len(fps_values) != 1 or len(set(model_hashes)) != 1 or len(set(dataset_hashes)) != 1:
+        raise ValueError("All hardware replay runs must use one dataset, model and FPS")
+    fps = fps_values.pop()
+    features = {
+        "observation.state": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "action": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "observation.planned.state": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "observation.planned.action": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "observation.commanded.state": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "observation.motor.target_state": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "observation.model.measured_state": {"dtype": "float32", "shape": (14,), "names": JOINT_NAMES},
+        "observation.execution.time": {
+            "dtype": "float64",
+            "shape": (4,),
+            "names": ["elapsed_s", "next_elapsed_s", "plan_time_s", "next_plan_time_s"],
+        },
+        "observation.execution.frame": {
+            "dtype": "int64",
+            "shape": (4,),
+            "names": ["plan_frame", "next_plan_frame", "source_frame", "next_source_frame"],
+        },
+        "observation.execution.control_steps": {
+            "dtype": "int64",
+            "shape": (2,),
+            "names": ["current_steps", "next_steps"],
+        },
+    }
+    destination = LeRobotDataset.create(
+        repo_id=repo_id,
+        fps=fps,
+        features=features,
+        root=root,
+        robot_type="dual_scorpion_replay_feedback_full_cad",
+        use_videos=False,
+    )
+    manifest = {
+        "schema": HARDWARE_FEEDBACK_SCHEMA,
+        "source_report_schema": HARDWARE_REPORT_SCHEMA,
+        "repo_id": repo_id,
+        "fps": fps,
+        "joint_names": JOINT_NAMES,
+        "joint_unit": "degree",
+        "state_semantics": "Measured encoder joints in calibrated motor degrees, after the command",
+        "planned_semantics": "Joint angles calculated by the existing IK plan; full-MuJoCo model space",
+        "commanded_semantics": "Motor command actually sent after the existing step clamp",
+        "action_semantics": "Next commanded motor joints, not the next encoder measurement",
+        "model_measured_semantics": "Measured motor joints mapped back to full-MuJoCo model space",
+        "time_semantics": "LeRobot timestamp is nominal; actual command/read times are in observation.execution.time",
+        "images_included": False,
+        "gripper_recorded": False,
+        "gripper_commanded": False,
+        "model_kind": "full_mujoco",
+        "mujoco_model_sha256": model_hashes[0],
+        "episodes": [],
+    }
+    try:
+        for report, samples, task, report_sha256 in validated:
+            for current, following in zip(samples, samples[1:], strict=False):
+                destination.add_frame(
+                    {
+                        "task": task,
+                        "observation.state": current["_measured"],
+                        "action": following["_sent"],
+                        "observation.planned.state": current["_planned"],
+                        "observation.planned.action": following["_planned"],
+                        "observation.commanded.state": current["_sent"],
+                        "observation.motor.target_state": current["_mapped"],
+                        "observation.model.measured_state": current["_model_measured"],
+                        "observation.execution.time": np.array(
+                            [
+                                current["elapsed_s"],
+                                following["elapsed_s"],
+                                current["source_time_s"],
+                                following["source_time_s"],
+                            ],
+                            dtype=np.float64,
+                        ),
+                        "observation.execution.frame": np.array(
+                            [
+                                current["plan_frame"],
+                                following["plan_frame"],
+                                current["source_frame"],
+                                following["source_frame"],
+                            ],
+                            dtype=np.int64,
+                        ),
+                        "observation.execution.control_steps": np.array(
+                            [current["control_steps"], following["control_steps"]], dtype=np.int64
+                        ),
+                    }
+                )
+            destination.save_episode()
+            intervals = np.diff([sample["elapsed_s"] for sample in samples])
+            manifest["episodes"].append(
+                {
+                    "source_episode": report.get("episode"),
+                    "dataset": report["dataset"],
+                    "dataset_sha256": report["dataset_sha256"],
+                    "report_sha256": report_sha256,
+                    "report_status": report["status"],
+                    "failure": report.get("failure"),
+                    "robot_id": report.get("robot_id"),
+                    "calibration_sha256": report.get("calibration_sha256"),
+                    "mapping": report.get("mapping"),
+                    "source_frames": report.get("source_frames"),
+                    "feedback_frames": len(samples) - 1,
+                    "mean_command_interval_s": float(np.mean(intervals)),
+                    "max_command_interval_s": float(np.max(intervals)),
+                    "observed_command_fps": float(1 / np.mean(intervals)),
+                    "time_scale": report.get("time_scale"),
+                    "control_steps": report.get("control_steps"),
+                }
+            )
+    finally:
+        destination.finalize()
+    (root / "meta" / "mocopi_hardware_replay_feedback_dataset.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
     return manifest

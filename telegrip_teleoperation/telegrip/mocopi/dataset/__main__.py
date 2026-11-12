@@ -226,7 +226,18 @@ def parser():
     replay_dataset.add_argument("--max-sim-orientation-error-deg", type=float)
     feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
     feedback.add_argument(
-        "--run", action="append", nargs=2, metavar=("PLAN", "REPORT"), required=True, help="Repeat per run"
+        "--run",
+        action="append",
+        nargs=2,
+        metavar=("PLAN", "REPORT"),
+        help="Legacy plan/report pair; repeat per run",
+    )
+    feedback.add_argument(
+        "--hardware-run",
+        action="append",
+        nargs=2,
+        metavar=("DATASET", "REPORT"),
+        help="Full-CAD dataset/hardware_dataset_replay report pair; repeat per run",
     )
     feedback.add_argument("--output", required=True, help="New local dataset folder")
     feedback.add_argument("--repo-id", required=True)
@@ -455,9 +466,18 @@ def main():
                 obstacles=args.obstacles,
             )
         elif args.command == "convert-real":
-            from .real_dataset import export_real_dataset
+            if args.hardware_run:
+                if args.run:
+                    raise ValueError("Use either --run or --hardware-run, not both")
+                from .real_dataset import export_hardware_replay_dataset
 
-            result = export_real_dataset(args.run, args.output, args.repo_id)
+                result = export_hardware_replay_dataset(args.hardware_run, args.output, args.repo_id)
+            else:
+                if not args.run:
+                    raise ValueError("convert-real requires --run or --hardware-run")
+                from .real_dataset import export_real_dataset
+
+                result = export_real_dataset(args.run, args.output, args.repo_id)
         elif args.command == "replay-real":
             from .real import replay_real
 

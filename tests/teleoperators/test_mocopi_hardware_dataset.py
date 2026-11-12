@@ -21,6 +21,7 @@ from telegrip.mocopi.dataset.hardware_dataset import (
     select_reference_frames,
     verify_dataset_mapping,
 )
+from telegrip.mocopi.dataset.real_dataset import export_hardware_replay_dataset
 from telegrip.mocopi.full_mujoco import full_model_path
 
 CONFIG = Path(__file__).resolve().parents[2] / "config/mocopi/tracking.yaml"
@@ -304,7 +305,7 @@ def test_execute_mapped_episode_uses_interpolation_and_never_commands_gripper(tm
         realtime=False,
     )
     assert report["status"] == "complete"
-    assert len(report["frames"]) == 2
+    assert len(report["frames"]) == 3
     assert report["gripper_commanded"] is False
     assert report["control_steps"] > 2
     assert all("gripper" not in key for command in robot.raw_commands for key in command)
@@ -400,3 +401,72 @@ def test_verify_dataset_mapping_reads_manual_poses_without_enabling_torque(tmp_p
         assert document["sides"][side]["sign"] == signs.tolist()
         np.testing.assert_allclose(document["sides"][side]["offset_deg"], offsets, atol=1e-9)
     assert not robot.left_bus.torque_enabled and not robot.right_bus.torque_enabled
+
+
+@pytest.mark.skipif(not LOCAL_DATASET.is_dir(), reason="local full-CAD joint dataset is not present")
+def test_hardware_report_converts_to_lerobot_with_separate_spaces(tmp_path):
+    pytest.importorskip("datasets")
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    episode = load_joint_episode(LOCAL_DATASET)
+    report = {
+        "schema": "dual_scorpion.mocopi.hardware_dataset_replay.v1",
+        "status": "complete",
+        "dataset": str(LOCAL_DATASET),
+        "dataset_sha256": episode.dataset_sha256,
+        "repo_id": episode.repo_id,
+        "episode": 0,
+        "robot_id": "robot-test",
+        "calibration_sha256": "calibration-test",
+        "mapping": "mapping-test",
+        "mujoco_model_sha256": episode.metadata["mujoco_model_sha256"],
+        "gripper_commanded": False,
+        "source_frames": len(episode.frames),
+        "control_steps": len(episode.frames) - 1,
+        "time_scale": 1.0,
+        "frames": [],
+    }
+    for index, frame in enumerate(episode.frames):
+        report["frames"].append(
+            {
+                "plan_frame": frame.plan_frame,
+                "source_frame": frame.source_frame,
+                "source_time_s": frame.time_s,
+                "elapsed_s": frame.time_s,
+                "control_steps": index,
+                "arms": {
+                    side: {
+                        "planned_model_joint_deg": frame.joints[side].tolist(),
+                        "mapped_motor_joint_deg": frame.joints[side].tolist(),
+                        "sent_motor_joint_deg": frame.joints[side].tolist(),
+                        "measured_motor_joint_deg": frame.joints[side].tolist(),
+                        "measured_model_joint_deg": frame.joints[side].tolist(),
+                        "max_joint_error_deg": 0.0,
+                        "tcp_position_error_m": 0.0,
+                        "tcp_orientation_error_deg": 0.0,
+                        "target_pose_source": "dataset",
+                    }
+                    for side in ("right", "left")
+                },
+            }
+        )
+    report_path = tmp_path / "hardware-report.json"
+    report_path.write_text(json.dumps(report))
+    output = tmp_path / "hardware-feedback"
+    manifest = export_hardware_replay_dataset(
+        [(LOCAL_DATASET, report_path)], output, "local/hardware-feedback-test"
+    )
+    assert manifest["schema"] == "dual_scorpion.mocopi.hardware_replay_feedback_dataset.v1"
+    assert manifest["source_report_schema"] == "dual_scorpion.mocopi.hardware_dataset_replay.v1"
+    assert manifest["state_semantics"].startswith("Measured encoder")
+    assert manifest["commanded_semantics"].startswith("Motor command")
+    dataset = LeRobotDataset("local/hardware-feedback-test", root=output)
+    assert len(dataset) == len(episode.frames) - 1
+    row = dataset[0]
+    assert row["observation.state"].shape == (14,)
+    assert row["observation.planned.state"].shape == (14,)
+    assert row["observation.commanded.state"].shape == (14,)
+    assert row["observation.motor.target_state"].shape == (14,)
+    assert row["observation.model.measured_state"].shape == (14,)
+    assert row["observation.execution.time"].shape == (4,)
+    assert row["observation.execution.frame"].shape == (4,)
