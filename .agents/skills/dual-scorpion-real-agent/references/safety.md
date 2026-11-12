@@ -3,12 +3,14 @@
 The harness enforces these rules locally:
 
 - The LLM cannot create, infer, or persist motion authorization.
-- The operator supplies a token through a local file outside Git. The MCP server loads it at startup.
-- No MCP tool accepts or exposes the token; JOUZU and Gemini never receive it.
+- The operator creates a one-shot local grant outside Git. It specifies operation, arms, actions, position range, plan ID where applicable, and expiry.
+- No MCP tool accepts or exposes a secret; JOUZU and Gemini never receive it.
+- The harness consumes and deletes the grant when a matching request is accepted. A failed request also consumes it.
 - `stop_motion` is always available and does not depend on model reasoning.
 - Motion is rejected unless the follower buses are connected and calibrated.
-- Motion is rejected unless the measured table, 45 cm support stick, scene-to-robot transform, and arm collision radius are present.
-- Motion is rejected if the current encoder pose or any trajectory frame contacts or violates the measured scene clearance.
+- Arm motion is rejected unless the measured table, 45 cm support stick, scene-to-robot transform, and arm collision radius are present.
+- Arm motion is rejected if the current encoder pose or any trajectory frame contacts or violates the measured scene clearance.
+- Gripper-only motion does not require the full 3D scene, but it requires a one-shot grant with explicit fingertip-clearance confirmation and a small configured position range.
 - Encoder feedback must be fresh and finite.
 - Generated trajectories are checked by FK, joint limits, calibrated motor limits, timing, and per-step continuity before execution.
 - Arm-only replay never commands the gripper. The separate gripper path uses the same calibrated LeRobot bus and a shared local lock.

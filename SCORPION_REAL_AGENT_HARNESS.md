@@ -270,6 +270,25 @@ Gripper commands:
 - report communication errors,
 - never command the gripper during arm-only trajectory replay.
 
+### Gripper-only scene requirement
+
+A gripper-only command does not move `joint0`–`joint6`, so it does not require the full measured table/stick scene. It still requires a local one-shot grant in which the operator explicitly confirms:
+
+```text
+fingertip_clearance_confirmed: true
+```
+
+The grant also limits:
+
+- the arm (`left` or `right`),
+- the allowed action,
+- the maximum normalized position change,
+- the expiration time.
+
+This permits a small, operator-confirmed fingertip motion test before the full scene has been measured. It does **not** weaken arm-motion safety: `move_arm_to_pose` and any task-plan step that moves arm joints still require the measured scene, scene-hash matching, and all collision checks.
+
+Before enabling torque, the gripper backend reads the present position, writes that same position as `Goal_Position`, enables torque, and reads the encoder again. If the gripper moves more than the configured tolerance during this initial hold, execution stops before the requested motion.
+
 ## MCP tools
 
 Start the local stdio server:
@@ -308,31 +327,91 @@ The server implements JSON-RPC `initialize`, `tools/list`, and `tools/call`. JOU
 | Tool | Purpose | Authorization |
 | --- | --- | --- |
 | `get_status` | robot, camera, safety, execution, and skill status | none |
-| `connect_robot` | connect both calibrated follower buses | local server pre-authorization |
+| `connect_robot` | connect both calibrated follower buses and read encoders | none |
 | `get_world_state` | current provenance-labelled state | none |
 | `list_skills` | skill contracts and implementation status | none |
 | `capture_images` | MCP image content and metadata | none |
 | `update_object_estimates` | semantic or validated object estimates | none |
 | `submit_task_plan` | validate and store a task plan | none |
 | `plan_motion` | generate and validate a joint trajectory | none |
-| `execute_motion` | start a real execution job; optionally capture before/after images | local server pre-authorization |
+| `execute_motion` | start a real arm-motion job; optionally capture before/after images | one-shot local arm grant |
 | `read_gripper_state` | read one gripper's calibrated position, load, and current | none |
-| `control_gripper` | open, close, set, hold, release, or attempt a generic monitored grasp | local server pre-authorization |
-| `execute_task_plan` | execute arm and gripper steps in dependency order | local server pre-authorization |
+| `control_gripper` | open, close, set, hold, release, or attempt a generic monitored grasp | one-shot local gripper grant |
+| `execute_task_plan` | execute arm and gripper steps in dependency order | one-shot local task-plan grant |
 | `stop_motion` | set the local stop event | none |
 | `get_execution_report` | execution metrics and failure state | none |
 | `get_replan_context` | failure, current state, and required observations | none |
 
-## Safety and authorization
+## Safety and one-shot operation grants
 
-1. The operator creates a token file outside Git, for example `/run/user/1000/scorpion-agent-motion.token`.
-2. The harness reads that path from its YAML config.
-3. The local MCP server loads the token at startup.
-4. No MCP tool accepts or returns the token. JOUZU and Gemini never see it.
-5. The LLM cannot create, infer, or persist the token.
-6. `stop_motion` is local and always available.
-7. Execution is rejected unless the buses are connected, calibration is valid, encoder feedback is fresh and finite, the measured table/stick scene is loaded, the current pose is clear, and the generated trajectory passes the existing validator.
-8. On stop, tracking error, limit violation, initial-hold movement, table/stick clearance violation, or communication failure, the execution loop holds the measured pose and disconnects without commanding the gripper.
+The old broad token file is no longer used. A local grant is now required for each motion request.
+
+1. The operator runs a local CLI command to create a grant at `operation_grants_file`.
+2. The grant specifies operation type, arms, actions, position range, plan ID where applicable, and expiration.
+3. A gripper grant also requires explicit fingertip-clearance confirmation.
+4. When a matching MCP request is accepted, the harness atomically consumes and deletes the grant.
+5. The same grant cannot be reused, even if the operation fails.
+6. No MCP tool accepts, returns, or can infer a secret.
+7. `connect_robot` only connects and reads encoders; it does not move motors and does not consume a motion grant.
+8. `stop_motion` is local and always available.
+9. Arm motion still requires:
+    - a matching arm or task-plan grant,
+    - valid calibration,
+    - fresh finite feedback,
+    - the measured table/stick scene,
+    - scene-hash matching,
+    - current-pose clearance,
+    - trajectory-wide clearance.
+10. Gripper-only motion requires a matching gripper grant, valid calibration, fresh feedback, range checks, and the initial hold check; it does not require the full 3D scene.
+
+### Create a limited left-gripper test grant
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.agent \
+  --config config/mocopi/agent.example.yaml authorize-gripper \
+  --arm left \
+  --action set_position \
+  --max-position-delta 1.0 \
+  --expires-in 300 \
+  --confirm-fingertip-clearance
+```
+
+This authorizes only:
+
+- operation: `gripper`,
+- arm: `left`,
+- action: `set_position`,
+- maximum movement: `1.0` normalized unit,
+- lifetime: 300 seconds,
+- one use.
+
+### Local end-to-end gripper test
+
+This command connects, reads the current encoder, moves the left gripper by the explicitly signed `--delta`, reads the result, and sets the local stop event. It consumes the one-shot grant.
+
+```bash
+uv run --no-sync --active python -m telegrip.mocopi.agent \
+  --config config/mocopi/agent.example.yaml gripper-test \
+  --arm left \
+  --delta 1.0
+```
+
+Use a negative delta only when you have visually confirmed the opposite direction is safe. The harness does not infer an open/close direction from the delta.
+
+### JOUZU/Gemini gripper-test sequence
+
+1. Start the local MCP server.
+2. Locally create the one-shot left-gripper grant shown above.
+3. In JOUZU, call `connect_robot`.
+4. Call `read_gripper_state` for `left`.
+5. Ask Gemini to issue `control_gripper` with:
+    - `action: set_position`,
+    - `arms: left`,
+    - `position: <current_position + 1.0>`.
+6. Call `read_gripper_state` again.
+7. Call `stop_motion`.
+
+The grant is consumed at step 5 and cannot be reused. If Gemini proposes a larger movement or the other arm, the local grant rejects it.
 
 Physical robot operation still requires the operator's physical safety procedure and explicit authorization. Software tests do not authorize or verify real motion.
 
@@ -345,7 +424,7 @@ The existing real execution path records:
 - TCP position and orientation error,
 - execution time and measured FPS,
 - stop, initial-hold motion, and failure state,
-- gripper command count (always zero in this harness),
+- gripper command count (zero for arm-only replay; explicitly reported for gripper operations),
 - model and URDF fingerprints.
 
 Evaluation uses only machine-checkable conditions. Semantic image success is not inferred from motor feedback; JOUZU/Gemini may inspect before/after images separately after execution.
