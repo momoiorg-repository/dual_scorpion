@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+from contextlib import suppress
 from pathlib import Path
 
 from ..config import camera_device, load_config
@@ -193,10 +194,29 @@ def parser():
     verify_map.add_argument("--episode", type=int, default=0)
     verify_map.add_argument("--output", required=True, help="New verified mapping YAML")
     verify_map.add_argument(
+        "--mode",
+        choices=["joint-wise", "poses"],
+        default="joint-wise",
+        help="joint-wise: one reference pose plus per-joint direction tests; "
+        "poses: legacy multi-pose least-squares fit",
+    )
+    verify_map.add_argument(
         "--reference-frame",
         type=int,
         action="append",
-        help="Episode frame to pose by hand; repeat at least three times; omit for five evenly spaced frames",
+        help="Reference frame; joint-wise requires exactly one explicit frame, poses repeats at least three",
+    )
+    verify_map.add_argument(
+        "--sign-test-deg",
+        type=float,
+        default=10.0,
+        help="Minimum manual movement for each joint-wise direction test (2..45)",
+    )
+    verify_map.add_argument(
+        "--max-other-joint-delta-deg",
+        type=float,
+        default=5.0,
+        help="Maximum unintended movement of the other joints during a joint-wise test",
     )
     verify_map.add_argument("--max-fit-residual-deg", type=float, default=3.0)
     verify_map.add_argument("--min-model-range-deg", type=float, default=5.0)
@@ -220,10 +240,46 @@ def parser():
     replay_dataset.add_argument("--report", help="New JSON output for measured real replay results")
     replay_dataset.add_argument("--max-start-error-deg", type=float, default=2.0)
     replay_dataset.add_argument("--max-tracking-error-deg", type=float, default=5.0)
-    replay_dataset.add_argument("--max-joint-speed-deg-s", type=float, default=15.0)
+    replay_dataset.add_argument(
+        "--max-joint-speed-deg-s",
+        type=float,
+        default=5.0,
+        help="Joint speed limit; 5 deg/s is the recommended first-replay value",
+    )
     replay_dataset.add_argument("--control-hz", type=float, default=20.0)
     replay_dataset.add_argument("--max-sim-error-m", type=float, default=0.025)
     replay_dataset.add_argument("--max-sim-orientation-error-deg", type=float)
+    replay_dataset.add_argument(
+        "--check-start",
+        action="store_true",
+        help="Read the current robot pose in dry-run (no torque, no motor command)",
+    )
+    replay_dataset.add_argument(
+        "--allow-initial-move",
+        action="store_true",
+        help="With --execute, allow the explicit joint-space move from the current pose to the "
+        "dataset start after the dry-run transition check; disabled by default",
+    )
+    inspect_map = sub.add_parser(
+        "inspect-dataset-mapping",
+        help="Print the per-joint model/calibration/mapping table without moving the robot",
+    )
+    inspect_map.add_argument("--dataset", required=True, help="Full-CAD joint dataset")
+    inspect_map.add_argument("--episode", type=int, default=0)
+    inspect_map.add_argument(
+        "--mapping",
+        help="Optional mapping YAML; unverified or partial records are shown without authorizing motion",
+    )
+    inspect_map.add_argument("--robot-id", required=True, help="Existing calibrated robot id")
+    inspect_map.add_argument("--calibration-dir", help="Override the existing calibration directory")
+    inspect_map.add_argument("--left-port", default="/dev/not-used-left")
+    inspect_map.add_argument("--right-port", default="/dev/not-used-right")
+    inspect_map.add_argument(
+        "--check-start",
+        action="store_true",
+        help="Connect and read the current pose; never enables torque or sends a command",
+    )
+    inspect_map.add_argument("--output", help="Optional JSON report")
     feedback = sub.add_parser("convert-real", help="Create a dataset from recorded robot feedback")
     feedback.add_argument(
         "--run",
@@ -525,7 +581,7 @@ def main():
                 with output.open("x", encoding="utf-8") as file:
                     file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         elif args.command == "verify-dataset-mapping":
-            from .hardware_dataset import load_joint_episode, verify_dataset_mapping
+            from .hardware_dataset import load_joint_episode
             from .real import arm_only_follower
 
             episode = load_joint_episode(args.dataset, args.episode)
@@ -536,18 +592,109 @@ def main():
                 config["robot"]["max_joint_step_deg"],
                 args.calibration_dir,
             )
-            result = verify_dataset_mapping(
-                episode,
-                robot,
-                args.output,
-                reference_frames=args.reference_frame,
-                max_residual_deg=args.max_fit_residual_deg,
-                min_model_range_deg=args.min_model_range_deg,
-                report=args.report,
+            if args.mode == "joint-wise":
+                from .hardware_dataset import verify_dataset_mapping_jointwise
+
+                if args.reference_frame and len(args.reference_frame) != 1:
+                    raise ValueError("joint-wise mode accepts exactly one --reference-frame")
+                if not args.reference_frame:
+                    raise ValueError(
+                        "joint-wise mode requires an explicit --reference-frame; "
+                        "frame 0 is the model-neutral start and is not selected implicitly"
+                    )
+                result = verify_dataset_mapping_jointwise(
+                    episode,
+                    robot,
+                    args.output,
+                    config=config,
+                    reference_frame=args.reference_frame[0],
+                    sign_test_deg=args.sign_test_deg,
+                    max_other_joint_delta_deg=args.max_other_joint_delta_deg,
+                    report=args.report,
+                )
+            else:
+                from .hardware_dataset import verify_dataset_mapping
+
+                result = verify_dataset_mapping(
+                    episode,
+                    robot,
+                    args.output,
+                    reference_frames=args.reference_frame,
+                    max_residual_deg=args.max_fit_residual_deg,
+                    min_model_range_deg=args.min_model_range_deg,
+                    report=args.report,
+                    config=config,
+                )
+        elif args.command == "inspect-dataset-mapping":
+            from .hardware_dataset import (
+                build_pose_context,
+                inspect_joint_mapping,
+                load_joint_episode,
+                load_mapping,
             )
+            from .real import _read_joints, arm_only_follower
+
+            episode = load_joint_episode(args.dataset, args.episode)
+            document = load_mapping(args.mapping)["document"] if args.mapping else None
+            robot = arm_only_follower(
+                args.left_port,
+                args.right_port,
+                args.robot_id,
+                config["robot"]["max_joint_step_deg"],
+                args.calibration_dir,
+            )
+            current = None
+            connected = False
+            try:
+                if args.check_start:
+                    for side in ("right", "left"):
+                        getattr(robot, side + "_bus").connect()
+                    connected = True
+                    if not robot.is_calibrated:
+                        raise ValueError(
+                            "Motor calibration does not match the robot; recalibrate before inspection"
+                        )
+                    current = _read_joints(robot)
+                inspection = inspect_joint_mapping(episode, document, robot, config, current=current)
+                result = {
+                    "schema": "dual_scorpion.mocopi.hardware_joint_inspection.v1",
+                    "dataset": str(episode.root),
+                    "episode": episode.episode,
+                    "mapping": str(args.mapping) if args.mapping else None,
+                    "mapping_verified": bool(document and document.get("verified") is True),
+                    "inspection": inspection,
+                    "pose_context": (
+                        build_pose_context(episode, document, robot, config, current=current)
+                        if document is not None
+                        else None
+                    ),
+                    "robot_current_motor_deg": (
+                        {side: current[side].tolist() for side in ("right", "left")}
+                        if current is not None
+                        else None
+                    ),
+                    "scope": (
+                        "Read-only inspection. Constructing the follower loads the existing "
+                        "calibration file; no motor command or torque change is made."
+                    ),
+                }
+            finally:
+                if connected:
+                    for side in ("right", "left"):
+                        bus = getattr(robot, side + "_bus")
+                        if bus.is_connected:
+                            with suppress(Exception):
+                                bus.disconnect(disable_torque=True)
+            if args.output:
+                output = Path(args.output)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with output.open("x", encoding="utf-8") as file:
+                    file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         elif args.command == "replay-dataset":
             from .hardware_dataset import replay_joint_dataset
 
+            if args.allow_initial_move and not args.execute:
+                raise ValueError("--allow-initial-move is only meaningful with --execute")
             real_result = replay_joint_dataset(
                 config,
                 args.dataset,
@@ -565,6 +712,8 @@ def main():
                 control_hz=args.control_hz,
                 max_sim_error_m=args.max_sim_error_m,
                 max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
+                check_start=args.check_start,
+                allow_initial_move=args.allow_initial_move,
             )
             if args.execute:
                 result = {
@@ -574,6 +723,7 @@ def main():
                     "control_steps": real_result["control_steps"],
                     "time_scale": real_result["time_scale"],
                     "max_observed_speed_deg_s": real_result["max_observed_speed_deg_s"],
+                    "initial_transition": real_result.get("initial_transition"),
                     "tracking": real_result["tracking"],
                     "report": args.report,
                 }
