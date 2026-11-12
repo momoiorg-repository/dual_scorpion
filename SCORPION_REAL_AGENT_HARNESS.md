@@ -40,6 +40,74 @@ uv run --no-sync --active python -m telegrip.mocopi.agent --config config/mocopi
 
 `config/mocopi/agent.example.yaml` is an example. Replace camera device IDs on the target machine; the harness never infers them.
 
+## Real-follower calibration and startup behavior
+
+The `robot` section in the agent config constructs `RealRobotAdapter` for both CLI and MCP startup. Construction does not open serial ports and does not move the robot.
+
+The selected robot ID is:
+
+```text
+dual_scorpion_follower_2026_1026
+```
+
+LeRobot's standard follower lookup resolves its calibration to:
+
+```text
+~/.cache/huggingface/lerobot/calibration/robots/dual_scorpion_follower/dual_scorpion_follower_2026_1026.json
+```
+
+The harness validates that file before connection. It checks:
+
+- the file exists and its stem matches the robot ID,
+- all 14 `left/right joint0..joint6` entries exist,
+- motor IDs match joint0–joint6,
+- each `drive_mode` is a supported direction flag,
+- `homing_offset`, `range_min`, and `range_max` are present and internally valid,
+- the bus calibration exactly matches the loaded file.
+
+The two gripper calibration entries may be present and are reported, but this harness does not command grippers.
+
+No calibration value is rewritten and no recalibration is performed.
+
+### Home pose and current encoder pose
+
+`config/mocopi/tracking.yaml` intentionally distinguishes two presets:
+
+- `start_pose: work` initializes the kinematic model in a table-safe, bent-elbow home posture.
+- `retarget_start_pose: neutral` is used by the existing mocopi replay pipeline when human motion is retargeted from a neutral model pose.
+
+These presets initialize existing kinematic components. The real harness does **not** use either preset as a commanded startup pose. `connect_robot` only:
+
+1. validates calibration,
+2. connects both follower buses,
+3. reads current encoder angles,
+4. reports those angles as the initial state.
+
+Before enabling torque, the existing execution path sends the measured present positions as the initial hold command. It then reads the encoders again and records the maximum joint step in `initial_hold`. If enabling the hold moves an arm more than the existing 2° start tolerance, execution aborts before the planned trajectory is sent.
+
+## Measured table and 45 cm support-stick scene
+
+The legacy calibrated URDF has joint frames but no collision meshes. Therefore the harness does not guess link widths. Real motion is rejected until the operator supplies a measured scene with:
+
+- `status: measured`,
+- a non-empty coordinate frame, source, and measurement time,
+- `robot_to_scene` position and unit quaternion,
+- `collision_margin_m`,
+- an explicit `arm_collision_radius_m`,
+- a `table` box with measured center, half-size, and orientation,
+- a `support_stick` cylinder with measured center, radius, orientation, and `length_m: 0.45`,
+- any additional measured obstacles.
+
+The scene uses schema `dual_scorpion.agent.scene.v1`. Its YAML is deliberately not committed with guessed values. The operator must measure and record the actual table, stick, and robot-base relationship, then point `scene_geometry` in `config/mocopi/agent.example.yaml` to that local file.
+
+The checker builds capsules between the existing URDF joint frames using the explicit arm radius, transforms the measured scene into the robot frame, and checks:
+
+1. the current encoder pose before IK/execution,
+2. every generated trajectory frame,
+3. the current pose again immediately before execution.
+
+Any initial contact, penetration, or clearance violation rejects motion. A `template_not_for_execution` scene may be parsed for review but never permits real motion.
+
 ## Camera and multimodal input
 
 `CameraService` uses the existing OpenCV/UVC adapter. It supports:
@@ -195,8 +263,8 @@ The server implements JSON-RPC `initialize`, `tools/list`, and `tools/call`. JOU
 3. `connect_robot` and `execute_motion` require the token value.
 4. The LLM cannot create, infer, or persist the token.
 5. `stop_motion` is local and always available.
-6. Execution is rejected unless the buses are connected, calibration is valid, encoder feedback is fresh and finite, and the generated trajectory passes the existing validator.
-7. On stop, tracking error, limit violation, or communication failure, the execution loop holds the measured pose and disconnects without commanding the gripper.
+6. Execution is rejected unless the buses are connected, calibration is valid, encoder feedback is fresh and finite, the measured table/stick scene is loaded, the current pose is clear, and the generated trajectory passes the existing validator.
+7. On stop, tracking error, limit violation, initial-hold movement, table/stick clearance violation, or communication failure, the execution loop holds the measured pose and disconnects without commanding the gripper.
 
 Physical robot operation still requires the operator's physical safety procedure and explicit authorization. Software tests do not authorize or verify real motion.
 
@@ -208,7 +276,7 @@ The existing real execution path records:
 - maximum joint tracking error,
 - TCP position and orientation error,
 - execution time and measured FPS,
-- stop and failure state,
+- stop, initial-hold motion, and failure state,
 - gripper command count (always zero in this harness),
 - model and URDF fingerprints.
 
@@ -249,8 +317,10 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 ## Current limitations
 
 - Real hardware connection and motion were **not** exercised during this development.
+- The local calibration file was validated, but its physical correspondence to the current motors was **not** re-measured.
+- The measured table, 45 cm stick, robot-base transform, and arm collision radius must be supplied by the operator. No guessed scene is committed.
 - Gripper commands are **not integrated** and are reported as unavailable.
 - Camera-to-robot extrinsics and metric 3D object pose estimation are **not implemented**.
 - Image semantic understanding is delegated to JOUZU/Gemini and was **not** tested here.
-- Contact and collision checking for arbitrary external environments is not available in the current real execution path.
+- Collision checking covers the explicitly measured table, 45 cm stick, operator-declared boxes/cylinders, and URDF joint-frame capsules. Arbitrary unmeasured environments are not inferred.
 - The current motion path uses the legacy calibrated URDF/PyBullet planner; the unmeasured full-CAD MuJoCo model is not authorized for hardware replay.

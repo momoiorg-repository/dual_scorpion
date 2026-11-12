@@ -13,7 +13,7 @@ All arguments are JSON objects. Results include machine-readable `structuredCont
 | Tool | Purpose | Authorization |
 | --- | --- | --- |
 | `get_status` | Robot, camera, safety, execution, and skill status | None |
-| `connect_robot` | Connect both calibrated follower buses | Operator token |
+| `connect_robot` | Validate calibration, connect follower buses, and read current encoders without homing | Operator token |
 | `get_world_state` | Current provenance-labelled robot/camera/object state | None |
 | `list_skills` | Robot Skill contracts and implementation status | None |
 | `capture_images` | MCP image content plus camera ID, timestamp, size, hash | None |
@@ -32,3 +32,13 @@ Motion plans must use Cartesian targets from one of these sources:
 - `target_position_m` with a `pose_validation` object containing method, timestamp, and uncertainty.
 
 Direct joint, motor, or gripper command fields are rejected.
+
+Before `plan_motion` or `execute_motion`, `get_status` must report:
+
+- a valid LeRobot calibration for the selected robot ID,
+- a `measured` scene,
+- the table and 45 cm support stick,
+- a measured scene-to-robot transform,
+- an explicit arm collision radius.
+
+If any of these are missing, the harness rejects real motion rather than inferring geometry.
