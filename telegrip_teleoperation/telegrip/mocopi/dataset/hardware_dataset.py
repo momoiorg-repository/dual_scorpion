@@ -1552,6 +1552,16 @@ def execute_joint_episode(
             "per_joint_deg": start_errors,
             "tolerance_deg": max_start_error_deg,
         }
+        current_model = {side: unmap_joints(document, side, current[side]) for side in SIDES}
+        start_collision = _collision_at_model_joints(simulation, current_model)
+        report["start_pose"]["modeled_collision"] = start_collision
+        if start_collision["count"]:
+            raise ValueError(
+                "Robot current pose has a modeled self/floor collision "
+                f"(count={start_collision['count']}, "
+                f"max_penetration_m={start_collision['max_penetration_m']:.4f}); "
+                "move the robot away before replay"
+            )
         transition = {
             "required": start_max > max_start_error_deg,
             "applied": False,
