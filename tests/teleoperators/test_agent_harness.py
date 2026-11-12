@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import threading
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,6 +18,9 @@ from telegrip.mocopi.agent.config import CameraSpec, HarnessConfig
 from telegrip.mocopi.agent.harness import ScorpionAgentHarness
 from telegrip.mocopi.agent.mcp import ScorpionMcpServer
 from telegrip.mocopi.agent.motion import KinematicsService
+from telegrip.mocopi.agent.robot import load_calibration_document, validate_calibration_document
+from telegrip.mocopi.agent.safety import AuthorizationManager
+from telegrip.mocopi.agent.scene import SceneGeometry
 from telegrip.mocopi.agent.schema import PLAN_SCHEMA_ID
 from telegrip.mocopi.agent.world import StateSource
 from telegrip.mocopi.dataset.real import JOINTS, execute_plan
@@ -84,10 +88,32 @@ class FakeKinematics:
                 }
             ],
             "ik_info": {},
+            "scene_sha256": "test-scene",
+            "collision_checked": True,
         }
 
     def validate(self, *args: Any, **kwargs: Any):
         return {"status": "valid", "errors": []}
+
+    def scene_status(self):
+        return {
+            "configured": True,
+            "status": "measured",
+            "execution_allowed": True,
+            "sha256": "test-scene",
+        }
+
+    def collision_report(self, joints):
+        return {
+            "configured": True,
+            "checked": True,
+            "execution_allowed": True,
+            "count": 0,
+            "clearance_violation": False,
+            "penetrating": False,
+            "min_distance_m": 0.1,
+            "contacts": [],
+        }
 
 
 class FakeRobot:
@@ -142,7 +168,7 @@ def _harness(tmp_path: Path, *, robot: Any | None = None) -> ScorpionAgentHarnes
         robot=robot or FakeRobot(),
         cameras=None,
         kinematics=FakeKinematics(),
-        authorization=None,
+        authorization=AuthorizationManager(token="operator-token"),
     )
 
 
@@ -283,6 +309,99 @@ def test_motion_planner_generates_and_validates_fk_ik_trajectory():
         assert validation["fps"] == 30
 
 
+def _write_scene(path: Path, *, table_center: list[float], status: str = "measured") -> Path:
+    path.write_text(
+        f"""
+schema: dual_scorpion.agent.scene.v1
+status: {status}
+coordinate_frame: measured_workbench
+source: local_test_measurement
+measured_at: "2026-11-12T00:00:00Z"
+collision_margin_m: 0.002
+arm_collision_radius_m: 0.01
+robot_to_scene:
+  position_m: [0.0, 0.0, 0.0]
+  orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+required_obstacles: [table, support_stick]
+obstacles:
+  - name: measured_table
+    role: table
+    shape: box
+    measurement_status: measured
+    center_m: {table_center}
+    half_size_m: [1.0, 1.0, 0.01]
+  - name: support_stick
+    role: support_stick
+    shape: cylinder
+    measurement_status: measured
+    center_m: [0.0, 1.0, 0.0]
+    rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+    length_m: 0.45
+    radius_m: 0.01
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_measured_table_and_stick_scene_enables_trajectory_collision_check(tmp_path):
+    scene = SceneGeometry.from_file(
+        _write_scene(tmp_path / "scene.yaml", table_center=[0.0, 0.0, -1.0])
+    )
+    assert scene.execution_allowed is True
+    with KinematicsService(CONFIG, scene=scene) as kinematics:
+        start = {side: np.zeros(7) for side in ("left", "right")}
+        initial = kinematics.collision_report(start)
+        assert initial["configured"] is True and initial["count"] == 0
+        targets = {}
+        for side in ("left", "right"):
+            position, quaternion = kinematics.fk(side, start[side])
+            targets[side] = np.eye(4)
+            targets[side][:3, 3] = position + np.array([0.01, 0.0, 0.0])
+            targets[side][:3, :3] = Rotation.from_quat(quaternion).as_matrix()
+        plan = kinematics.build_motion_plan(start, targets, fps=30, source="fake")
+        assert plan["collision_checked"] is True
+        assert plan["scene_collision"]["count"] == 0
+        assert plan["startup_behavior"]["auto_home"] is False
+
+
+def test_initial_table_contact_rejects_motion_before_ik_or_execution(tmp_path):
+    scene = SceneGeometry.from_file(
+        _write_scene(tmp_path / "blocking-scene.yaml", table_center=[0.0, 0.0, 0.14])
+    )
+    with KinematicsService(CONFIG, scene=scene) as kinematics:
+        start = {side: np.zeros(7) for side in ("left", "right")}
+        report = kinematics.collision_report(start)
+        assert report["clearance_violation"] is True
+        with pytest.raises(Exception, match="initial pose violates measured scene clearance"):
+            kinematics.build_motion_plan(
+                start,
+                {"left": np.eye(4), "right": np.eye(4)},
+                fps=30,
+                source="fake",
+            )
+
+
+def test_unmeasured_scene_is_parsed_but_never_execution_allowed(tmp_path):
+    scene = SceneGeometry.from_file(
+        _write_scene(
+            tmp_path / "template-scene.yaml",
+            table_center=[0.0, 0.0, -1.0],
+            status="template_not_for_execution",
+        )
+    )
+    assert scene.execution_allowed is False
+    with KinematicsService(CONFIG, scene=scene) as kinematics:
+        assert kinematics.scene_status()["execution_allowed"] is False
+        with pytest.raises(Exception, match="measured scene geometry is required"):
+            kinematics.build_motion_plan(
+                {"left": np.zeros(7), "right": np.zeros(7)},
+                {"left": np.eye(4), "right": np.eye(4)},
+                fps=30,
+                source="fake",
+            )
+
+
 class _StopBus:
     def __init__(self, joints: list[float]):
         self.is_connected = False
@@ -383,6 +502,133 @@ def test_example_agent_config_resolves_paths_without_hardcoding_devices():
     assert [camera.camera_id for camera in config.cameras] == ["head", "left_wrist", "right_wrist"]
     assert all(camera.device for camera in config.cameras)
     assert config.authorization_token_file is not None
+    assert config.robot is not None
+    assert config.robot.robot_id == "dual_scorpion_follower_2026_1026"
+    assert config.robot.calibration_dir is None
+    assert config.scene_geometry_path is None
+
+
+def _write_calibration(path: Path, robot_id: str = "test_dual_scorpion") -> Path:
+    from lerobot.motors import MotorCalibration
+
+    document = {}
+    for side in ("left", "right"):
+        for index in range(7):
+            document[f"{side}_joint{index}"] = asdict(
+                MotorCalibration(
+                    id=index + 1,
+                    drive_mode=0,
+                    homing_offset=100 + index,
+                    range_min=10,
+                    range_max=4000,
+                )
+            )
+        document[f"{side}_gripper"] = asdict(
+            MotorCalibration(id=8, drive_mode=0, homing_offset=0, range_min=0, range_max=4095)
+        )
+    calibration_path = path / f"{robot_id}.json"
+    calibration_path.write_text(json.dumps(document), encoding="utf-8")
+    return calibration_path
+
+
+def test_lerobot_calibration_file_is_validated_without_recalibration(tmp_path):
+    calibration_path = _write_calibration(tmp_path)
+    document = load_calibration_document(calibration_path)
+    report = validate_calibration_document(
+        document,
+        robot_id="test_dual_scorpion",
+        path=calibration_path,
+    )
+    assert report["status"] == "valid"
+    assert report["arm_joint_count"] == 14
+    assert report["gripper_entries"] == ["left_gripper", "right_gripper"]
+
+    wrong_id = validate_calibration_document(
+        document,
+        robot_id="different_robot",
+        path=calibration_path,
+    )
+    assert wrong_id["status"] == "invalid"
+    assert any("does not match robot ID" in error for error in wrong_id["errors"])
+
+    broken = dict(document)
+    broken["left_joint0"] = asdict(broken["left_joint0"])
+    broken["left_joint0"]["drive_mode"] = 3
+    invalid_direction = validate_calibration_document(
+        broken,
+        robot_id="test_dual_scorpion",
+        path=calibration_path,
+    )
+    assert invalid_direction["status"] == "invalid"
+    assert any("drive_mode" in error for error in invalid_direction["errors"])
+
+
+def test_harness_constructs_real_adapter_and_reports_calibration_without_connecting(tmp_path):
+    from telegrip.mocopi.agent.config import RobotSpec
+
+    calibration_dir = tmp_path
+    _write_calibration(calibration_dir, robot_id="test_dual_scorpion")
+    config = HarnessConfig(
+        robot_config_path=CONFIG,
+        cameras=(),
+        authorization_token_file=None,
+        max_feedback_age_s=0.5,
+        max_plan_frames=240,
+        execution_report_dir=tmp_path / "reports",
+        robot=RobotSpec(
+            robot_id="test_dual_scorpion",
+            left_port="/dev/null",
+            right_port="/dev/null",
+            calibration_dir=calibration_dir,
+        ),
+    )
+    harness = ScorpionAgentHarness(config, kinematics=FakeKinematics())
+    status = harness.status()
+    assert status["robot"]["configured"] is not False
+    assert status["robot"]["auto_home_on_startup"] is False
+    assert status["robot"]["initial_state_source"] == "encoder_reading_only"
+    assert status["robot"]["calibration"]["status"] == "valid"
+    assert status["robot"]["connected"] is False
+
+
+def test_connect_reads_current_encoders_and_never_homes_or_commands_motors(tmp_path):
+    class NoHomeRobot:
+        def __init__(self):
+            self.connected = False
+            self.actions = []
+
+        @property
+        def is_connected(self):
+            return self.connected
+
+        def validate_calibration(self):
+            return {"status": "valid", "errors": []}
+
+        def connect(self):
+            self.connected = True
+
+        def disconnect(self, *, disable_torque=False):
+            self.connected = False
+
+        def status(self):
+            return {"connected": self.connected}
+
+        def read(self):
+            return SimpleNamespace(
+                connected=True,
+                calibrated=True,
+                joints_deg={"left": tuple([1.0] * 7), "right": tuple([-1.0] * 7)},
+                timestamp_monotonic_ns=123,
+            )
+
+    robot = NoHomeRobot()
+    harness = _harness(tmp_path, robot=robot)
+    result = harness.connect_robot("operator-token")
+    assert result["status"] == "connected"
+    assert result["startup_behavior"]["auto_home"] is False
+    assert result["joints_deg"]["left"] == [1.0] * 7
+    assert result["joints_deg"]["right"] == [-1.0] * 7
+    assert robot.actions == []
 
 
 def test_execution_job_can_capture_before_and_after_images(tmp_path):

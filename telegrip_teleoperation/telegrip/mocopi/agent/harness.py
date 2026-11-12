@@ -18,6 +18,7 @@ from .config import HarnessConfig
 from .motion import KinematicsService
 from .robot import RealRobotAdapter
 from .safety import AuthorizationManager, SafetyManager
+from .scene import SceneGeometry
 from .schema import PlanValidationError, TaskPlan, validate_task_plan
 from .skills import SkillRegistry, built_in_skill_registry
 from .world import ArmState, CameraState, ObjectState, StateSource, WorldState
@@ -52,9 +53,20 @@ class ScorpionAgentHarness:
     ):
         self.config = config
         self.registry = registry or built_in_skill_registry()
-        self.robot = robot
+        self.robot = robot or (
+            RealRobotAdapter(
+                left_port=config.robot.left_port,
+                right_port=config.robot.right_port,
+                robot_id=config.robot.robot_id,
+                calibration_dir=config.robot.calibration_dir,
+                max_step_deg=config.robot.max_step_deg,
+            )
+            if config.robot is not None
+            else None
+        )
         self.cameras = cameras or CameraService(config.cameras)
-        self.kinematics = kinematics or KinematicsService(config.robot_config_path)
+        scene = SceneGeometry.from_file(config.scene_geometry_path) if config.scene_geometry_path else None
+        self.kinematics = kinematics or KinematicsService(config.robot_config_path, scene=scene)
         token_file = config.authorization_token_file
         self.authorization = authorization or AuthorizationManager(token_file)
         self.safety = SafetyManager(self.authorization)
@@ -77,7 +89,12 @@ class ScorpionAgentHarness:
         self.close()
 
     def status(self) -> dict[str, Any]:
-        robot_status = self.robot.status() if self.robot is not None else {"connected": False, "configured": False}
+        if self.robot is None:
+            robot_status = {"connected": False, "configured": False}
+        elif isinstance(self.robot, RealRobotAdapter):
+            robot_status = self.robot.configuration_status()
+        else:
+            robot_status = self.robot.status()
         return {
             "schema": "dual_scorpion.agent.status.v1",
             "robot": robot_status,
@@ -88,6 +105,16 @@ class ScorpionAgentHarness:
             "motion_authorization_required": self.authorization.token_file is not None,
             "stop_requested": self.safety.stop_requested,
             "active_executions": len(self.jobs),
+            "scene": self.kinematics.scene_status(),
+            "startup_behavior": {
+                "auto_home": False,
+                "initial_state_source": "encoder_reading_only",
+                "start_pose_config": self.kinematics.full_config["robot"].get("start_pose"),
+                "retarget_start_pose_config": self.kinematics.full_config["robot"].get(
+                    "retarget_start_pose"
+                ),
+                "note": "start_pose presets initialize kinematics only; harness planning starts from measured encoders",
+            },
             "hardware_commands_sent_by_constructor": 0,
         }
 
@@ -95,11 +122,20 @@ class ScorpionAgentHarness:
         self.safety.authorize_motion(authorization_token)
         if self.robot is None:
             raise RuntimeError("real robot adapter is not configured")
+        calibration = self.robot.validate_calibration()
+        if calibration["status"] != "valid":
+            raise RuntimeError(f"real robot calibration is invalid: {calibration['errors']}")
         self.robot.connect()
         reading = self.robot.read()
         return {
             "status": "connected",
             "robot": self.robot.status(),
+            "calibration": calibration,
+            "startup_behavior": {
+                "auto_home": False,
+                "initial_state_source": "encoder_reading_only",
+                "hold_strategy": "present_position_before_torque_enable",
+            },
             "timestamp_monotonic_ns": reading.timestamp_monotonic_ns,
             "joints_deg": {side: list(values) for side, values in reading.joints_deg.items()},
         }
@@ -158,6 +194,8 @@ class ScorpionAgentHarness:
                 "vision_object_detection": False,
                 "metric_pose_estimation": False,
                 "gripper_control": "not_integrated",
+                "scene_collision_required": True,
+                "scene_collision_ready": self.kinematics.scene_status()["execution_allowed"],
                 "llm_semantic_estimates_allowed": True,
             },
         )
@@ -211,6 +249,12 @@ class ScorpionAgentHarness:
             raise RuntimeError("robot must be connected before motion planning")
         reading = self.robot.read()
         current_joints = {side: np.asarray(reading.joints_deg[side], dtype=float) for side in SIDES}
+        scene_status = self.kinematics.scene_status()
+        if not scene_status["execution_allowed"]:
+            raise RuntimeError("measured table/stick scene geometry is required before motion planning")
+        initial_collision = self.kinematics.collision_report(current_joints)
+        if not initial_collision["checked"] or initial_collision.get("count"):
+            raise RuntimeError(f"initial pose is not clear of the measured scene: {initial_collision}")
         segments: list[dict[str, Any]] = []
         ik_info: dict[str, Any] = {}
         for step in plan.steps:
@@ -271,6 +315,20 @@ class ScorpionAgentHarness:
             raise RuntimeError("real robot adapter is not configured")
         if not self.robot.is_connected:
             self.robot.connect()
+        reading = self.robot.read()
+        current_joints = {side: np.asarray(reading.joints_deg[side], dtype=float) for side in SIDES}
+        scene_status = self.kinematics.scene_status()
+        if (
+            not scene_status["execution_allowed"]
+            or motion_plan_id not in self.motion_plans
+            or self.motion_plans[motion_plan_id].get("scene_sha256")
+            != scene_status.get("sha256")
+            or self.motion_plans[motion_plan_id].get("collision_checked") is not True
+        ):
+            raise RuntimeError("motion plan and measured scene do not match; regenerate the plan")
+        current_collision = self.kinematics.collision_report(current_joints)
+        if not current_collision["checked"] or current_collision.get("count"):
+            raise RuntimeError(f"current pose is not clear of the measured scene: {current_collision}")
         motion_plan = self.motion_plans[motion_plan_id]
         plan_id = self.motion_plan_plan_ids.get(motion_plan_id, "unknown")
         execution_id = "exec-" + uuid.uuid4().hex[:12]

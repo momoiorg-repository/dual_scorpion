@@ -14,6 +14,7 @@ from ..dataset.real import JOINTS, validate_plan
 from ..dataset.replay import model_fingerprint
 from ..geometry import pose, validate_pose
 from ..ik import DualSimulation
+from .scene import SceneCollisionChecker, SceneGeometry
 
 SIDES = ("left", "right")
 
@@ -29,12 +30,26 @@ class KinematicsService:
     Feetech follower adapter, not by the kinematic preview.
     """
 
-    def __init__(self, robot_config_path: str | Path, *, simulation: Any | None = None):
+    def __init__(
+        self,
+        robot_config_path: str | Path,
+        *,
+        simulation: Any | None = None,
+        scene: SceneGeometry | None = None,
+    ):
         self.full_config = load_config(Path(robot_config_path))
         self.config = self.full_config["robot"]
         self.simulation = simulation or DualSimulation(self.config, gui=False)
+        self.scene = scene
+        self.collision_checker = (
+            SceneCollisionChecker(self.simulation, scene)
+            if scene is not None and scene.execution_allowed
+            else None
+        )
 
     def close(self) -> None:
+        if self.collision_checker is not None:
+            self.collision_checker.close()
         self.simulation.close()
 
     def __enter__(self) -> KinematicsService:
@@ -54,6 +69,32 @@ class KinematicsService:
     def pose_vector(self, side: str, joints: np.ndarray) -> list[float]:
         position, quaternion = self.fk(side, joints)
         return np.r_[position, quaternion].tolist()
+
+    def scene_status(self) -> dict[str, Any]:
+        if self.scene is None:
+            return {
+                "configured": False,
+                "status": "missing",
+                "execution_allowed": False,
+                "reason": "measured table/stick scene is required before real motion",
+            }
+        return {
+            "configured": True,
+            "status": self.scene.status,
+            "execution_allowed": self.scene.execution_allowed,
+            **self.scene.to_dict(),
+        }
+
+    def collision_report(self, joints: dict[str, np.ndarray]) -> dict[str, Any]:
+        if self.collision_checker is None:
+            return {
+                "configured": self.scene is not None,
+                "checked": False,
+                "execution_allowed": self.scene.execution_allowed if self.scene else False,
+                "count": None,
+                "reason": "measured scene geometry is required before real motion",
+            }
+        return self.collision_checker.check_pose(joints)
 
     def solve_to_target(
         self,
@@ -92,6 +133,14 @@ class KinematicsService:
             raise ValueError("fps must be in (0, 120]")
         if set(start_joints) != set(SIDES):
             raise ValueError("start_joints must contain left and right")
+        if self.scene is not None and not self.scene.execution_allowed:
+            raise MotionPlanningError("measured scene geometry is required before real motion")
+        if self.collision_checker is not None:
+            initial_collision = self.collision_checker.check_pose(start_joints)
+            if initial_collision["count"]:
+                raise MotionPlanningError(
+                    f"initial pose violates measured scene clearance: {initial_collision}"
+                )
 
         start_pose: dict[str, np.ndarray] = {}
         final_joints: dict[str, np.ndarray] = {}
@@ -144,7 +193,7 @@ class KinematicsService:
                 }
             )
 
-        return {
+        plan = {
             "schema": "dual_scorpion.mocopi.robot_plan.v1",
             "source": source,
             "task": task,
@@ -159,7 +208,51 @@ class KinematicsService:
             "max_joint_step_deg": min(0.5, 15.0 / fps, configured_step),
             "hardware_max_joint_step_deg": configured_step,
             "ik_info": ik_info,
+            "scene_schema": None if self.scene is None else "dual_scorpion.agent.scene.v1",
+            "scene_sha256": None if self.scene is None else self.scene.sha256,
+            "scene_status": None if self.scene is None else self.scene.status,
+            "collision_checked": self.collision_checker is not None,
+            "collision_margin_m": None if self.scene is None else self.scene.collision_margin_m,
+            "startup_behavior": {
+                "auto_home": False,
+                "initial_state_source": "measured_encoders",
+                "hold_strategy": "present_position_before_torque_enable",
+            },
         }
+        if self.collision_checker is not None:
+            self.validate_scene_trajectory(plan)
+        return plan
+
+    def validate_scene_trajectory(self, plan: dict[str, Any]) -> dict[str, Any]:
+        if self.collision_checker is None:
+            raise MotionPlanningError("measured scene geometry is required before real motion")
+        reports = []
+        for frame in plan.get("frames", []):
+            joints = {
+                side: np.asarray(frame["arms"][side]["joint_deg"], dtype=float)
+                for side in SIDES
+            }
+            report = self.collision_checker.check_pose(joints)
+            report["frame"] = len(reports)
+            reports.append(report)
+            if report["count"]:
+                plan["scene_collision"] = report
+                raise MotionPlanningError(
+                    f"trajectory frame {len(reports) - 1} violates measured scene clearance: {report}"
+                )
+        plan["scene_collision"] = {
+            "configured": True,
+            "checked": True,
+            "frames": len(reports),
+            "count": 0,
+            "clearance_violation": False,
+            "penetrating": False,
+            "min_distance_m": min(
+                (item["min_distance_m"] for item in reports if item["min_distance_m"] is not None),
+                default=None,
+            ),
+        }
+        return plan["scene_collision"]
 
     def validate(self, plan: dict[str, Any], *, allow_synthetic: bool = False) -> dict[str, Any]:
         return validate_plan(

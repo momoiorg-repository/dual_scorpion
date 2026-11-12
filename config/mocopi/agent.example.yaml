@@ -1,5 +1,18 @@
 robot_config: tracking.yaml
 
+# The CLI and MCP server construct this adapter without opening serial ports or
+# moving the robot. Calibration is loaded by LeRobot's standard
+# robots/dual_scorpion_follower/<robot.id>.json lookup; no values are rewritten.
+robot:
+  id: dual_scorpion_follower_2026_1026
+  # Replace both paths with stable /dev/serial/by-id device paths.
+  left_port: /dev/serial/by-id/EDIT_ME_LEFT
+  right_port: /dev/serial/by-id/EDIT_ME_RIGHT
+  max_step_deg: 0.5
+  # Omit calibration_dir to use LeRobot's standard calibration root. Set it
+  # only when the robot host uses a different calibrated robot ID.
+  # calibration_dir: ~/.cache/huggingface/lerobot/calibration/robots/dual_scorpion_follower
+
 # Replace the device IDs on the machine that runs the robot. They are examples
 # only and are not inferred from the connected hardware.
 cameras:
@@ -31,3 +44,7 @@ authorization_token_file: /run/user/1000/scorpion-agent-motion.token
 max_feedback_age_s: 0.5
 max_plan_frames: 240
 execution_report_dir: outputs/agent/executions
+
+# Motion is rejected until this points to a measured scene containing the
+# table, the 45 cm support stick, and the measured scene-to-robot transform.
+scene_geometry: null

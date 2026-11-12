@@ -64,12 +64,12 @@ class ScorpionMcpServer:
         return [
             _tool(
                 "get_status",
-                "Return robot, camera, safety, execution, and skill availability.",
+                "Return robot, calibration, measured-scene, camera, safety, execution, and skill availability.",
                 {"type": "object", "properties": {}, "additionalProperties": False},
             ),
             _tool(
                 "connect_robot",
-                "Connect to the calibrated real follower buses. Requires operator authorization.",
+                "Validate calibration, connect the follower buses, and read current encoders without homing. Requires operator authorization.",
                 {
                     "type": "object",
                     "properties": {"authorization_token": {"type": "string"}},
@@ -121,7 +121,7 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "plan_motion",
-                "Generate and validate a deterministic joint trajectory for a stored task plan.",
+                "Generate and validate a deterministic joint trajectory against the measured table/stick scene.",
                 {
                     "type": "object",
                     "properties": {

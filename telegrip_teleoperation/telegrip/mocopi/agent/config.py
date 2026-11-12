@@ -26,6 +26,15 @@ class CameraSpec:
 
 
 @dataclass(frozen=True)
+class RobotSpec:
+    robot_id: str
+    left_port: str
+    right_port: str
+    calibration_dir: Path | None = None
+    max_step_deg: float = 0.5
+
+
+@dataclass(frozen=True)
 class HarnessConfig:
     robot_config_path: Path
     cameras: tuple[CameraSpec, ...]
@@ -33,6 +42,8 @@ class HarnessConfig:
     max_feedback_age_s: float
     max_plan_frames: int
     execution_report_dir: Path
+    robot: RobotSpec | None = None
+    scene_geometry_path: Path | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> HarnessConfig:
@@ -44,6 +55,15 @@ class HarnessConfig:
         if not isinstance(cameras_raw, list):
             raise ValueError("agent.cameras must be a list")
         cameras = tuple(_camera_from_dict(item, config_path.parent) for item in cameras_raw)
+        robot_raw = raw.get("robot")
+        robot_spec = None if robot_raw is None else _robot_from_dict(robot_raw, config_path.parent)
+        scene_value = raw.get("scene_geometry")
+        scene_path = None
+        if scene_value is not None:
+            scene_path = Path(scene_value)
+            if not scene_path.is_absolute():
+                scene_path = config_path.parent / scene_path
+            scene_path = scene_path.resolve()
         robot_config_value = raw.get("robot_config")
         if robot_config_value is None:
             raise ValueError("agent.robot_config is required")
@@ -66,6 +86,8 @@ class HarnessConfig:
             max_feedback_age_s=max_age,
             max_plan_frames=max_frames,
             execution_report_dir=report_dir,
+            robot=robot_spec,
+            scene_geometry_path=scene_path,
         )
 
 
@@ -99,4 +121,34 @@ def _camera_from_dict(value: dict[str, Any], base_dir: Path) -> CameraSpec:
         fourcc=value.get("fourcc"),
         coordinate_frame=value.get("coordinate_frame"),
         extrinsics_path=str(extrinsics_path) if extrinsics_path else None,
+    )
+
+
+def _robot_from_dict(value: dict[str, Any], base_dir: Path) -> RobotSpec:
+    if not isinstance(value, dict):
+        raise ValueError("agent.robot must be an object")
+    robot_id = value.get("id")
+    left_port = value.get("left_port")
+    right_port = value.get("right_port")
+    if not isinstance(robot_id, str) or not robot_id.strip():
+        raise ValueError("agent.robot.id must be a non-empty string")
+    if not isinstance(left_port, str) or not left_port.strip():
+        raise ValueError("agent.robot.left_port must be a device path")
+    if not isinstance(right_port, str) or not right_port.strip():
+        raise ValueError("agent.robot.right_port must be a device path")
+    calibration_dir_value = value.get("calibration_dir")
+    calibration_dir = None
+    if calibration_dir_value is not None:
+        calibration_dir = Path(calibration_dir_value).expanduser()
+        if not calibration_dir.is_absolute():
+            calibration_dir = base_dir / calibration_dir
+    max_step = float(value.get("max_step_deg", 0.5))
+    if not 0 < max_step <= 15:
+        raise ValueError("agent.robot.max_step_deg must be in (0, 15]")
+    return RobotSpec(
+        robot_id=robot_id,
+        left_port=left_port,
+        right_port=right_port,
+        calibration_dir=calibration_dir.resolve() if calibration_dir else None,
+        max_step_deg=max_step,
     )

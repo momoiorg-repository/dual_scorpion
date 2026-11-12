@@ -127,7 +127,9 @@ def built_in_skill_registry() -> SkillRegistry:
             preconditions=[
                 "Operator motion authorization is present.",
                 "Robot is connected, calibrated, and feedback is fresh.",
+                "A measured table, 45 cm support-stick, and arm-radius scene is loaded.",
                 "IK, joint limits, and trajectory continuity checks pass.",
+                "The current encoder pose and every trajectory frame are clear of the measured scene.",
             ],
             postconditions=["Measured joint and TCP errors are within declared tolerances."],
             failure_conditions=["IK is unreachable.", "A joint limit or rate limit is exceeded.", "Feedback is stale or tracking error grows."],
@@ -135,6 +137,8 @@ def built_in_skill_registry() -> SkillRegistry:
             safety_constraints=[
                 "LLM joint commands are rejected.",
                 "Gripper commands are not integrated and are never sent.",
+                "No automatic homing occurs; planning starts from measured encoders.",
+                "Initial table contact or insufficient clearance rejects execution.",
                 "Stop requests and local safety checks take precedence over the plan.",
             ],
             backend="telegrip.mocopi.agent.motion + telegrip.mocopi.dataset.real.execute_plan",

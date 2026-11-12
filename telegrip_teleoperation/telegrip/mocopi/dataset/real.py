@@ -285,6 +285,11 @@ def execute_plan(
         "frames": [],
         "failure": None,
         "limits": "TCP estimated from motor encoders and URDF, not an independent physical measurement",
+        "startup_behavior": {
+            "auto_home": False,
+            "initial_state_source": "encoder_reading_only",
+            "hold_strategy": "present_position_before_torque_enable",
+        },
     }
     active = False
     failure = None
@@ -311,10 +316,26 @@ def execute_plan(
                     )
             # First set the present position as the goal, then enable only
             # the seven arm joints. The grippers are never read or written.
+            hold_start = {side: current[side].copy() for side in SIDES}
             robot.send_action(_actions(current))
             active = True
             for side in SIDES:
                 getattr(robot, side + "_bus").enable_torque(list(JOINTS))
+            hold_measured = _read_joints(robot)
+            hold_step = {
+                side: float(np.max(np.abs(hold_measured[side] - hold_start[side])))
+                for side in SIDES
+            }
+            report["initial_hold"] = {
+                "max_joint_step_deg": hold_step,
+                "within_start_tolerance": all(value <= max_start_error_deg for value in hold_step.values()),
+                "strategy": "present_position_before_torque_enable",
+            }
+            if any(value > max_start_error_deg for value in hold_step.values()):
+                raise RuntimeError(
+                    "Robot moved while enabling the initial position hold: "
+                    f"{report['initial_hold']}"
+                )
             report["status"] = "running"
             start_time = time.monotonic()
             for index, frame in enumerate(plan["frames"]):
