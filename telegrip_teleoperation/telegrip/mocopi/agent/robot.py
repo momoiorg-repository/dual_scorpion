@@ -380,7 +380,7 @@ class RealRobotAdapter:
             and result["current"] >= self.gripper.current_threshold
         )
         position_stalled = not result["position_reached"] and result["position_error"] > self.gripper.position_tolerance
-        if thresholds_met and position_stalled:
+        if thresholds_met and position_stalled and result["motion_observed"]:
             result["grasp_verified"] = True
             result["grasp_state"] = "threshold_verified"
             result["verification_basis"] = [
@@ -444,12 +444,16 @@ class RealRobotAdapter:
             raise ValueError("gripper step must be positive")
         started = time.monotonic_ns()
         commands: list[float] = []
+        motion_commands: list[float] = []
         stopped = False
+        stop_reason = "pending"
         with self._bus_lock:
             current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
+            initial_position = current
             # Overwrite any retained Goal_Position before torque is enabled. This
             # prevents a stale goal from yanking the gripper when torque starts.
             bus.sync_write("Goal_Position", {GRIPPER: current}, normalize=True)
+            commands.append(current)
             bus.enable_torque([GRIPPER])
             hold_measured = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
             hold_step = abs(hold_measured - current)
@@ -464,12 +468,39 @@ class RealRobotAdapter:
                     f"{side} gripper moved while enabling the initial position hold: {initial_hold}"
                 )
             direction = 1.0 if target >= current else -1.0
+            motion_required = abs(target - initial_position) > 1e-9
+            if motion_required:
+                if stop_event is not None and stop_event.is_set():
+                    stopped = True
+                    stop_reason = "operator_stop"
+                else:
+                    # A requested movement is commanded even when it is smaller
+                    # than position_tolerance. That tolerance decides whether a
+                    # reached position is acceptable; it must not suppress the
+                    # first test command.
+                    next_position = float(
+                        np.clip(
+                            current + direction * min(step, abs(target - current)),
+                            self.gripper.min_position,
+                            self.gripper.max_position,
+                        )
+                    )
+                    bus.sync_write("Goal_Position", {GRIPPER: next_position}, normalize=True)
+                    commands.append(next_position)
+                    motion_commands.append(next_position)
+                    time.sleep(self.gripper.settle_s)
+                    current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
+            else:
+                stop_reason = "no_motion_required"
+
             while abs(target - current) > self.gripper.position_tolerance:
                 if stop_event is not None and stop_event.is_set():
                     stopped = True
+                    stop_reason = "operator_stop"
                     break
                 if (time.monotonic_ns() - started) / 1e9 > self.gripper.grasp_timeout_s:
                     stopped = True
+                    stop_reason = "timeout"
                     break
                 next_position = float(
                     np.clip(
@@ -480,6 +511,7 @@ class RealRobotAdapter:
                 )
                 bus.sync_write("Goal_Position", {GRIPPER: next_position}, normalize=True)
                 commands.append(next_position)
+                motion_commands.append(next_position)
                 time.sleep(self.gripper.settle_s)
                 current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
                 if monitor_stall:
@@ -493,6 +525,7 @@ class RealRobotAdapter:
                         and load >= self.gripper.load_threshold
                         and current_raw >= self.gripper.current_threshold
                     ):
+                        stop_reason = "grasp_threshold_reached"
                         break
             if stopped or monitor_stall:
                 held = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
@@ -502,18 +535,52 @@ class RealRobotAdapter:
             load = self._optional_raw_read(bus, "Present_Load")
             current_reading = self._optional_raw_read(bus, "Present_Current")
         position_error = abs(final - target)
+        measured_movement = abs(final - initial_position)
+        motion_observed = measured_movement >= self.gripper.motion_observation_threshold
+        position_reached = position_error <= self.gripper.position_tolerance
+        if stopped:
+            status = "stopped"
+        elif not motion_required and operation == "hold":
+            status = "complete"
+        elif not motion_required:
+            status = "no_motion_required"
+            stop_reason = "no_motion_required"
+        elif motion_required and not motion_commands:
+            status = "command_not_sent"
+            stop_reason = "command_not_sent"
+        elif motion_required and not motion_observed:
+            status = "motion_not_observed"
+            stop_reason = "motion_not_observed"
+        elif not position_reached:
+            status = "position_not_reached"
+            stop_reason = "position_not_reached"
+        else:
+            status = "complete"
+            if stop_reason == "pending":
+                stop_reason = "target_reached"
         return {
             "side": side,
             "operation": operation,
             "initial_hold": initial_hold,
-            "status": "complete" if not stopped else "stopped",
+            "status": status,
+            "stop_reason": stop_reason,
             "target_position": target,
+            "initial_position": initial_position,
             "final_position": final,
             "raw_final_position": raw_final,
+            "measured_movement": measured_movement,
             "position_error": position_error,
-            "position_reached": position_error <= self.gripper.position_tolerance,
+            "position_reached": position_reached,
+            "motion_required": motion_required,
+            "motion_observation_threshold": self.gripper.motion_observation_threshold,
+            "motion_observed": motion_observed,
             "stopped": stopped,
             "commands": commands,
+            "motion_commands": motion_commands,
+            "command_count": len(commands),
+            "motion_command_count": len(motion_commands),
+            "command_sent": bool(commands),
+            "motion_command_sent": bool(motion_commands),
             "load": load,
             "current": current_reading,
             "timestamp_monotonic_ns": time.monotonic_ns(),

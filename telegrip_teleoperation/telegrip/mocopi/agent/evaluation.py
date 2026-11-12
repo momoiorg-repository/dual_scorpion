@@ -90,7 +90,9 @@ def evaluate_execution(report: dict[str, Any], plan: Any) -> dict[str, Any]:
         elif kind == "gripper_command_complete":
             step_id = condition.get("step_id")
             rows = [item for item in report.get("steps", []) if item.get("step_id") == step_id]
-            passed = bool(rows) and all(item.get("status") == "complete" for item in rows)
+            passed = bool(rows) and all(
+                item.get("status") in {"complete", "no_motion_required"} for item in rows
+            )
             checks.append({"condition": condition, "passed": passed})
         elif kind == "grasp_verified":
             step_id = condition.get("step_id")

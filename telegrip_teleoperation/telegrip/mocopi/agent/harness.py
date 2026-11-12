@@ -309,7 +309,13 @@ class ScorpionAgentHarness:
                 result = self.robot.grasp(side, stop_event=self.safety.stop_event)
             results.append(result)
         return {
-            "status": "complete" if all(item.get("status") == "complete" for item in results) else "stopped",
+            "status": (
+                "complete"
+                if all(item.get("status") == "complete" for item in results)
+                else "no_motion_required"
+                if all(item.get("status") == "no_motion_required" for item in results)
+                else "stopped"
+            ),
             "action": action,
             "authorization": grant.to_status(),
             "results": results,
@@ -556,7 +562,7 @@ class ScorpionAgentHarness:
                             "result": result,
                         }
                     )
-                    if result.get("status") not in {"complete", "valid"}:
+                    if result.get("status") not in {"complete", "valid", "no_motion_required"}:
                         raise RuntimeError(f"step {step.id!r} did not complete")
                     completed.add(step.id)
                 job.report = {

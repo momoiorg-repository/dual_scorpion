@@ -71,7 +71,9 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
         if args.command == "gripper-test":
-            return _print(_run_limited_gripper_test(harness, args))
+            result = _run_limited_gripper_test(harness, args)
+            _print(result)
+            return 0 if result["status"] in {"complete", "no_motion_required"} else 1
     parser.error(f"unknown command {args.command!r}")
     return 2
 
@@ -230,11 +232,24 @@ def _run_limited_gripper_test(harness: ScorpionAgentHarness, args: argparse.Name
         position=target,
     )
     after = harness.read_gripper_state(args.arm)
+    command = result["results"][0]
     harness.stop_motion()
     return {
-        "status": result["status"],
+        "status": command["status"],
+        "stop_reason": command["stop_reason"],
         "arm": args.arm,
         "requested_delta": float(args.delta),
+        "initial_position": command["initial_position"],
+        "target_position": command["target_position"],
+        "final_position": command["final_position"],
+        "measured_movement": command["measured_movement"],
+        "position_error": command["position_error"],
+        "position_reached": command["position_reached"],
+        "motion_required": command["motion_required"],
+        "motion_observed": command["motion_observed"],
+        "motion_observation_threshold": command["motion_observation_threshold"],
+        "command_count": command["command_count"],
+        "motion_command_count": command["motion_command_count"],
         "before": before,
         "command": result,
         "after": after,

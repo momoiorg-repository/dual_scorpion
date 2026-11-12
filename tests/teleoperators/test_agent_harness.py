@@ -159,6 +159,7 @@ class FakeGripperBus:
         load: float = 0.0,
         current: float = 0.0,
         fail_reads: bool = False,
+        ignore_write: bool = False,
     ):
         from lerobot.motors import MotorCalibration, MotorNormMode
 
@@ -170,6 +171,7 @@ class FakeGripperBus:
         self.load = load
         self.current = current
         self.fail_reads = fail_reads
+        self.ignore_write = ignore_write
         self.commands = []
         self.enabled = []
         self.active_writes = 0
@@ -202,7 +204,9 @@ class FakeGripperBus:
         self.max_active_writes = max(self.max_active_writes, self.active_writes)
         time.sleep(0.01)
         self.commands.append(target)
-        if (
+        if self.ignore_write:
+            pass
+        elif (
             self.stall_position is not None
             and ((target > self.position and self.stall_position <= target)
                  or (target < self.position and self.stall_position >= target))
@@ -258,6 +262,12 @@ class FakeCombinedRobot(FakeRobot):
             ),
             follower=FakeGripperFollower(FakeGripperBus(0.0), FakeGripperBus(10.0)),
         )
+
+    def validate_calibration(self):
+        return {"status": "valid", "errors": []}
+
+    def connect(self):
+        return None
 
     def read(self):
         reading = self.adapter.read()
@@ -707,7 +717,8 @@ def test_example_agent_config_resolves_paths_without_hardcoding_devices():
     assert config.cameras[0].device == "/dev/video2"
     assert config.gripper.open_position == 0.0
     assert config.gripper.closed_position == 45.0
-    assert config.gripper.position_tolerance == 0.5
+    assert config.gripper.position_tolerance == 2.0
+    assert config.gripper.motion_observation_threshold == 0.1
     assert all(camera.device for camera in config.cameras)
     assert config.operation_grants_file is not None
     assert config.robot is not None
@@ -992,6 +1003,121 @@ def test_gripper_grant_restricts_arm_action_and_position_range(tmp_path):
     assert not harness.authorization.status()["active_grant"]
 
 
+def test_small_gripper_motion_is_commanded_and_observed_despite_position_tolerance(tmp_path):
+    initial = 2.025139664804469
+    target = initial + 1.0
+    spec = GripperSpec(
+        position_tolerance=2.0,
+        motion_observation_threshold=0.1,
+        max_step=2.0,
+        settle_s=0.001,
+        grasp_timeout_s=0.2,
+    )
+    robot = FakeCombinedRobot(spec)
+    robot.adapter.follower.left_bus.position = initial
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(
+        harness,
+        arms=["left"],
+        action="set_position",
+        max_position_delta=1.0,
+    )
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=target,
+    )
+    row = result["results"][0]
+    assert row["status"] == "complete"
+    assert row["stop_reason"] == "target_reached"
+    assert row["initial_position"] == pytest.approx(initial)
+    assert row["target_position"] == pytest.approx(target)
+    assert row["final_position"] == pytest.approx(target)
+    assert row["measured_movement"] == pytest.approx(1.0)
+    assert row["position_error"] == pytest.approx(0.0)
+    assert row["position_reached"] is True
+    assert row["motion_required"] is True
+    assert row["motion_observed"] is True
+    assert row["motion_command_count"] == 1
+    assert row["motion_commands"][0] == pytest.approx(target)
+    assert row["commands"] == pytest.approx([initial, target])
+
+
+def test_gripper_motion_not_observed_is_not_reported_as_complete(tmp_path):
+    initial = 2.025139664804469
+    target = initial + 1.0
+    spec = GripperSpec(
+        position_tolerance=2.0,
+        motion_observation_threshold=0.1,
+        max_step=2.0,
+        settle_s=0.001,
+        grasp_timeout_s=0.2,
+    )
+    robot = FakeCombinedRobot(spec)
+    robot.adapter.follower.left_bus.position = initial
+    robot.adapter.follower.left_bus.ignore_write = True
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(
+        harness,
+        arms=["left"],
+        action="set_position",
+        max_position_delta=1.0,
+    )
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=target,
+    )
+    row = result["results"][0]
+    assert row["status"] == "motion_not_observed"
+    assert row["stop_reason"] == "motion_not_observed"
+    assert row["initial_position"] == pytest.approx(initial)
+    assert row["final_position"] == pytest.approx(initial)
+    assert row["measured_movement"] == pytest.approx(0.0)
+    assert row["position_error"] == pytest.approx(1.0)
+    assert row["position_reached"] is True
+    assert row["motion_required"] is True
+    assert row["motion_observed"] is False
+    assert row["motion_command_count"] == 1
+    assert row["motion_commands"][0] == pytest.approx(target)
+
+
+def test_limited_gripper_test_reports_command_and_observed_motion(tmp_path):
+    from telegrip.mocopi.agent.cli import _run_limited_gripper_test
+
+    initial = 2.025139664804469
+    spec = GripperSpec(
+        position_tolerance=2.0,
+        motion_observation_threshold=0.1,
+        max_step=2.0,
+        settle_s=0.001,
+        grasp_timeout_s=0.2,
+    )
+    robot = FakeCombinedRobot(spec)
+    robot.adapter.follower.left_bus.position = initial
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(
+        harness,
+        arms=["left"],
+        action="set_position",
+        max_position_delta=1.0,
+    )
+    result = _run_limited_gripper_test(
+        harness,
+        SimpleNamespace(arm="left", delta=1.0),
+    )
+    assert result["status"] == "complete"
+    assert result["stop_reason"] == "target_reached"
+    assert result["initial_position"] == pytest.approx(initial)
+    assert result["target_position"] == pytest.approx(initial + 1.0)
+    assert result["final_position"] == pytest.approx(initial + 1.0)
+    assert result["measured_movement"] == pytest.approx(1.0)
+    assert result["position_error"] == pytest.approx(0.0)
+    assert result["motion_observed"] is True
+    assert result["motion_command_count"] == 1
+    assert result["stop_requested"] is True
+
+
 def test_gripper_initial_hold_rejects_stale_goal_motion(tmp_path):
     robot = FakeCombinedRobot()
     robot.adapter.follower.left_bus.position = 10.0
@@ -1061,7 +1187,9 @@ def test_gripper_open_close_set_hold_release_and_read_state(tmp_path):
         action="open",
         arms="left",
     )
-    assert opened["status"] == "complete"
+    assert opened["status"] == "no_motion_required"
+    assert opened["results"][0]["motion_required"] is False
+    assert opened["results"][0]["motion_commands"] == []
     assert opened["results"][0]["final_position"] == pytest.approx(0.0)
 
     _issue_gripper_grant(harness)

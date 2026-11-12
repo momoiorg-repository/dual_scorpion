@@ -270,6 +270,49 @@ Gripper commands:
 - report communication errors,
 - never command the gripper during arm-only trajectory replay.
 
+### Position tolerance versus observed motion
+
+`position_tolerance` is a control acceptance tolerance. It does not decide whether a requested motion should be commanded.
+
+`motion_observation_threshold` is separate. It is the minimum encoder change accepted as evidence that the gripper physically moved.
+
+For every requested nonzero gripper position change:
+
+1. the current encoder position is read,
+2. the current position is written as the initial hold goal,
+3. torque is enabled and the hold is re-read,
+4. the requested target is sent even when the requested change is smaller than `position_tolerance`,
+5. the final encoder position is read,
+6. measured movement is compared with `motion_observation_threshold`.
+
+The result reports:
+
+- `initial_position`,
+- `target_position`,
+- `final_position`,
+- `measured_movement`,
+- `position_error`,
+- `position_reached`,
+- `motion_required`,
+- `motion_observed`,
+- `motion_observation_threshold`,
+- `command_count`,
+- `motion_command_count`,
+- `commands`,
+- `motion_commands`,
+- `stop_reason`.
+
+Possible motion statuses include:
+
+- `complete`: a required motion command was sent, encoder movement was observed, and the final position is within tolerance.
+- `motion_not_observed`: a motion command was sent, but the encoder change was below the observation threshold.
+- `command_not_sent`: motion was required but no motion command was issued.
+- `position_not_reached`: motion was observed, but the final position remains outside tolerance.
+- `no_motion_required`: the target already equals the measured position.
+- `stopped`: the local stop event ended the operation.
+
+A closed position, a sent command, and an observed encoder movement are distinct facts. The report keeps them separate.
+
 ### Gripper-only scene requirement
 
 A gripper-only command does not move `joint0`–`joint6`, so it does not require the full measured table/stick scene. It still requires a local one-shot grant in which the operator explicitly confirms:
@@ -397,6 +440,8 @@ uv run --no-sync --active python -m telegrip.mocopi.agent \
 ```
 
 Use a negative delta only when you have visually confirmed the opposite direction is safe. The harness does not infer an open/close direction from the delta.
+
+The CLI returns a nonzero exit code for `motion_not_observed`, `command_not_sent`, or `position_not_reached`. A small movement that was suppressed by `position_tolerance` can no longer be reported as a successful motion test.
 
 ### JOUZU/Gemini gripper-test sequence
 

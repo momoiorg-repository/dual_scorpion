@@ -44,6 +44,7 @@ class GripperSpec:
     min_position: float = 0.0
     max_position: float = 100.0
     position_tolerance: float = 2.0
+    motion_observation_threshold: float = 0.1
     max_step: float = 2.0
     settle_s: float = 0.02
     grasp_timeout_s: float = 2.0
@@ -186,6 +187,7 @@ def _gripper_from_dict(value: Any) -> GripperSpec:
         min_position=float(value.get("min_position", 0.0)),
         max_position=float(value.get("max_position", 100.0)),
         position_tolerance=float(value.get("position_tolerance", 2.0)),
+        motion_observation_threshold=float(value.get("motion_observation_threshold", 0.1)),
         max_step=float(value.get("max_step", 2.0)),
         settle_s=float(value.get("settle_s", 0.02)),
         grasp_timeout_s=float(value.get("grasp_timeout_s", 2.0)),
@@ -194,12 +196,15 @@ def _gripper_from_dict(value: Any) -> GripperSpec:
     )
     positive = (
         spec.position_tolerance,
+        spec.motion_observation_threshold,
         spec.max_step,
         spec.settle_s,
         spec.grasp_timeout_s,
     )
     if any(not np.isfinite(item) or item <= 0 for item in positive):
-        raise ValueError("gripper tolerance, step, settle, and timeout values must be positive")
+        raise ValueError(
+            "gripper tolerance, observation threshold, step, settle, and timeout values must be positive"
+        )
     if not spec.min_position < spec.max_position:
         raise ValueError("gripper min_position must be less than max_position")
     if not spec.min_position <= spec.open_position <= spec.max_position:

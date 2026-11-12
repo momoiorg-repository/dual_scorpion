@@ -30,8 +30,10 @@ gripper:
   closed_position: 45.0
   min_position: 0.0
   max_position: 100.0
-  # Allow the first one-unit test motion to be commanded and measured.
-  position_tolerance: 0.5
+  # Control acceptance tolerance. This does not suppress a requested motion.
+  position_tolerance: 2.0
+  # Separate from position_tolerance: minimum encoder change accepted as motion.
+  motion_observation_threshold: 0.1
   # Conservative software slew limit; physical response is not yet verified.
   max_step: 2.0
   settle_s: 0.02

@@ -24,5 +24,6 @@ This skill is an operating guide. It does not implement kinematics, control, or 
 11. Call `stop_motion` immediately when the user requests a stop. Local safety checks take precedence over any model reasoning.
 
 Gripper control is integrated through the existing calibrated LeRobot follower path. A closed gripper position is not proof of a successful grasp. Default `grasp` results are `unverified`; they become threshold-verified only when measured load/current thresholds and encoder stall evidence are explicitly configured.
+For gripper motion tests, a sent command is not the same as observed motion. Check `motion_command_count`, `measured_movement`, and `motion_observed`; a `motion_not_observed` result must not be treated as successful movement.
 
 Detailed tool contracts are in [references/mcp-tools.md](references/mcp-tools.md). Safety and authorization requirements are in [references/safety.md](references/safety.md).
