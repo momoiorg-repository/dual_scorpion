@@ -234,45 +234,84 @@ uv run --no-sync --active python -m telegrip.mocopi.dataset verify \
 ## G. Full CAD関節データの実機再生（`replay-dataset`）
 
 Full CADモデルの14関節データは、シミュレーション上の運動学データです。実機再生では、
-モデル関節 `q_model` とモーター角 `q_motor` の対応を、実機の複数姿勢から検証します。
+モデル関節 `q_model` とモーター角 `q_motor` の対応を、実機の関節ごとに検証します。
 新しいIKは使わず、検証済みの `q_motor = sign × q_model + offset` と関節補間だけを使います。
 
-### マッピング検証（`verify-dataset-mapping`）
+### 4つの姿勢を区別する
 
-トルクを切った状態で、データセットの参照フレームの姿勢にロボットを手で合わせます。
-各関節について次を最小二乗で求めます。
-
-| 指標 | 定義 | 判定 |
-|---|---|---|
-| `slope` | `q_motor` を `q_model` に回帰した傾き | ±1から10%以内 |
-| `intercept_deg` | 回帰の切片（モーター角のゼロオフセット） | マッピングに保存 |
-| `rms_deg` / `max_deg` | 回帰残差のRMS・最大値 | 最大値が既定3度以内 |
-| `model_range_deg` | 参照フレーム間のモデル関節可変範囲 | 5度以上（符号判定のため） |
-
-関節順序・符号・モデル形状が一致しない場合、スロープが±1から外れるか残差が増えます。
-その場合はマッピングを保存せず失敗します。Mocopi収録の個人差や手動姿勢合わせの誤差は
-残差に含まれるため、成功は「実機の絶対精度」を保証しません。
-
-### 実機再生（`replay-dataset`）
-
-`--execute` を付けない検証では、較正範囲、モデルSHA-256、データセットのIK状態・衝突・
-フレーム間ステップを確認します。`--execute` では既存Followerの制限を使います。
-
-| 指標 | 定義・制限 |
+| 名前 | 定義 |
 |---|---|
-| 開始誤差 | 実機の現在角とマッピング後の先頭フレームの差。2度以内でなければ開始しない |
-| 1指令ステップ | `max_relative_target`（既存Followerの0.5度以下） |
-| 関節速度 | 補間を含めて最大15度/s以下 |
-| 追従誤差 | 補間目標と実測の差。5度超でHOLD |
-| `time_scale` | 元フレーム時間に対する実機再生時間。速度制限のため1超になりうる |
-| `control_steps` | 実際に送った関節指令数 |
-| `max_observed_speed_deg_s` | 送信指令の差分から求めた最大推定速度 |
-| `tcp_position_error_m` / `tcp_orientation_error_deg` | マッピングを逆変換した実測関節角のFullモデルFKとデータセット目標の差。シミュレーションモデル上の推定で外部計測ではない |
+| MuJoCo Model Zero | MJCF/URDFの関節角0 |
+| Real Robot Calibration Zero | LeRobot較正の`(range_min + range_max) / 2`。モーター角0 |
+| Real Robot Current Pose | 現在のエンコーダー読み取り |
+| Dataset Initial Pose | データセット先頭フレームのモデル関節角 |
 
-レポートには入力データ・マッピング・較正・モデルのSHA-256、使用した参照フレーム、
-グリッパーを指令していないことを保存します。較正ファイルが変わるとマッピングのハッシュが
-一致せず、再生を拒否します。実機の関節限界はマッピングの任意の `joint_limits_deg` と
-較正範囲で制限し、未計測のFull MJCF仮限界を実機限界として扱いません。
+実機のホーム姿勢はMuJoCoのゼロ姿勢と一致しないことがあります。`offset`は
+「較正ゼロに対応するモデル角」であり、実機をMuJoCoゼロへ移動させたり、現在姿勢から
+offsetを推測したりしません。
+
+### 関節ごとの情報（`inspect-dataset-mapping`）
+
+`inspect-dataset-mapping` は較正JSONとMJCFを読み、左右7関節ずつ、関節順序、`motor_id`、
+MJCF軸、モデルゼロ、較正ゼロ、較正範囲、マッピング後の角度、左右対応、`verified`を
+表示します。マッピングがなければ符号とoffsetは`null`で、14関節が`unverified`になります。
+接続・トルク変更・指令は行いません。`--check-start`を付けたときだけ現在角度を読みます。
+
+### joint-wise検証（`verify-dataset-mapping --mode joint-wise`）
+
+1つの参照フレーム姿勢を全身で1回合わせ、その後は1関節ずつモデル正方向・負方向へ
+10度以上動かし、各試験のあとその関節を参照姿勢へ戻します。最初に、14関節すべてがサーボホーン直結（1:1）であることを
+確認します。参照フレームは`--reference-frame`で明示します。frame 0はモデルの
+neutral姿勢（全関節0）なので暗黙の既定にはしません。トルクは切ったまま、腕を支えて行います。ツールはモーターを駆動しません。
+各関節について次を記録します。
+
+| 指標 | 意味 |
+|---|---|
+| `motor_id` / `motor_model` | 較正JSONのモーターID・機種との照合 |
+| `model_joint` / `model_axis` | MJCFの関節名と親body座標の回転軸 |
+| `evidence.model_positive_axis_world` | 参照姿勢でのワールド座標の回転軸（右手則用） |
+| `sign` | 正方向試験のエンコーダー変化から決定 |
+| `offset_deg` | 参照姿勢の`motor_ref - sign × model_ref` |
+| `positive_delta_deg` / `negative_delta_deg` | 2方向試験の実測変化 |
+| `other_joint_violations` | 他の関節が5度を超えて動いた場合の関節と変化量 |
+| `scale_verified` | joint-wiseでは`false`（直接駆動1:1を前提） |
+| `verified` | 1関節でもfalseならマッピングを書かない |
+
+`--mode poses`は従来の3〜5姿勢フィットで、`slope`（±1からのずれ）と残差も検証します。
+全身姿勢を複数合わせられる場合はこちらが強い検証になります。
+
+### 事前検証（`--execute`なし）
+
+`replay-dataset`は`--execute`なしではモーターへ指令しません。データセット、マッピング、
+較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲、IK状態、衝突、
+フレーム間ステップを検証します。`--check-start`を付けると現在角度を読み、開始誤差と
+初期移行の安全性を評価します。`initial_transition`には次が入ります。
+
+| 指標 | 意味 |
+|---|---|
+| `delta_deg` / `steps` / `estimated_duration_s` | 現在姿勢から先頭フレームまでの関節空間移動 |
+| `limit_violations` | 較正範囲を外れる端点 |
+| `collision_frames` / `max_penetration_m` | Full MJCF上の床・自己衝突（外部障害物は未モデル化） |
+| `safe` | 上記に違反がない場合だけtrue |
+
+開始誤差が2度を超える場合、`--execute`は拒否します。`--allow-initial-move`は
+`initial_transition.safe: true`を確認した場合だけ明示的に使用でき、既定は無効です。
+
+### 実機再生（`--execute`）
+
+初回は5度/s以下を推奨します。既存Followerの制限をそのまま使い、1指令0.5度以下、
+開始誤差2度以内、追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
+グリッパーは読み書きしません。レポートには`joint_inspection`、`pose_context`、
+`start_pose`、`initial_transition`、`validation.calibration_margins_deg`、
+`max_observed_speed_deg_s`、`tracking`、`tcp_warning_frames`が入ります。
+
+### 未検証として残る項目
+
+- Full CAD MJCFの関節限界は未測定。±180度はプレビュー用。
+- 外部障害物は`--obstacles`で明示しない限りモデル化されない。
+- 実機TCPの物理的な絶対精度は外部計測していない。
+- joint-wiseの`sign`と`offset`は操作者確認に基づく。`scale`は直接駆動1:1の前提。
+- 較正範囲はLeRobotの`range_min`/`range_max`であり、機械的ストッパーの測定値ではない。
 
 ## 参考: 現時点で評価できない項目
 

@@ -570,76 +570,165 @@ MuJoCoの画面録画や新しいGUIは追加していません。必要な映�
 ### Full CADの14関節データを実機で再生する
 
 `episode-001-robot-*` のようなFull CADモデルの関節角データセットは、これまで
-シミュレーション専用でした。新しい `replay-dataset` は、**実機で検証済みの関節マッピング**
+シミュレーション専用でした。`replay-dataset` は、**実機で検証済みの関節マッピング**
 がある場合に限り、既存のFollower安全制限を使って再生します。新しいIKは使いません。
 
-#### 1. 実機の関節対応を検証する
+この節のコマンドは、カレントディレクトリをリポジトリ直下にして実行します。環境の
+`PYTHONPATH` が別のworktreeを指している場合は、`PYTHONPATH=telegrip_teleoperation` を
+先頭に付けて、このリポジトリのソースを使用してください。
 
-トルクを切った状態でロボットを手で支え、表示されるデータセットの姿勢に合わせます。
-このコマンドはモーターを動かしません。較正ファイルの変更を検出するため、`--robot-id` と
-現在の較正ファイルのSHA-256をマッピングに保存します。
+#### 0. ホーム姿勢についての前提
+
+次の4つは別物として扱います。どれか1つから他を推測してはいけません。
+
+| 名前 | 意味 |
+|---|---|
+| MuJoCo Model Zero | MJCF/URDFの関節角0。モデルの組み立て姿勢 |
+| Real Robot Calibration Zero | LeRobot較正の`(range_min + range_max) / 2`。モーター角0 |
+| Real Robot Current Pose | 今のエンコーダー読み取り |
+| Dataset Initial Pose | データセット先頭フレームのモデル関節角 |
+
+Dual Scorpion実機のホーム姿勢はMuJoCoのゼロ姿勢と一致しません。これは故障では
+ありません。マッピングは`motor = sign × model + offset`のままで、`offset`が
+「較正ゼロに対応するモデル角」を表します。実機をMuJoCoのゼロ姿勢へ無理に移動させる
+必要はありません。現在姿勢をoffsetの確定値として扱うことも禁止です。
+
+#### 1. 関節ごとの情報を読む（モーターを動かさない）
+
+最初に、モデル・較正・データセットから確定できる項目だけを表示します。
+`inspect-dataset-mapping` はFollowerを構築して較正JSONを読みますが、接続もトルク変更も
+指令も行いません。`--check-start` を付けた場合だけ、現在角度を読み取ります。
 
 ```bash
-uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset inspect-dataset-mapping \
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
   --episode 0 \
-  --output config/mocopi/hardware/robot-001-mapping.yaml \
-  --robot-id <校正済みrobot-id> \
-  --left-port /dev/ttyACM0 \
-  --right-port /dev/ttyACM1
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --output outputs/mocopi/reports/episode-001-joint-inspection.json
 ```
 
-既定ではエピソード内の5フレームを順に表示します。各フレームでロボットを手で同じ姿勢に
-合わせてEnterを押してください。モデル関節角とモーター角から、関節ごとに
-`motor = sign × model + offset` を最小二乗で求めます。次の場合は検証失敗として
-マッピングを書きません。
+出力には左右7関節ずつ、次が入ります。
 
-- スロープが±1から10%以上ずれる（関節順序・対応・モデルの不一致）
-- 関節の可変範囲が5度未満で符号を判定できない
-- 残差が既定3度を超える（手動姿勢合わせの誤差を含む）
+- データセット内の関節順序と`motor_id`
+- MJCFの関節名・回転軸・親body
+- モデルゼロ（0度）と較正ゼロ（モーター0度）
+- 較正範囲`[min, max]`（度）と、マッピング後のモデル角換算
+- `sign` / `offset_deg` / 関節ごとの`verified`
+- 左右の対応（同じindexの関節名、モーターID、軸の関係）
 
-基準姿勢を変える場合は `--reference-frame` を3回以上指定します。検証結果は
-`--report` にJSONで保存できます。マッピングには較正ファイルのハッシュ、使用データ、
-参照フレーム、各関節の傾き・切片・残差が入ります。
+マッピング未作成の場合、`sign`と`offset_deg`は`null`、`unverified_joints`に14関節が
+並びます。これは正常です。符号とゼロ位置は実機でしか確定できません。
 
-#### 2. モーターを動かさずに事前検証する
+#### 2. 実機の関節対応を検証する（トルク解除・受動読み取り）
 
-`--execute` を付けない場合は、ポートを開かず、データセット・マッピング・較正範囲・
-モデルのSHA-256・IK失敗/衝突/関節ステップを検証します。
+`verify-dataset-mapping`の既定`--mode joint-wise`は、**全身姿勢を1回だけ**合わせ、
+そのあと**1関節ずつ**正方向・負方向へ手で動かして符号を確認します。5つの全身姿勢を
+再現する必要はありません。トルクは切ったままです。腕の落下を防ぐ支持を必ず行って
+ください。このコマンドはモーターを駆動しません。
 
 ```bash
-uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
-  --mapping config/mocopi/hardware/robot-001-mapping.yaml \
-  --robot-id <校正済みrobot-id> \
-  --calibration-dir <較正ディレクトリ>
+  --episode 0 \
+  --mode joint-wise \
+  --reference-frame 124 \
+  --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --right-port /dev/ttyACM0 \
+  --left-port /dev/ttyACM1 \
+  --sign-test-deg 10 \
+  --report outputs/mocopi/reports/episode-001-mapping-verification.json
 ```
 
-#### 3. 実機で再生する
+手順は次のとおりです。
 
-`--execute` を付けた場合だけ、Followerへ接続して7関節×左右を指令します。
-開始姿勢はマッピング後のデータセット先頭フレームと2度以内に合わせてください。
+0. 14関節すべてがサーボホーン直結（減速機・ベルトなし、1:1）であることを確認する。
+   確認できない場合は`--mode poses`を使う。
+1. トルクを切り、腕を支え、表示された参照フレームの姿勢に全身を手で合わせる。
+   この1姿勢がoffsetの基準になる。ホーム姿勢と一致している必要はない。
+2. 各関節について、表示される`axis_world`（参照姿勢でのワールド座標の回転軸）を
+   右手則で確認しながら、その関節だけをモデル正方向へ10度以上動かしてEnter。
+3. 同じ関節だけをモデル負方向へ10度以上動かしてEnter。
+4. その関節を参照姿勢へ戻してEnter。次の関節の試験前に、他の関節も参照姿勢に戻す。
+5. ツールが`sign`と`offset_deg`を記録し、`motor_id`と較正範囲を照合する。
+   他の関節が5度を超えて動いた場合は、その試験を失敗として扱う（`--max-other-joint-delta-deg`）。
+
+`--reference-frame`は必須です。frame 0はモデルのneutral姿勢（全関節0）なので暗黙の
+既定にはしていません。実機で安全に再現できるデータセット中の1フレームを明示して
+ください（上の例の124は説明用で、安全を保証する値ではありません）。全身を1回合わせる
+必要はありますが、5姿勢を順に再現する必要はありません。`--mode poses`は
+従来の3〜5姿勢の最小二乗フィットで、`slope`（±1からのずれ）も検証します。joint-wise
+モードは直接駆動の1:1を前提とするため、記録に`scale_verified: false`が入ります。
+`slope`まで確認したい場合は`--mode poses`を使ってください。
+
+次の場合はマッピングを書きません。
+
+- 指定方向へ必要量動いていない、または2回の試験で方向が反転しない
+- `motor_id`が較正JSONと一致しない
+- MJCF軸・モデル関節名が対応しない
+- 1関節でも`verified: false`が残る
+
+#### 3. モーターを動かさずに事前検証する
+
+`--execute`を付けない場合、モーターへ指令を送りません。データセット、マッピング、
+較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲、IK状態、衝突、
+フレーム間ステップを検証します。`--check-start`を付けると、現在角度を読んで
+開始誤差と初期移行の安全性（モデル内衝突・較正範囲）を評価します。読み取りだけで、
+トルク変更や指令は行いません。
 
 ```bash
-uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
-  --mapping config/mocopi/hardware/robot-001-mapping.yaml \
-  --robot-id <校正済みrobot-id> \
-  --left-port /dev/ttyACM0 \
-  --right-port /dev/ttyACM1 \
+  --episode 0 \
+  --mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --right-port /dev/ttyACM0 \
+  --left-port /dev/ttyACM1 \
+  --check-start
+```
+
+レポートには`joint_inspection`、`pose_context`（4つの姿勢）、`start_pose`、
+`initial_transition`、`validation.calibration_margins_deg`が入ります。`start_pose`が
+2度を超える場合、`--execute`は開始を拒否します。まず支持した状態で実機をデータセット
+先頭姿勢へ手で移動してください。`--allow-initial-move`は、この事前検証で
+`initial_transition.safe: true`を確認した場合だけ、明示的に使用できます。既定は無効です。
+
+#### 4. 実機で再生する
+
+`--execute`を付けた場合だけ、Followerへ接続して左右7関節を指令します。初回は
+5度/s以下を推奨します（CLI既定は5度/s）。開始誤差2度以内、1指令0.5度以下、
+追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
+グリッパーは読み書きしません。
+
+```bash
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --episode 0 \
+  --mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --right-port /dev/ttyACM0 \
+  --left-port /dev/ttyACM1 \
+  --max-joint-speed-deg-s 5 \
   --execute \
   --report outputs/mocopi/reports/episode-001-hardware-replay.json
 ```
 
-安全制限は既存のFollower実装をそのまま使います。1指令0.5度以下、関節速度15度/s以下、
-開始誤差2度以内、追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
-グリッパーは読み書きしません。関節ステップが大きいFullモデルデータでは、補間して
-速度制限内に収めるため再生時間が長くなります。レポートの `time_scale`、`control_steps`、
-`max_observed_speed_deg_s` を確認してください。較正ファイルが変わった場合はマッピングを
-作り直すまで再生を拒否します。
+`--allow-initial-move`を使う場合も、最初は5度/s以下で、周囲に人がいないこと、
+電源をすぐ切れることを確認してください。関節ステップが大きいデータでは補間により
+再生時間が長くなります。レポートの`time_scale`、`control_steps`、
+`max_observed_speed_deg_s`、`tracking`、`tcp_warning_frames`を確認してください。
+左腕172〜173フレームの手先回転誤差警告は収録時の警告であり、この機能では隠しません。
 
-この機能はシミュレーション由来の関節角を実機のエンコーダー観測と混同しません。
-実機での関節対応・追従・衝突安全性は、上記の検証と実際の低速度試験で確認してください。
+#### 未検証として残る項目
+
+- Full CAD MJCFの関節限界は未測定。±180度はプレビュー用で、実機限界ではない。
+- 机・周辺設備などの外部障害物は、`--obstacles`で明示しない限りモデル化されない。
+- 実機TCPの物理的な絶対精度は外部計測していない。レポートのTCP誤差はモーター角と
+  モデルFKからの推定。
+- joint-wiseマッピングの`sign`と`offset`は操作者の確認に基づく。`scale`は直接駆動の
+  1:1を前提とし、外部計測ではない。
+- 実機の機械的ストッパーと較正範囲の一致は確認していない。較正範囲はLeRobotの
+  `range_min`/`range_max`であり、物理限界の測定値ではない。
 
 ## データセットを読み込み・検証する
 
