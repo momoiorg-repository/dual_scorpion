@@ -11,7 +11,8 @@ The harness enforces these rules locally:
 - Motion is rejected if the current encoder pose or any trajectory frame contacts or violates the measured scene clearance.
 - Encoder feedback must be fresh and finite.
 - Generated trajectories are checked by FK, joint limits, calibrated motor limits, timing, and per-step continuity before execution.
-- The real execution loop holds the last measured pose on errors and never commands the gripper.
+- Arm-only replay never commands the gripper. The separate gripper path uses the same calibrated LeRobot bus and a shared local lock.
+- Gripper commands are range-checked, slew-rate limited, stop-aware, and never infer a grasp success from position alone.
 - Before enabling torque, the execution loop commands the measured present positions, re-reads the encoders, and rejects unexpected initial-hold motion.
 
 The harness never homes the robot automatically. The `start_pose: work` and `retarget_start_pose: neutral` values initialize existing kinematic/replay components; real harness planning starts from the current encoder pose.

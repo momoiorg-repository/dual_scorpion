@@ -21,6 +21,9 @@ All arguments are JSON objects. Results include machine-readable `structuredCont
 | `submit_task_plan` | Validate a `dual_scorpion.agent.task_plan.v2` plan | None |
 | `plan_motion` | Generate and validate a joint trajectory | None |
 | `execute_motion` | Start the real follower execution job; optionally capture before/after images | Operator token |
+| `read_gripper_state` | Read one gripper's calibrated position, state, load, and current | None |
+| `control_gripper` | Open, close, set, hold, release, or attempt a generic monitored grasp | Operator token |
+| `execute_task_plan` | Execute arm and gripper steps in dependency order | Operator token |
 | `stop_motion` | Set the local stop event | None |
 | `get_execution_report` | Return execution metrics and failure state | None |
 | `get_replan_context` | Return failure and observation requirements | None |
@@ -31,7 +34,9 @@ Motion plans must use Cartesian targets from one of these sources:
 - `target_object_id` plus an explicit offset, where the object has a validated metric pose.
 - `target_position_m` with a `pose_validation` object containing method, timestamp, and uncertainty.
 
-Direct joint, motor, or gripper command fields are rejected.
+Direct raw joint and motor goal fields are rejected. Gripper operations must use the supported skills or MCP tools; the harness converts the requested action to the calibrated LeRobot command.
+
+Gripper positions use LeRobot `RANGE_0_100` normalization. The existing teleoperation semantics are open `0.0` and closed `45.0`. A closed position does not prove that an object is grasped. Default `grasp` is `unverified`; configured load/current thresholds plus encoder stall can produce `threshold_verified`.
 
 Before `plan_motion` or `execute_motion`, `get_status` must report:
 

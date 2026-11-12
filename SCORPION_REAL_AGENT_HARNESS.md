@@ -202,9 +202,73 @@ The current catalogue is available through the `skills` command and MCP `list_sk
 | `move_arm_to_pose` | implemented software path; physical execution not verified | deterministic planner + existing real replay path |
 | `validate_motion` | implemented | existing real-plan validator |
 | `stop_motion` | implemented | local safety event |
-| `set_gripper` | unavailable | no verified harness integration |
+| `set_gripper` | implemented software path; physical execution not verified | calibrated LeRobot gripper bus |
+| `read_gripper_state` | implemented | calibrated LeRobot gripper bus |
+| `hold_gripper` | implemented software path; physical execution not verified | calibrated LeRobot gripper bus |
+| `release_gripper` | implemented software path; physical execution not verified | calibrated LeRobot gripper bus |
+| `grasp` | implemented software path; physical grasp verification depends on configured thresholds | calibrated LeRobot gripper bus |
 
-The execution path commands joint0–joint6 only and never sends a gripper command.
+Arm replay remains joint0–joint6 only. The separate gripper path uses the existing calibrated `gripper` motor on the same LeRobot `DualScorpionFollower` bus.
+
+## Gripper control and generic grasp
+
+Each gripper is motor ID 8 and uses LeRobot's `MotorNormMode.RANGE_0_100`. The existing calibration supplies:
+
+- motor ID,
+- `drive_mode`,
+- `homing_offset`,
+- `range_min`,
+- `range_max`.
+
+LeRobot normalizes raw encoder positions into 0–100 and applies `drive_mode`. The harness does not infer open/closed direction from geometry. It reuses the existing teleoperation semantics:
+
+- open: `0.0`
+- closed: `45.0`
+
+These values are configurable in `agent.example.yaml`, but the defaults match the existing teleoperation configuration.
+
+Supported operations:
+
+- open,
+- close,
+- set a normalized position,
+- read current position/state,
+- hold the current measured position,
+- release/open,
+- generic monitored `grasp`.
+
+The `grasp` operation is object-agnostic. It closes the selected gripper and reads:
+
+- normalized position,
+- raw position,
+- `Present_Load`,
+- `Present_Current`.
+
+Closed position alone is **not** treated as proof that an object is grasped. By default, `grasp` returns:
+
+```json
+{
+  "grasp_verified": false,
+  "grasp_state": "unverified",
+  "verification_basis": ["encoder_position_only"]
+}
+```
+
+If the operator supplies measured, positive `load_threshold` and `current_threshold` values, the harness marks a grasp as threshold-verified only when:
+
+1. configured load and current thresholds are met, and
+2. the encoder position stalls before the closed target.
+
+Even then, the report names the evidence used; it does not claim a universal force-based grasp guarantee.
+
+Gripper commands:
+
+- are rejected outside the configured normalized range,
+- are slew-rate limited,
+- use a lock shared with arm execution on the same bus,
+- honor the local stop event,
+- report communication errors,
+- never command the gripper during arm-only trajectory replay.
 
 ## MCP tools
 
@@ -252,6 +316,9 @@ The server implements JSON-RPC `initialize`, `tools/list`, and `tools/call`. JOU
 | `submit_task_plan` | validate and store a task plan | none |
 | `plan_motion` | generate and validate a joint trajectory | none |
 | `execute_motion` | start a real execution job; optionally capture before/after images | operator token |
+| `read_gripper_state` | read one gripper's calibrated position, load, and current | none |
+| `control_gripper` | open, close, set, hold, release, or attempt a generic monitored grasp | operator token |
+| `execute_task_plan` | execute arm and gripper steps in dependency order | operator token |
 | `stop_motion` | set the local stop event | none |
 | `get_execution_report` | execution metrics and failure state | none |
 | `get_replan_context` | failure, current state, and required observations | none |
@@ -281,6 +348,8 @@ The existing real execution path records:
 - model and URDF fingerprints.
 
 Evaluation uses only machine-checkable conditions. Semantic image success is not inferred from motor feedback; JOUZU/Gemini may inspect before/after images separately after execution.
+
+Task plans may combine `move_arm_to_pose`, `set_gripper`, `read_gripper_state`, `hold_gripper`, `release_gripper`, and `grasp`. `execute_task_plan` topologically sorts the steps, checks that each dependency completed, and stops at the first failed step.
 
 `execute_motion` accepts an optional `capture_before_after` flag. When enabled, the harness saves timestamped JPEGs from configured cameras immediately before and after the motion job and returns their paths and metadata in the execution report. Image capture is not part of the real-time stop path.
 
@@ -319,7 +388,8 @@ env -u PYTHONPATH -u LD_LIBRARY_PATH -u AMENT_PREFIX_PATH -u CMAKE_PREFIX_PATH \
 - Real hardware connection and motion were **not** exercised during this development.
 - The local calibration file was validated, but its physical correspondence to the current motors was **not** re-measured.
 - The measured table, 45 cm stick, robot-base transform, and arm collision radius must be supplied by the operator. No guessed scene is committed.
-- Gripper commands are **not integrated** and are reported as unavailable.
+- Gripper software control is integrated and locally tested with mocks, but **physical gripper motion and actual object grasping are not verified**.
+- Default `grasp` results are `unverified` unless measured load/current thresholds are explicitly configured.
 - Camera-to-robot extrinsics and metric 3D object pose estimation are **not implemented**.
 - Image semantic understanding is delegated to JOUZU/Gemini and was **not** tested here.
 - Collision checking covers the explicitly measured table, 45 cm stick, operator-declared boxes/cylinders, and URDF joint-frame capsules. Arbitrary unmeasured environments are not inferred.
