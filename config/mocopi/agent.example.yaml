@@ -30,7 +30,8 @@ gripper:
   closed_position: 45.0
   min_position: 0.0
   max_position: 100.0
-  position_tolerance: 2.0
+  # Allow the first one-unit test motion to be commanded and measured.
+  position_tolerance: 0.5
   # Conservative software slew limit; physical response is not yet verified.
   max_step: 2.0
   settle_s: 0.02
@@ -39,9 +40,9 @@ gripper:
   load_threshold: null
   current_threshold: null
 
-# The operator creates this file outside Git and supplies its value to the MCP
-# tool only when motion is intentionally enabled. The LLM cannot discover it.
-authorization_token_file: /run/user/1000/scorpion-agent-motion.token
+# The local CLI writes a short-lived, one-shot operation grant here. MCP tools
+# never receive a token; the harness consumes and deletes this file locally.
+operation_grants_file: /run/user/1000/scorpion-agent-operation-grant.json
 max_feedback_age_s: 0.5
 max_plan_frames: 240
 execution_report_dir: outputs/agent/executions

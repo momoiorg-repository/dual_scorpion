@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 from .config import HarnessConfig
 from .harness import ScorpionAgentHarness
 from .mcp import ScorpionMcpServer
+from .safety import AuthorizationManager
 from .skills import built_in_skill_registry
 
 
@@ -21,6 +23,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     config = HarnessConfig.from_file(args.config)
+    if args.command == "authorize-gripper":
+        return _print(
+            _authorize_gripper(config, args).to_status(),
+        )
+    if args.command == "authorize-arm":
+        return _print(
+            _authorize_arm(config, args).to_status(),
+        )
+    if args.command == "authorize-task-plan":
+        return _print(
+            _authorize_task_plan(config, args).to_status(),
+        )
     with ScorpionAgentHarness(config) as harness:
         if args.command == "mcp":
             ScorpionMcpServer(harness).run()
@@ -48,6 +62,16 @@ def main(argv: list[str] | None = None) -> int:
             return _print(result)
         if args.command == "report":
             return _print(harness.execution_report(args.execution_id))
+        if args.command == "gripper-state":
+            harness.connect_robot()
+            return _print(
+                {
+                    "status": "connected",
+                    "gripper": harness.read_gripper_state(args.arm),
+                }
+            )
+        if args.command == "gripper-test":
+            return _print(_run_limited_gripper_test(harness, args))
     parser.error(f"unknown command {args.command!r}")
     return 2
 
@@ -75,6 +99,62 @@ def _build_parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report", help="read an execution report")
     report.add_argument("--execution-id", required=True)
 
+    authorize_gripper = subparsers.add_parser(
+        "authorize-gripper",
+        help="create a one-shot local grant for limited gripper motion",
+    )
+    authorize_gripper.add_argument("--arm", required=True, choices=("left", "right"))
+    authorize_gripper.add_argument(
+        "--action",
+        default="set_position",
+        choices=("open", "close", "set_position", "hold", "release", "grasp"),
+    )
+    authorize_gripper.add_argument("--max-position-delta", type=float, default=1.0)
+    authorize_gripper.add_argument("--expires-in", type=float, default=300.0)
+    authorize_gripper.add_argument("--confirm-fingertip-clearance", action="store_true")
+    authorize_gripper.add_argument("--replace", action="store_true")
+
+    authorize_arm = subparsers.add_parser(
+        "authorize-arm",
+        help="create a one-shot local grant for a validated arm motion plan",
+    )
+    authorize_arm.add_argument("--motion-plan-id", required=True)
+    authorize_arm.add_argument("--expires-in", type=float, default=300.0)
+    authorize_arm.add_argument("--replace", action="store_true")
+
+    authorize_task = subparsers.add_parser(
+        "authorize-task-plan",
+        help="create a one-shot local grant for a validated task plan",
+    )
+    authorize_task.add_argument("--plan-id", required=True)
+    authorize_task.add_argument(
+        "--arm",
+        action="append",
+        choices=("left", "right"),
+        required=True,
+    )
+    authorize_task.add_argument(
+        "--gripper-action",
+        action="append",
+        choices=("open", "close", "set_position", "hold", "release", "grasp"),
+        default=[],
+    )
+    authorize_task.add_argument("--max-position-delta", type=float)
+    authorize_task.add_argument("--include-arm-motion", action="store_true")
+    authorize_task.add_argument("--confirm-fingertip-clearance", action="store_true")
+    authorize_task.add_argument("--expires-in", type=float, default=300.0)
+    authorize_task.add_argument("--replace", action="store_true")
+
+    gripper_state = subparsers.add_parser("gripper-state", help="connect and read one gripper")
+    gripper_state.add_argument("--arm", required=True, choices=("left", "right"))
+
+    gripper_test = subparsers.add_parser(
+        "gripper-test",
+        help="connect, read, move one gripper by an explicitly signed small delta, and stop",
+    )
+    gripper_test.add_argument("--arm", required=True, choices=("left", "right"))
+    gripper_test.add_argument("--delta", type=float, required=True)
+
     subparsers.add_parser("mcp", help="run the MCP stdio server")
     return parser
 
@@ -91,3 +171,73 @@ def _print(value: Any, *, nonzero_on_rejection: bool = False) -> int:
     if nonzero_on_rejection and value.get("status") == "rejected":
         return 1
     return 0
+
+
+def _authorize_gripper(config: HarnessConfig, args: argparse.Namespace):
+    manager = AuthorizationManager(config.operation_grants_file)
+    return manager.issue_grant(
+        operation="gripper",
+        arms=[args.arm],
+        actions=[args.action],
+        expires_in_s=args.expires_in,
+        max_position_delta=args.max_position_delta,
+        fingertip_clearance_confirmed=args.confirm_fingertip_clearance,
+        replace=args.replace,
+    )
+
+
+def _authorize_arm(config: HarnessConfig, args: argparse.Namespace):
+    manager = AuthorizationManager(config.operation_grants_file)
+    return manager.issue_grant(
+        operation="arm",
+        arms=["left", "right"],
+        actions=["move_arm_to_pose"],
+        expires_in_s=args.expires_in,
+        plan_id=args.motion_plan_id,
+        replace=args.replace,
+    )
+
+
+def _authorize_task_plan(config: HarnessConfig, args: argparse.Namespace):
+    manager = AuthorizationManager(config.operation_grants_file)
+    actions = list(args.gripper_action)
+    if args.include_arm_motion:
+        actions.append("move_arm_to_pose")
+    return manager.issue_grant(
+        operation="task_plan",
+        arms=list(dict.fromkeys(args.arm)),
+        actions=actions,
+        expires_in_s=args.expires_in,
+        max_position_delta=args.max_position_delta,
+        plan_id=args.plan_id,
+        fingertip_clearance_confirmed=args.confirm_fingertip_clearance,
+        replace=args.replace,
+    )
+
+
+def _run_limited_gripper_test(harness: ScorpionAgentHarness, args: argparse.Namespace):
+    harness.connect_robot()
+    before = harness.read_gripper_state(args.arm)
+    target = float(before["position"]) + float(args.delta)
+    gripper = harness.config.gripper
+    if not gripper.min_position <= target <= gripper.max_position:
+        raise ValueError(
+            f"target {target} is outside [{gripper.min_position}, {gripper.max_position}]"
+        )
+    result = harness.control_gripper(
+        action="set_position",
+        arms=args.arm,
+        position=target,
+    )
+    after = harness.read_gripper_state(args.arm)
+    harness.stop_motion()
+    return {
+        "status": result["status"],
+        "arm": args.arm,
+        "requested_delta": float(args.delta),
+        "before": before,
+        "command": result,
+        "after": after,
+        "stop_requested": True,
+        "timestamp_unix": time.time(),
+    }

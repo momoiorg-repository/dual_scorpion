@@ -55,7 +55,7 @@ class GripperSpec:
 class HarnessConfig:
     robot_config_path: Path
     cameras: tuple[CameraSpec, ...]
-    authorization_token_file: Path | None
+    operation_grants_file: Path | None
     max_feedback_age_s: float
     max_plan_frames: int
     execution_report_dir: Path
@@ -91,7 +91,7 @@ class HarnessConfig:
         if not robot_config_path.is_absolute():
             robot_config_path = config_path.parent / robot_config_path
         robot_config = robot_config_path.resolve()
-        token_file = raw.get("authorization_token_file")
+        grants_file = raw.get("operation_grants_file")
         max_age = float(raw.get("max_feedback_age_s", 0.5))
         max_frames = int(raw.get("max_plan_frames", 240))
         report_dir = Path(raw.get("execution_report_dir", "outputs/agent/executions"))
@@ -102,7 +102,7 @@ class HarnessConfig:
         return cls(
             robot_config_path=robot_config,
             cameras=cameras,
-            authorization_token_file=Path(token_file).resolve() if token_file else None,
+            operation_grants_file=Path(grants_file).expanduser().resolve() if grants_file else None,
             max_feedback_age_s=max_age,
             max_plan_frames=max_frames,
             execution_report_dir=report_dir,

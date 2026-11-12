@@ -76,7 +76,7 @@ class KinematicsService:
                 "configured": False,
                 "status": "missing",
                 "execution_allowed": False,
-                "reason": "measured table/stick scene is required before real motion",
+                "reason": "measured table/stick scene is required before arm motion",
             }
         return {
             "configured": True,

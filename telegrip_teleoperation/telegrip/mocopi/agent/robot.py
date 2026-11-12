@@ -447,7 +447,22 @@ class RealRobotAdapter:
         stopped = False
         with self._bus_lock:
             current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
+            # Overwrite any retained Goal_Position before torque is enabled. This
+            # prevents a stale goal from yanking the gripper when torque starts.
+            bus.sync_write("Goal_Position", {GRIPPER: current}, normalize=True)
             bus.enable_torque([GRIPPER])
+            hold_measured = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
+            hold_step = abs(hold_measured - current)
+            initial_hold = {
+                "commanded_position": current,
+                "measured_position": hold_measured,
+                "position_step": hold_step,
+                "within_tolerance": hold_step <= self.gripper.position_tolerance,
+            }
+            if hold_step > self.gripper.position_tolerance:
+                raise RuntimeError(
+                    f"{side} gripper moved while enabling the initial position hold: {initial_hold}"
+                )
             direction = 1.0 if target >= current else -1.0
             while abs(target - current) > self.gripper.position_tolerance:
                 if stop_event is not None and stop_event.is_set():
@@ -490,6 +505,7 @@ class RealRobotAdapter:
         return {
             "side": side,
             "operation": operation,
+            "initial_hold": initial_hold,
             "status": "complete" if not stopped else "stopped",
             "target_position": target,
             "final_position": final,

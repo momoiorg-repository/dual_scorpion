@@ -69,10 +69,11 @@ def _plan(**parameter_overrides: Any) -> dict[str, Any]:
 
 
 class FakeKinematics:
-    def __init__(self):
+    def __init__(self, *, scene_allowed: bool = True):
         self.full_config = {"robot": {"max_joint_step_deg": 0.5}}
         self.config = {"max_joint_step_deg": 0.5}
         self.simulation = None
+        self.scene_allowed = scene_allowed
 
     def close(self):
         pass
@@ -104,7 +105,7 @@ class FakeKinematics:
         return {
             "configured": True,
             "status": "measured",
-            "execution_allowed": True,
+            "execution_allowed": self.scene_allowed,
             "sha256": "test-scene",
         }
 
@@ -165,6 +166,7 @@ class FakeGripperBus:
         self.is_calibrated = True
         self.position = float(initial_position)
         self.stall_position = stall_position
+        self.torque_jump_position = None
         self.load = load
         self.current = current
         self.fail_reads = fail_reads
@@ -211,6 +213,8 @@ class FakeGripperBus:
         self.active_writes -= 1
 
     def enable_torque(self, motors):
+        if self.torque_jump_position is not None:
+            self.position = float(self.torque_jump_position)
         self.enabled.extend(motors)
 
     def disconnect(self, disable_torque=True):
@@ -245,7 +249,13 @@ class FakeCombinedRobot(FakeRobot):
             left_port="/dev/null",
             right_port="/dev/null",
             robot_id="fake",
-            gripper=gripper or GripperSpec(max_step=50.0, settle_s=0.001, grasp_timeout_s=0.2),
+            gripper=gripper
+            or GripperSpec(
+                position_tolerance=0.5,
+                max_step=50.0,
+                settle_s=0.001,
+                grasp_timeout_s=0.2,
+            ),
             follower=FakeGripperFollower(FakeGripperBus(0.0), FakeGripperBus(10.0)),
         )
 
@@ -291,22 +301,56 @@ class FakeCamera:
         pass
 
 
-def _harness(tmp_path: Path, *, robot: Any | None = None) -> ScorpionAgentHarness:
+def _harness(
+    tmp_path: Path,
+    *,
+    robot: Any | None = None,
+    kinematics: Any | None = None,
+) -> ScorpionAgentHarness:
     config = HarnessConfig(
         robot_config_path=CONFIG,
         cameras=(),
-        authorization_token_file=None,
+        operation_grants_file=None,
         max_feedback_age_s=0.5,
         max_plan_frames=240,
         execution_report_dir=tmp_path / "reports",
-        gripper=GripperSpec(max_step=50.0, settle_s=0.001, grasp_timeout_s=0.2),
+        gripper=GripperSpec(
+            position_tolerance=0.5,
+            max_step=50.0,
+            settle_s=0.001,
+            grasp_timeout_s=0.2,
+        ),
     )
     return ScorpionAgentHarness(
         config,
         robot=robot or FakeRobot(),
         cameras=None,
-        kinematics=FakeKinematics(),
-        authorization=AuthorizationManager(token="operator-token"),
+        kinematics=kinematics or FakeKinematics(),
+        authorization=AuthorizationManager(),
+    )
+
+
+def _issue_gripper_grant(
+    harness: ScorpionAgentHarness,
+    *,
+    arms: list[str] | None = None,
+    action: str | None = None,
+    max_position_delta: float = 100.0,
+) -> None:
+    harness.authorization.issue_grant(
+        operation="gripper",
+        arms=arms or ["left", "right"],
+        actions=[action] if action else [
+            "open",
+            "close",
+            "set_position",
+            "hold",
+            "release",
+            "grasp",
+        ],
+        expires_in_s=300,
+        max_position_delta=max_position_delta,
+        fingertip_clearance_confirmed=True,
     )
 
 
@@ -382,12 +426,12 @@ def test_camera_service_returns_mcp_image_content(tmp_path):
     assert frames[0].metadata()["camera_id"] == "head"
 
 
-def test_mcp_lists_tools_and_requires_motion_authorization(tmp_path):
+def test_mcp_lists_tools_and_requires_local_operation_grant(tmp_path):
     spec = CameraSpec(camera_id="head", device="/dev/null", width=6, height=4, fps=30)
     config = HarnessConfig(
         robot_config_path=CONFIG,
         cameras=(),
-        authorization_token_file=None,
+        operation_grants_file=None,
         max_feedback_age_s=0.5,
         max_plan_frames=240,
         execution_report_dir=tmp_path / "reports",
@@ -434,7 +478,7 @@ def test_mcp_lists_tools_and_requires_motion_authorization(tmp_path):
         }
     )
     assert "error" in response
-    assert "motion authorization is not configured" in response["error"]["message"]
+    assert "no local operation grant is available" in response["error"]["message"]
 
 
 def test_motion_planner_generates_and_validates_fk_ik_trajectory():
@@ -663,12 +707,56 @@ def test_example_agent_config_resolves_paths_without_hardcoding_devices():
     assert config.cameras[0].device == "/dev/video2"
     assert config.gripper.open_position == 0.0
     assert config.gripper.closed_position == 45.0
+    assert config.gripper.position_tolerance == 0.5
     assert all(camera.device for camera in config.cameras)
-    assert config.authorization_token_file is not None
+    assert config.operation_grants_file is not None
     assert config.robot is not None
     assert config.robot.robot_id == "dual_scorpion_follower_2026_1026"
     assert config.robot.calibration_dir is None
     assert config.scene_geometry_path is None
+
+
+def test_cli_creates_a_limited_one_shot_gripper_grant(tmp_path, capsys):
+    from telegrip.mocopi.agent.cli import main
+
+    grant_path = tmp_path / "grant.json"
+    config_path = tmp_path / "agent.yaml"
+    config_path.write_text(
+        f"""
+robot_config: {CONFIG}
+operation_grants_file: {grant_path}
+max_feedback_age_s: 0.5
+max_plan_frames: 240
+execution_report_dir: {tmp_path / "reports"}
+cameras: []
+""",
+        encoding="utf-8",
+    )
+    result = main(
+        [
+            "--config",
+            str(config_path),
+            "authorize-gripper",
+            "--arm",
+            "left",
+            "--action",
+            "set_position",
+            "--max-position-delta",
+            "1.0",
+            "--expires-in",
+            "300",
+            "--confirm-fingertip-clearance",
+        ]
+    )
+    assert result == 0
+    document = json.loads(grant_path.read_text(encoding="utf-8"))
+    assert document["schema"] == "dual_scorpion.agent.operation_grant.v1"
+    assert document["operation"] == "gripper"
+    assert document["arms"] == ["left"]
+    assert document["actions"] == ["set_position"]
+    assert document["max_position_delta"] == 1.0
+    assert document["fingertip_clearance_confirmed"] is True
+    assert "authorization_token" not in capsys.readouterr().out
 
 
 def _write_calibration(path: Path, robot_id: str = "test_dual_scorpion") -> Path:
@@ -768,7 +856,7 @@ def test_harness_constructs_real_adapter_and_reports_calibration_without_connect
     config = HarnessConfig(
         robot_config_path=CONFIG,
         cameras=(),
-        authorization_token_file=None,
+        operation_grants_file=None,
         max_feedback_age_s=0.5,
         max_plan_frames=240,
         execution_report_dir=tmp_path / "reports",
@@ -820,7 +908,7 @@ def test_connect_reads_current_encoders_and_never_homes_or_commands_motors(tmp_p
 
     robot = NoHomeRobot()
     harness = _harness(tmp_path, robot=robot)
-    result = harness.connect_robot("operator-token")
+    result = harness.connect_robot()
     assert result["status"] == "connected"
     assert result["startup_behavior"]["auto_home"] is False
     assert result["joints_deg"]["left"] == [1.0] * 7
@@ -828,45 +916,181 @@ def test_connect_reads_current_encoders_and_never_homes_or_commands_motors(tmp_p
     assert robot.actions == []
 
 
+def test_gripper_only_motion_does_not_require_scene_but_requires_local_grant(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(
+        tmp_path,
+        robot=robot,
+        kinematics=FakeKinematics(scene_allowed=False),
+    )
+    assert harness.kinematics.scene_status()["execution_allowed"] is False
+
+    with pytest.raises(Exception, match="no local operation grant is available"):
+        harness.control_gripper(
+            action="set_position",
+            arms="left",
+            position=1.0,
+        )
+
+    _issue_gripper_grant(
+        harness,
+        arms=["left"],
+        action="set_position",
+        max_position_delta=1.0,
+    )
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=1.0,
+    )
+    assert result["status"] == "complete"
+    assert result["results"][0]["final_position"] == pytest.approx(1.0)
+    assert result["authorization"]["fingertip_clearance_confirmed"] is True
+
+    with pytest.raises(Exception, match="no local operation grant is available"):
+        harness.control_gripper(
+            action="set_position",
+            arms="left",
+            position=1.0,
+        )
+
+
+def test_gripper_grant_restricts_arm_action_and_position_range(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(
+        harness,
+        arms=["left"],
+        action="set_position",
+        max_position_delta=1.0,
+    )
+
+    with pytest.raises(Exception, match="does not cover arms"):
+        harness.control_gripper(
+            action="set_position",
+            arms="right",
+            position=1.0,
+        )
+    with pytest.raises(Exception, match="does not cover actions"):
+        harness.control_gripper(
+            action="close",
+            arms="left",
+        )
+    with pytest.raises(Exception, match="exceeds grant range"):
+        harness.control_gripper(
+            action="set_position",
+            arms="left",
+            position=2.0,
+        )
+
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=1.0,
+    )
+    assert result["status"] == "complete"
+    assert not harness.authorization.status()["active_grant"]
+
+
+def test_gripper_initial_hold_rejects_stale_goal_motion(tmp_path):
+    robot = FakeCombinedRobot()
+    robot.adapter.follower.left_bus.position = 10.0
+    robot.adapter.follower.left_bus.torque_jump_position = 50.0
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(harness, arms=["left"], action="close")
+    with pytest.raises(RuntimeError, match="moved while enabling the initial position hold"):
+        harness.control_gripper(
+            action="close",
+            arms="left",
+        )
+
+
+def test_operation_grant_file_is_consumed_and_deleted(tmp_path):
+    grant_path = tmp_path / "operation-grant.json"
+    config = HarnessConfig(
+        robot_config_path=CONFIG,
+        cameras=(),
+        operation_grants_file=grant_path,
+        max_feedback_age_s=0.5,
+        max_plan_frames=240,
+        execution_report_dir=tmp_path / "reports",
+    )
+    manager = AuthorizationManager(grant_path)
+    harness = ScorpionAgentHarness(
+        config,
+        robot=FakeCombinedRobot(),
+        kinematics=FakeKinematics(),
+        authorization=manager,
+    )
+    manager.issue_grant(
+        operation="gripper",
+        arms=["left"],
+        actions=["set_position"],
+        expires_in_s=300,
+        max_position_delta=1.0,
+        fingertip_clearance_confirmed=True,
+    )
+    assert grant_path.is_file()
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=1.0,
+    )
+    assert result["status"] == "complete"
+    assert not grant_path.exists()
+
+
+def test_arm_motion_still_requires_measured_scene_even_with_gripper_available(tmp_path):
+    robot = FakeCombinedRobot()
+    harness = _harness(
+        tmp_path,
+        robot=robot,
+        kinematics=FakeKinematics(scene_allowed=False),
+    )
+    submitted = harness.submit_task_plan(_plan())
+    with pytest.raises(RuntimeError, match="measured table/stick scene geometry is required"):
+        harness.plan_motion(submitted["plan_id"])
+
+
 def test_gripper_open_close_set_hold_release_and_read_state(tmp_path):
     robot = FakeCombinedRobot()
     harness = _harness(tmp_path, robot=robot)
 
+    _issue_gripper_grant(harness)
     opened = harness.control_gripper(
         action="open",
         arms="left",
-        authorization_token="operator-token",
     )
     assert opened["status"] == "complete"
     assert opened["results"][0]["final_position"] == pytest.approx(0.0)
 
+    _issue_gripper_grant(harness)
     closed = harness.control_gripper(
         action="close",
         arms="right",
-        authorization_token="operator-token",
     )
     assert closed["status"] == "complete"
     assert closed["results"][0]["final_position"] == pytest.approx(45.0)
 
+    _issue_gripper_grant(harness)
     set_result = harness.control_gripper(
         action="set_position",
         arms="left",
         position=25.0,
-        authorization_token="operator-token",
     )
     assert set_result["results"][0]["final_position"] == pytest.approx(25.0)
 
+    _issue_gripper_grant(harness)
     hold_result = harness.control_gripper(
         action="hold",
         arms="left",
-        authorization_token="operator-token",
     )
     assert hold_result["results"][0]["final_position"] == pytest.approx(25.0)
 
+    _issue_gripper_grant(harness)
     release_result = harness.control_gripper(
         action="release",
         arms="right",
-        authorization_token="operator-token",
     )
     assert release_result["results"][0]["final_position"] == pytest.approx(0.0)
 
@@ -890,20 +1114,19 @@ def test_gripper_rejects_out_of_range_and_operates_left_right_independently(tmp_
             action="set_position",
             arms="left",
             position=101.0,
-            authorization_token="operator-token",
         )
 
+    _issue_gripper_grant(harness)
     result = harness.control_gripper(
         action="set_position",
         arms="both",
         position=20.0,
-        authorization_token="operator-token",
     )
     assert result["status"] == "complete"
     assert robot.adapter.follower.left_bus.position == pytest.approx(20.0)
     assert robot.adapter.follower.right_bus.position == pytest.approx(20.0)
-    assert robot.adapter.follower.left_bus.commands == [20.0]
-    assert robot.adapter.follower.right_bus.commands == [20.0]
+    assert robot.adapter.follower.left_bus.commands == [0.0, 20.0]
+    assert robot.adapter.follower.right_bus.commands == [10.0, 20.0]
 
 
 def test_gripper_stop_and_communication_errors_are_reported(tmp_path):
@@ -913,7 +1136,6 @@ def test_gripper_stop_and_communication_errors_are_reported(tmp_path):
     stopped = harness.control_gripper(
         action="close",
         arms="both",
-        authorization_token="operator-token",
     )
     assert stopped["status"] == "stopped"
     assert robot.adapter.follower.left_bus.commands == []
@@ -921,11 +1143,11 @@ def test_gripper_stop_and_communication_errors_are_reported(tmp_path):
     harness.safety.clear_stop()
 
     robot.adapter.follower.left_bus.fail_reads = True
+    _issue_gripper_grant(harness, arms=["left"], action="close")
     with pytest.raises(ConnectionError, match="fake gripper bus disconnected"):
         harness.control_gripper(
             action="close",
             arms="left",
-            authorization_token="operator-token",
         )
 
 
@@ -935,10 +1157,10 @@ def test_grasp_is_unverified_without_threshold_evidence(tmp_path):
     robot.adapter.follower.left_bus.load = 100.0
     robot.adapter.follower.left_bus.current = 100.0
     harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(harness, arms=["left"], action="grasp")
     result = harness.control_gripper(
         action="grasp",
         arms="left",
-        authorization_token="operator-token",
     )
     row = result["results"][0]
     assert row["position_reached"] is False
@@ -963,10 +1185,10 @@ def test_grasp_can_use_configured_load_and_current_threshold_evidence(tmp_path):
     robot.adapter.follower.left_bus.load = 100.0
     robot.adapter.follower.left_bus.current = 100.0
     harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(harness, arms=["left"], action="grasp")
     result = harness.control_gripper(
         action="grasp",
         arms="left",
-        authorization_token="operator-token",
     )
     row = result["results"][0]
     assert row["position_reached"] is False
@@ -1010,9 +1232,18 @@ def test_task_plan_combines_arm_motion_and_gripper_with_dependencies(tmp_path):
     submitted = harness.submit_task_plan(plan)
     assert submitted["status"] == "valid"
 
+    harness.authorization.issue_grant(
+        operation="task_plan",
+        arms=["left", "right"],
+        actions=["move_arm_to_pose", "close"],
+        expires_in_s=300,
+        max_position_delta=45.0,
+        plan_id=submitted["plan_id"],
+        fingertip_clearance_confirmed=True,
+    )
+
     execution = harness.execute_task_plan(
         submitted["plan_id"],
-        "operator-token",
     )
     job = harness.jobs[execution["execution_id"]]
     job.thread.join(timeout=3)
@@ -1026,6 +1257,7 @@ def test_task_plan_combines_arm_motion_and_gripper_with_dependencies(tmp_path):
 def test_mcp_exposes_gripper_state_and_control_tools(tmp_path):
     robot = FakeCombinedRobot()
     harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(harness, arms=["left"], action="close")
     server = ScorpionMcpServer(harness)
     listed = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {tool["name"] for tool in listed["result"]["tools"]}
@@ -1067,7 +1299,7 @@ def test_execution_job_can_capture_before_and_after_images(tmp_path):
     config = HarnessConfig(
         robot_config_path=CONFIG,
         cameras=(),
-        authorization_token_file=None,
+        operation_grants_file=None,
         max_feedback_age_s=0.5,
         max_plan_frames=240,
         execution_report_dir=tmp_path / "reports",
@@ -1078,13 +1310,19 @@ def test_execution_job_can_capture_before_and_after_images(tmp_path):
         robot=FakeRobot(),
         cameras=CameraService((spec,), backend_factory=lambda camera_spec: FakeCamera()),
         kinematics=FakeKinematics(),
-        authorization=AuthorizationManager(token="operator-token"),
+        authorization=AuthorizationManager(),
     )
     plan_result = harness.submit_task_plan(_plan())
     motion = harness.plan_motion(plan_result["plan_id"])
+    harness.authorization.issue_grant(
+        operation="arm",
+        arms=["left", "right"],
+        actions=["move_arm_to_pose"],
+        expires_in_s=300,
+        plan_id=motion["motion_plan_id"],
+    )
     result = harness.execute_motion(
         motion["motion_plan_id"],
-        "operator-token",
         capture_before_after=True,
     )
     job = harness.jobs[result["execution_id"]]

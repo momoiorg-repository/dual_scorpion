@@ -2,7 +2,7 @@
 
 The server uses the MCP stdio transport's JSON-RPC core, so no provider SDK is
 required. It exposes read-only observation tools separately from motion tools;
-motion and robot connection require an operator-supplied authorization token.
+motion requires a short-lived, one-shot grant created locally by the operator.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "connect_robot",
-                "Validate calibration, connect the follower buses, and read current encoders without homing. The local server must already hold operator authorization.",
+                "Validate calibration, connect the follower buses, and read current encoders without homing. No motion grant is required.",
                 {
                     "type": "object",
                     "properties": {},
@@ -143,7 +143,7 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "execute_motion",
-                "Start a real-robot motion execution job. The local server must already hold operator authorization.",
+                "Start a real-robot arm motion job. Requires a matching one-shot local arm-motion grant and the measured scene.",
                 {
                     "type": "object",
                     "properties": {
@@ -156,7 +156,7 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "control_gripper",
-                "Open, close, set, hold, release, or attempt a generic monitored grasp on one or both grippers. The local server must already hold operator authorization.",
+                "Open, close, set, hold, release, or attempt a generic monitored grasp. Requires a matching one-shot local gripper grant with fingertip-clearance confirmation.",
                 {
                     "type": "object",
                     "properties": {
@@ -173,7 +173,7 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "execute_task_plan",
-                "Execute a validated task plan in dependency order, combining arm motion and gripper skills. The local server must already hold operator authorization.",
+                "Execute a validated task plan in dependency order. Requires a matching one-shot local task-plan grant; arm steps still require the measured scene.",
                 {
                     "type": "object",
                     "properties": {

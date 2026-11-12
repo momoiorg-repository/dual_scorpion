@@ -125,7 +125,7 @@ def built_in_skill_registry() -> SkillRegistry:
             },
             output_contract={"execution_id": "string", "report": "JSON metrics"},
             preconditions=[
-                "Operator motion authorization is present.",
+                "A matching one-shot local arm-motion grant is present.",
                 "Robot is connected, calibrated, and feedback is fresh.",
                 "A measured table, 45 cm support-stick, and arm-radius scene is loaded.",
                 "IK, joint limits, and trajectory continuity checks pass.",
@@ -187,7 +187,7 @@ def built_in_skill_registry() -> SkillRegistry:
             },
             preconditions=[
                 "Robot buses are connected and calibrated.",
-                "Operator motion authorization is present.",
+                "A matching one-shot local gripper grant is present.",
                 "The requested position is within the calibrated normalized range.",
             ],
             postconditions=["The gripper reaches the requested position within tolerance or stops safely."],
@@ -259,7 +259,7 @@ def built_in_skill_registry() -> SkillRegistry:
             },
             preconditions=[
                 "The selected gripper bus is connected and calibrated.",
-                "Operator motion authorization is present.",
+                "A matching one-shot local gripper grant is present.",
             ],
             postconditions=["The gripper closes or stalls safely and the measured evidence is returned."],
             failure_conditions=["The bus is disconnected.", "A stop request or communication error occurs."],

@@ -17,7 +17,7 @@ from .cameras import CameraFrame, CameraService
 from .config import HarnessConfig
 from .motion import KinematicsService
 from .robot import RealRobotAdapter, _gripper_position_state
-from .safety import AuthorizationManager, SafetyManager
+from .safety import AuthorizationGrant, AuthorizationManager, SafetyManager
 from .scene import SceneGeometry
 from .schema import PlanValidationError, TaskPlan, validate_task_plan
 from .skills import SkillRegistry, built_in_skill_registry
@@ -68,8 +68,7 @@ class ScorpionAgentHarness:
         self.cameras = cameras or CameraService(config.cameras)
         scene = SceneGeometry.from_file(config.scene_geometry_path) if config.scene_geometry_path else None
         self.kinematics = kinematics or KinematicsService(config.robot_config_path, scene=scene)
-        token_file = config.authorization_token_file
-        self.authorization = authorization or AuthorizationManager(token_file)
+        self.authorization = authorization or AuthorizationManager(config.operation_grants_file)
         self.safety = SafetyManager(self.authorization)
         self.objects: dict[str, ObjectState] = {}
         self.plans: dict[str, TaskPlan] = {}
@@ -101,9 +100,7 @@ class ScorpionAgentHarness:
             "robot": robot_status,
             "cameras": self.cameras.list_cameras(),
             "skills": self.registry.specs(),
-            "motion_authorization_configured": self.authorization.token_file is not None,
-            "motion_authorization_ready": self.authorization.required,
-            "motion_authorization_required": self.authorization.token_file is not None,
+            "operation_authorization": self.authorization.status(),
             "stop_requested": self.safety.stop_requested,
             "active_executions": len(self.jobs),
             "scene": self.kinematics.scene_status(),
@@ -119,8 +116,7 @@ class ScorpionAgentHarness:
             "hardware_commands_sent_by_constructor": 0,
         }
 
-    def connect_robot(self, authorization_token: str | None = None) -> dict[str, Any]:
-        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
+    def connect_robot(self) -> dict[str, Any]:
         if self.robot is None:
             raise RuntimeError("real robot adapter is not configured")
         calibration = self.robot.validate_calibration()
@@ -208,7 +204,9 @@ class ScorpionAgentHarness:
                 "vision_object_detection": False,
                 "metric_pose_estimation": False,
                 "gripper_control": "integrated_software_only_physical_execution_not_verified",
-                "scene_collision_required": True,
+                "scene_collision_required_for_arm_motion": True,
+                "gripper_only_scene_required": False,
+                "gripper_only_requires_local_clearance_grant": True,
                 "scene_collision_ready": self.kinematics.scene_status()["execution_allowed"],
                 "llm_semantic_estimates_allowed": True,
             },
@@ -239,7 +237,7 @@ class ScorpionAgentHarness:
         action: str,
         arms: str,
         position: float | None = None,
-        authorization_token: str | None = None,
+        authorization_grant: AuthorizationGrant | None = None,
     ) -> dict[str, Any]:
         if self.robot is None:
             raise RuntimeError("real robot adapter is not configured")
@@ -257,15 +255,37 @@ class ScorpionAgentHarness:
                     for side in sides
                 ],
             }
-        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
-        scene_status = self.kinematics.scene_status()
-        if not scene_status["execution_allowed"]:
-            raise RuntimeError("measured table/stick scene geometry is required before gripper motion")
+        if not self.robot.is_connected:
+            self.robot.connect()
         reading = self.robot.read()
-        current_joints = {side: np.asarray(reading.joints_deg[side], dtype=float) for side in SIDES}
-        current_collision = self.kinematics.collision_report(current_joints)
-        if not current_collision["checked"] or current_collision.get("count"):
-            raise RuntimeError(f"current pose is not clear of the measured scene: {current_collision}")
+        gripper_positions = getattr(reading, "gripper_positions", None) or {}
+        targets: dict[str, float] = {}
+        position_deltas: dict[str, float] = {}
+        for side in sides:
+            if side not in gripper_positions:
+                raise RuntimeError(f"{side} gripper position is unavailable")
+            current = float(gripper_positions[side])
+            target = _gripper_target_for_action(
+                action,
+                current=current,
+                position=position,
+                gripper=self.config.gripper,
+            )
+            if not self.config.gripper.min_position <= target <= self.config.gripper.max_position:
+                raise ValueError(
+                    f"{side} gripper target {target} is outside "
+                    f"[{self.config.gripper.min_position}, {self.config.gripper.max_position}]"
+                )
+            targets[side] = target
+            position_deltas[side] = abs(target - current)
+        if authorization_grant is None:
+            grant = self.safety.authorize_gripper(
+                action=action,
+                arms=sides,
+                position_deltas=position_deltas,
+            )
+        else:
+            grant = authorization_grant
         results = []
         for side in sides:
             if self.safety.stop_requested:
@@ -278,7 +298,7 @@ class ScorpionAgentHarness:
             elif action == "set_position":
                 result = self.robot.set_gripper_position(
                     side,
-                    float(position),
+                    targets[side],
                     stop_event=self.safety.stop_event,
                 )
             elif action == "hold":
@@ -291,6 +311,7 @@ class ScorpionAgentHarness:
         return {
             "status": "complete" if all(item.get("status") == "complete" for item in results) else "stopped",
             "action": action,
+            "authorization": grant.to_status(),
             "results": results,
         }
 
@@ -384,13 +405,17 @@ class ScorpionAgentHarness:
     def execute_motion(
         self,
         motion_plan_id: str,
-        authorization_token: str | None = None,
+        authorization_grant: AuthorizationGrant | None = None,
         *,
         capture_before_after: bool = False,
     ) -> dict[str, Any]:
         if motion_plan_id not in self.motion_plans:
             raise KeyError(f"unknown motion plan {motion_plan_id!r}")
-        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
+        if authorization_grant is None:
+            authorization_grant = self.safety.authorize_arm(
+                motion_plan_id,
+                ["left", "right"],
+            )
         if self.robot is None:
             raise RuntimeError("real robot adapter is not configured")
         if not self.robot.is_connected:
@@ -467,14 +492,13 @@ class ScorpionAgentHarness:
     def execute_task_plan(
         self,
         plan_id: str,
-        authorization_token: str | None = None,
         *,
         capture_before_after: bool = False,
     ) -> dict[str, Any]:
         if plan_id not in self.plans:
             raise KeyError(f"unknown plan {plan_id!r}")
-        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
         plan = self.plans[plan_id]
+        grant = self._authorize_task_plan_motion(plan_id, plan)
         execution_id = "task-" + uuid.uuid4().hex[:12]
         report_path = self.config.execution_report_dir / f"{execution_id}.json"
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -511,9 +535,9 @@ class ScorpionAgentHarness:
                     if missing:
                         raise RuntimeError(f"step {step.id!r} has incomplete dependencies: {missing}")
                     if step.skill == "move_arm_to_pose":
-                        result = self._execute_motion_step(step, plan, authorization_token)
+                        result = self._execute_motion_step(step, plan, grant)
                     elif step.skill in {"set_gripper", "hold_gripper", "release_gripper", "grasp"}:
-                        result = self._execute_gripper_step(step, authorization_token)
+                        result = self._execute_gripper_step(step, grant)
                     elif step.skill == "read_gripper_state":
                         result = {
                             "status": "complete",
@@ -563,6 +587,7 @@ class ScorpionAgentHarness:
             "status": "running",
             "report_path": str(report_path),
             "before_images": job.before_images,
+            "authorization": None if grant is None else grant.to_status(),
         }
 
     def stop_motion(self) -> dict[str, Any]:
@@ -588,6 +613,71 @@ class ScorpionAgentHarness:
             "report_path": str(job.report_path),
             "report": job.report,
         }
+
+    def _authorize_task_plan_motion(
+        self,
+        plan_id: str,
+        plan: TaskPlan,
+    ) -> AuthorizationGrant | None:
+        motion_steps = [
+            step
+            for step in plan.steps
+            if step.skill in {
+                "move_arm_to_pose",
+                "set_gripper",
+                "hold_gripper",
+                "release_gripper",
+                "grasp",
+            }
+        ]
+        if not motion_steps:
+            if any(step.skill == "read_gripper_state" for step in plan.steps):
+                if self.robot is None:
+                    raise RuntimeError("real robot adapter is not configured")
+                if not self.robot.is_connected:
+                    self.robot.connect()
+            return None
+        if self.robot is None:
+            raise RuntimeError("real robot adapter is not configured")
+        if not self.robot.is_connected:
+            self.robot.connect()
+        reading = self.robot.read()
+        gripper_positions = getattr(reading, "gripper_positions", None) or {}
+        arms: set[str] = set()
+        gripper_actions: list[str] = []
+        cumulative_deltas: dict[str, float] = {}
+        includes_arm_motion = False
+        for step in motion_steps:
+            sides = _arms_to_sides(step.arms)
+            arms.update(sides)
+            if step.skill == "move_arm_to_pose":
+                includes_arm_motion = True
+                continue
+            action = {
+                "set_gripper": step.parameters.get("action"),
+                "hold_gripper": "hold",
+                "release_gripper": "release",
+                "grasp": "grasp",
+            }[step.skill]
+            gripper_actions.append(action)
+            for side in sides:
+                if side not in gripper_positions:
+                    raise RuntimeError(f"{side} gripper position is unavailable")
+                current = float(gripper_positions[side])
+                target = _gripper_target_for_action(
+                    action,
+                    current=current,
+                    position=step.parameters.get("position"),
+                    gripper=self.config.gripper,
+                )
+                cumulative_deltas[side] = cumulative_deltas.get(side, 0.0) + abs(target - current)
+        return self.safety.authorize_task_plan(
+            plan_id=plan_id,
+            arms=sorted(arms),
+            includes_arm_motion=includes_arm_motion,
+            gripper_actions=list(dict.fromkeys(gripper_actions)),
+            gripper_deltas=cumulative_deltas,
+        )
 
     def _targets_for_step(
         self,
@@ -632,7 +722,7 @@ class ScorpionAgentHarness:
         self,
         step: Any,
         plan: TaskPlan,
-        authorization_token: str | None,
+        grant: AuthorizationGrant | None,
     ) -> dict[str, Any]:
         raw_plan = plan.to_dict()
         raw_plan["steps"] = [step.to_dict()]
@@ -645,7 +735,7 @@ class ScorpionAgentHarness:
         motion = self.plan_motion(temporary_plan_id)
         execution = self.execute_motion(
             motion["motion_plan_id"],
-            authorization_token,
+            authorization_grant=grant,
             capture_before_after=False,
         )
         job = self.jobs[execution["execution_id"]]
@@ -665,7 +755,7 @@ class ScorpionAgentHarness:
     def _execute_gripper_step(
         self,
         step: Any,
-        authorization_token: str | None,
+        grant: AuthorizationGrant | None,
     ) -> dict[str, Any]:
         action = {
             "set_gripper": step.parameters.get("action"),
@@ -677,7 +767,7 @@ class ScorpionAgentHarness:
             action=action,
             arms=step.arms,
             position=step.parameters.get("position"),
-            authorization_token=authorization_token,
+            authorization_grant=grant,
         )
 
 
@@ -707,3 +797,25 @@ def _dependency_order(steps: list[Any]) -> list[Any]:
             complete.add(step.id)
             del remaining[step.id]
     return ordered
+
+
+def _gripper_target_for_action(
+    action: str,
+    *,
+    current: float,
+    position: float | None,
+    gripper: Any,
+) -> float:
+    if action == "open":
+        return float(gripper.open_position)
+    if action in {"close", "grasp"}:
+        return float(gripper.closed_position)
+    if action == "release":
+        return float(gripper.open_position)
+    if action == "hold":
+        return float(current)
+    if action == "set_position":
+        if position is None:
+            raise ValueError("set_position requires a normalized position")
+        return float(position)
+    raise ValueError(f"unsupported gripper action {action!r}")
