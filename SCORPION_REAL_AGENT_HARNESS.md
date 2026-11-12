@@ -276,14 +276,32 @@ Gripper commands:
 
 `motion_observation_threshold` is separate. It is the minimum encoder change accepted as evidence that the gripper physically moved.
 
+The backend does not decide motion from a single immediate read. After sending the bounded goal, it polls `Present_Position` every `poll_interval_s` until one of the following occurs:
+
+- observed motion reaches the target within `position_tolerance`,
+- the local stop event is set,
+- `motion_timeout_s` expires.
+
+The default bounded diagnostic window is:
+
+```yaml
+settle_s: 0.02
+poll_interval_s: 0.05
+motion_timeout_s: 1.0
+```
+
+The harness never increases the operator-authorized movement because motion is slow.
+
 For every requested nonzero gripper position change:
 
 1. the current encoder position is read,
 2. the current position is written as the initial hold goal,
 3. torque is enabled and the hold is re-read,
 4. the requested target is sent even when the requested change is smaller than `position_tolerance`,
-5. the final encoder position is read,
-6. measured movement is compared with `motion_observation_threshold`.
+5. `Goal_Position` is read back and `Torque_Enable` is checked,
+6. `Present_Position` is sampled at the configured poll interval,
+7. the final encoder position is read,
+8. measured movement is compared with `motion_observation_threshold`.
 
 The result reports:
 
@@ -300,7 +318,31 @@ The result reports:
 - `motion_command_count`,
 - `commands`,
 - `motion_commands`,
+- `position_samples`,
+- `motion_onset_s`,
+- `poll_interval_s`,
+- `motion_timeout_s`,
+- `diagnostics`,
+- `safe_stop`,
 - `stop_reason`.
+
+The diagnostics include:
+
+- initial `Present_Position`,
+- initial `Goal_Position`,
+- initial `Torque_Enable`,
+- `Operating_Mode`,
+- commanded `Goal_Position`,
+- `Goal_Position` readback,
+- final `Torque_Enable`,
+- final `Goal_Position`,
+- `Present_Voltage`,
+- `Present_Temperature`,
+- Feetech `Status`,
+- `Moving`,
+- `Present_Load`,
+- `Present_Current`,
+- communication errors.
 
 Possible motion statuses include:
 
@@ -310,6 +352,22 @@ Possible motion statuses include:
 - `position_not_reached`: motion was observed, but the final position remains outside tolerance.
 - `no_motion_required`: the target already equals the measured position.
 - `stopped`: the local stop event ended the operation.
+- `invalid_operating_mode`: the gripper is not in Feetech position mode.
+- `goal_write_invalid`: the goal readback or torque state did not match the command.
+- `initial_hold_motion`: the encoder moved while the initial hold was enabled.
+- `initial_hold_invalid`: the hold goal or torque state was not verified.
+- `communication_error`: a required register read/write failed.
+
+On `motion_not_observed`, `invalid_operating_mode`, `goal_write_invalid`, `initial_hold_motion`, `initial_hold_invalid`, or `communication_error`, the harness immediately runs a safe stop:
+
+1. read the current encoder position,
+2. write that position as `Goal_Position`,
+3. read back the hold goal,
+4. disable gripper torque,
+5. read back `Torque_Enable`,
+6. report the final hold and torque state.
+
+This prevents a retained goal from producing delayed motion after a failed test. `stop_motion` performs the same gripper safe-stop sequence for the most recently commanded gripper sides.
 
 A closed position, a sent command, and an observed encoder movement are distinct facts. The report keeps them separate.
 

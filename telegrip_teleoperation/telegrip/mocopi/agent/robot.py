@@ -394,6 +394,14 @@ class RealRobotAdapter:
             result["verification_basis"] = ["encoder_position_only"]
         return result
 
+    def stop_gripper(self, side: str) -> dict[str, Any]:
+        _validate_side(side)
+        if self.follower is None or not self.is_connected:
+            return {"side": side, "status": "not_connected", "torque_disabled": False}
+        with self._bus_lock:
+            report = self._safe_stop_gripper(getattr(self.follower, side + "_bus"))
+        return {"side": side, **report}
+
     def execute_plan(
         self,
         plan: dict[str, Any],
@@ -445,63 +453,208 @@ class RealRobotAdapter:
         started = time.monotonic_ns()
         commands: list[float] = []
         motion_commands: list[float] = []
+        position_samples: list[dict[str, Any]] = []
+        communication_errors: list[str] = []
+        initial_position: float | None = None
+        final: float | None = None
+        raw_final: float | None = None
+        load: float | None = None
+        current_reading: float | None = None
+        initial_hold: dict[str, Any] = {}
+        safe_stop: dict[str, Any] | None = None
+        diagnostics: dict[str, Any] = {}
+        motion_onset_s: float | None = None
         stopped = False
         stop_reason = "pending"
-        with self._bus_lock:
-            current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
-            initial_position = current
-            # Overwrite any retained Goal_Position before torque is enabled. This
-            # prevents a stale goal from yanking the gripper when torque starts.
-            bus.sync_write("Goal_Position", {GRIPPER: current}, normalize=True)
-            commands.append(current)
-            bus.enable_torque([GRIPPER])
-            hold_measured = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
-            hold_step = abs(hold_measured - current)
-            initial_hold = {
-                "commanded_position": current,
-                "measured_position": hold_measured,
-                "position_step": hold_step,
-                "within_tolerance": hold_step <= self.gripper.position_tolerance,
-            }
-            if hold_step > self.gripper.position_tolerance:
-                raise RuntimeError(
-                    f"{side} gripper moved while enabling the initial position hold: {initial_hold}"
-                )
-            direction = 1.0 if target >= current else -1.0
-            motion_required = abs(target - initial_position) > 1e-9
-            if motion_required:
-                if stop_event is not None and stop_event.is_set():
-                    stopped = True
-                    stop_reason = "operator_stop"
-                else:
-                    # A requested movement is commanded even when it is smaller
-                    # than position_tolerance. That tolerance decides whether a
-                    # reached position is acceptable; it must not suppress the
-                    # first test command.
-                    next_position = float(
-                        np.clip(
-                            current + direction * min(step, abs(target - current)),
-                            self.gripper.min_position,
-                            self.gripper.max_position,
-                        )
-                    )
-                    bus.sync_write("Goal_Position", {GRIPPER: next_position}, normalize=True)
-                    commands.append(next_position)
-                    motion_commands.append(next_position)
-                    time.sleep(self.gripper.settle_s)
-                    current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
-            else:
-                stop_reason = "no_motion_required"
+        status = "pending"
+        error: str | None = None
 
-            while abs(target - current) > self.gripper.position_tolerance:
+        def required_read(register: str, *, normalize: bool = False) -> float:
+            return float(bus.sync_read(register, [GRIPPER], normalize=normalize)[GRIPPER])
+
+        def optional_read(register: str) -> float | None:
+            try:
+                return self._optional_raw_read(bus, register)
+            except Exception as exc:
+                communication_errors.append(f"{register}: {exc}")
+                return None
+
+        try:
+            with self._bus_lock:
+                current = required_read("Present_Position", normalize=True)
+                initial_position = current
+                diagnostics = {
+                    "operating_mode": required_read("Operating_Mode"),
+                    "initial_torque_enable": required_read("Torque_Enable"),
+                    "initial_goal_position": required_read("Goal_Position", normalize=True),
+                    "initial_voltage": optional_read("Present_Voltage"),
+                    "initial_temperature": optional_read("Present_Temperature"),
+                    "initial_motor_status": optional_read("Status"),
+                }
+                if diagnostics["operating_mode"] != 0:
+                    status = "invalid_operating_mode"
+                    stop_reason = "invalid_operating_mode"
+                    safe_stop = self._safe_stop_gripper(bus)
+                    final = required_read("Present_Position", normalize=True)
+                    return self._gripper_result(
+                        side=side,
+                        operation=operation,
+                        status=status,
+                        stop_reason=stop_reason,
+                        target=target,
+                        initial_position=initial_position,
+                        final=final,
+                        raw_final=raw_final,
+                        commands=commands,
+                        motion_commands=motion_commands,
+                        position_samples=position_samples,
+                        diagnostics=diagnostics,
+                        communication_errors=communication_errors,
+                        safe_stop=safe_stop,
+                        motion_onset_s=motion_onset_s,
+                        started=started,
+                        load=load,
+                        current=current_reading,
+                        error=f"Operating_Mode={diagnostics['operating_mode']}; expected position mode 0",
+                    )
+
+                # Overwrite a retained goal before enabling torque. This prevents
+                # a stale Goal_Position from moving the gripper when torque starts.
+                bus.sync_write("Goal_Position", {GRIPPER: current}, normalize=True)
+                commands.append(current)
+                bus.enable_torque([GRIPPER])
+                hold_measured = required_read("Present_Position", normalize=True)
+                hold_goal_readback = required_read("Goal_Position", normalize=True)
+                hold_torque = required_read("Torque_Enable")
+                hold_step = abs(hold_measured - current)
+                initial_hold = {
+                    "commanded_position": current,
+                    "measured_position": hold_measured,
+                    "goal_readback": hold_goal_readback,
+                    "torque_enable": hold_torque,
+                    "position_step": hold_step,
+                    "within_tolerance": hold_step <= self.gripper.position_tolerance,
+                    "goal_readback_match": abs(hold_goal_readback - current) <= 0.1,
+                    "torque_enabled": hold_torque == 1,
+                }
+                diagnostics.update(
+                    {
+                        "initial_hold": initial_hold,
+                        "voltage": optional_read("Present_Voltage"),
+                        "temperature": optional_read("Present_Temperature"),
+                        "motor_status": optional_read("Status"),
+                    }
+                )
+                if not initial_hold["within_tolerance"]:
+                    status = "initial_hold_motion"
+                    stop_reason = "initial_hold_motion"
+                    safe_stop = self._safe_stop_gripper(bus)
+                    final = required_read("Present_Position", normalize=True)
+                    return self._gripper_result(
+                        side=side,
+                        operation=operation,
+                        status=status,
+                        stop_reason=stop_reason,
+                        target=target,
+                        initial_position=initial_position,
+                        final=final,
+                        raw_final=raw_final,
+                        commands=commands,
+                        motion_commands=motion_commands,
+                        position_samples=position_samples,
+                        diagnostics=diagnostics,
+                        communication_errors=communication_errors,
+                        safe_stop=safe_stop,
+                        motion_onset_s=motion_onset_s,
+                        started=started,
+                        load=load,
+                        current=current_reading,
+                        error="gripper moved while enabling the initial position hold",
+                    )
+                if not initial_hold["torque_enabled"] or not initial_hold["goal_readback_match"]:
+                    status = "initial_hold_invalid"
+                    stop_reason = "initial_hold_invalid"
+                    safe_stop = self._safe_stop_gripper(bus)
+                    final = required_read("Present_Position", normalize=True)
+                    return self._gripper_result(
+                        side=side,
+                        operation=operation,
+                        status=status,
+                        stop_reason=stop_reason,
+                        target=target,
+                        initial_position=initial_position,
+                        final=final,
+                        raw_final=raw_final,
+                        commands=commands,
+                        motion_commands=motion_commands,
+                        position_samples=position_samples,
+                        diagnostics=diagnostics,
+                        communication_errors=communication_errors,
+                        safe_stop=safe_stop,
+                        motion_onset_s=motion_onset_s,
+                        started=started,
+                        load=load,
+                        current=current_reading,
+                        error=f"invalid initial hold state: {initial_hold}",
+                    )
+
+                direction = 1.0 if target >= current else -1.0
+                motion_required = abs(target - initial_position) > 1e-9
+                if not motion_required:
+                    status = "complete" if operation == "hold" else "no_motion_required"
+                    stop_reason = "no_motion_required"
+                    final = current
+                    return self._gripper_result(
+                        side=side,
+                        operation=operation,
+                        status=status,
+                        stop_reason=stop_reason,
+                        target=target,
+                        initial_position=initial_position,
+                        final=final,
+                        raw_final=raw_final,
+                        commands=commands,
+                        motion_commands=motion_commands,
+                        position_samples=position_samples,
+                        diagnostics=diagnostics,
+                        communication_errors=communication_errors,
+                        safe_stop=safe_stop,
+                        motion_onset_s=motion_onset_s,
+                        started=started,
+                        load=load,
+                        current=current_reading,
+                    )
+
                 if stop_event is not None and stop_event.is_set():
                     stopped = True
                     stop_reason = "operator_stop"
-                    break
-                if (time.monotonic_ns() - started) / 1e9 > self.gripper.grasp_timeout_s:
-                    stopped = True
-                    stop_reason = "timeout"
-                    break
+                    status = "stopped"
+                    safe_stop = self._safe_stop_gripper(bus)
+                    final = required_read("Present_Position", normalize=True)
+                    return self._gripper_result(
+                        side=side,
+                        operation=operation,
+                        status=status,
+                        stop_reason=stop_reason,
+                        target=target,
+                        initial_position=initial_position,
+                        final=final,
+                        raw_final=raw_final,
+                        commands=commands,
+                        motion_commands=motion_commands,
+                        position_samples=position_samples,
+                        diagnostics=diagnostics,
+                        communication_errors=communication_errors,
+                        safe_stop=safe_stop,
+                        motion_onset_s=motion_onset_s,
+                        started=started,
+                        load=load,
+                        current=current_reading,
+                    )
+
+                # Command even when the requested change is smaller than
+                # position_tolerance. The tolerance only decides whether the
+                # final position is acceptable.
                 next_position = float(
                     np.clip(
                         current + direction * min(step, abs(target - current)),
@@ -512,56 +665,245 @@ class RealRobotAdapter:
                 bus.sync_write("Goal_Position", {GRIPPER: next_position}, normalize=True)
                 commands.append(next_position)
                 motion_commands.append(next_position)
+                goal_readback = required_read("Goal_Position", normalize=True)
+                torque_readback = required_read("Torque_Enable")
+                diagnostics.update(
+                    {
+                        "commanded_goal_position": next_position,
+                        "goal_readback": goal_readback,
+                        "goal_readback_error": abs(goal_readback - next_position),
+                        "torque_enable": torque_readback,
+                    }
+                )
+                if abs(goal_readback - next_position) > 0.1 or torque_readback != 1:
+                    status = "goal_write_invalid"
+                    stop_reason = "goal_write_invalid"
+                    safe_stop = self._safe_stop_gripper(bus)
+                    final = required_read("Present_Position", normalize=True)
+                    return self._gripper_result(
+                        side=side,
+                        operation=operation,
+                        status=status,
+                        stop_reason=stop_reason,
+                        target=target,
+                        initial_position=initial_position,
+                        final=final,
+                        raw_final=raw_final,
+                        commands=commands,
+                        motion_commands=motion_commands,
+                        position_samples=position_samples,
+                        diagnostics=diagnostics,
+                        communication_errors=communication_errors,
+                        safe_stop=safe_stop,
+                        motion_onset_s=motion_onset_s,
+                        started=started,
+                        load=load,
+                        current=current_reading,
+                        error=f"goal={goal_readback}, torque={torque_readback}",
+                    )
+
                 time.sleep(self.gripper.settle_s)
-                current = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
-                if monitor_stall:
+                timeout_ns = started + int(self.gripper.motion_timeout_s * 1e9)
+                while time.monotonic_ns() < timeout_ns:
+                    if stop_event is not None and stop_event.is_set():
+                        stopped = True
+                        stop_reason = "operator_stop"
+                        break
+                    current = required_read("Present_Position", normalize=True)
+                    sample_elapsed = (time.monotonic_ns() - started) / 1e9
                     load = self._optional_raw_read(bus, "Present_Load")
-                    current_raw = self._optional_raw_read(bus, "Present_Current")
+                    current_reading = self._optional_raw_read(bus, "Present_Current")
+                    moving = optional_read("Moving")
+                    sample = {
+                        "elapsed_s": sample_elapsed,
+                        "present_position": current,
+                        "moving": moving,
+                        "load": load,
+                        "current": current_reading,
+                        "voltage": optional_read("Present_Voltage"),
+                        "motor_status": optional_read("Status"),
+                    }
+                    position_samples.append(sample)
+                    if motion_onset_s is None and abs(current - initial_position) >= self.gripper.motion_observation_threshold:
+                        motion_onset_s = sample_elapsed
                     if (
-                        self.gripper.load_threshold is not None
+                        monitor_stall
+                        and self.gripper.load_threshold is not None
                         and self.gripper.current_threshold is not None
                         and load is not None
-                        and current_raw is not None
+                        and current_reading is not None
                         and load >= self.gripper.load_threshold
-                        and current_raw >= self.gripper.current_threshold
+                        and current_reading >= self.gripper.current_threshold
                     ):
                         stop_reason = "grasp_threshold_reached"
                         break
-            if stopped or monitor_stall:
+                    if abs(target - current) <= self.gripper.position_tolerance and motion_onset_s is not None:
+                        break
+                    # For a multi-step requested movement, issue the next bounded
+                    # step only after the previous command moved the encoder.
+                    if motion_onset_s is not None and abs(target - current) > self.gripper.position_tolerance:
+                        next_position = float(
+                            np.clip(
+                                current + direction * min(step, abs(target - current)),
+                                self.gripper.min_position,
+                                self.gripper.max_position,
+                            )
+                        )
+                        if not motion_commands or abs(next_position - motion_commands[-1]) > 1e-9:
+                            bus.sync_write("Goal_Position", {GRIPPER: next_position}, normalize=True)
+                            commands.append(next_position)
+                            motion_commands.append(next_position)
+                            diagnostics["goal_readback"] = required_read("Goal_Position", normalize=True)
+                    time.sleep(self.gripper.poll_interval_s)
+
+                final = required_read("Present_Position", normalize=True)
+                raw_final = required_read("Present_Position", normalize=False)
+                load = self._optional_raw_read(bus, "Present_Load")
+                current_reading = self._optional_raw_read(bus, "Present_Current")
+                position_error = abs(final - target)
+                measured_movement = abs(final - initial_position)
+                motion_observed = measured_movement >= self.gripper.motion_observation_threshold
+                position_reached = position_error <= self.gripper.position_tolerance
+                diagnostics.update(
+                    {
+                        "final_torque_enable": required_read("Torque_Enable"),
+                        "final_goal_position": required_read("Goal_Position", normalize=True),
+                        "final_voltage": optional_read("Present_Voltage"),
+                        "final_temperature": optional_read("Present_Temperature"),
+                        "final_motor_status": optional_read("Status"),
+                        "motion_onset_s": motion_onset_s,
+                    }
+                )
+                if stopped:
+                    status = "stopped"
+                    safe_stop = self._safe_stop_gripper(bus)
+                elif not motion_commands:
+                    status = "command_not_sent"
+                    stop_reason = "command_not_sent"
+                    safe_stop = self._safe_stop_gripper(bus)
+                elif not motion_observed:
+                    status = "motion_not_observed"
+                    stop_reason = "motion_not_observed"
+                    safe_stop = self._safe_stop_gripper(bus)
+                elif not position_reached:
+                    status = "position_not_reached"
+                    stop_reason = "position_not_reached"
+                else:
+                    status = "complete"
+                    if stop_reason == "pending":
+                        stop_reason = "target_reached"
+        except BaseException as exc:
+            error = str(exc)
+            communication_errors.append(error)
+            status = "communication_error"
+            stop_reason = "communication_error"
+            try:
+                safe_stop = self._safe_stop_gripper(bus)
+            except Exception as stop_exc:
+                safe_stop = {"status": "failed", "error": str(stop_exc)}
+            try:
+                final = required_read("Present_Position", normalize=True)
+            except Exception as read_exc:
+                communication_errors.append(f"final Present_Position: {read_exc}")
+
+        return self._gripper_result(
+            side=side,
+            operation=operation,
+            status=status,
+            stop_reason=stop_reason,
+            target=target,
+            initial_position=initial_position,
+            final=final,
+            raw_final=raw_final,
+            commands=commands,
+            motion_commands=motion_commands,
+            position_samples=position_samples,
+            diagnostics=diagnostics,
+            communication_errors=communication_errors,
+            safe_stop=safe_stop,
+            motion_onset_s=motion_onset_s,
+            started=started,
+            load=load,
+            current=current_reading,
+            error=error,
+        )
+
+    def _safe_stop_gripper(self, bus: Any) -> dict[str, Any]:
+        """Hold the measured gripper position, then disable torque.
+
+        Disabling torque after the hold prevents a retained Goal_Position from
+        producing delayed motion after a failed diagnostic or explicit stop.
+        """
+        started = time.monotonic_ns()
+        try:
+            with self._bus_lock:
+                present = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
+                bus.sync_write("Goal_Position", {GRIPPER: present}, normalize=True)
+                goal_readback = float(bus.sync_read("Goal_Position", [GRIPPER], normalize=True)[GRIPPER])
+                bus.disable_torque([GRIPPER])
+                torque_readback = float(bus.sync_read("Torque_Enable", [GRIPPER], normalize=False)[GRIPPER])
                 held = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
-                bus.sync_write("Goal_Position", {GRIPPER: held}, normalize=True)
-            final = float(bus.sync_read("Present_Position", [GRIPPER], normalize=True)[GRIPPER])
-            raw_final = float(bus.sync_read("Present_Position", [GRIPPER], normalize=False)[GRIPPER])
-            load = self._optional_raw_read(bus, "Present_Load")
-            current_reading = self._optional_raw_read(bus, "Present_Current")
-        position_error = abs(final - target)
-        measured_movement = abs(final - initial_position)
-        motion_observed = measured_movement >= self.gripper.motion_observation_threshold
-        position_reached = position_error <= self.gripper.position_tolerance
-        if stopped:
-            status = "stopped"
-        elif not motion_required and operation == "hold":
-            status = "complete"
-        elif not motion_required:
-            status = "no_motion_required"
-            stop_reason = "no_motion_required"
-        elif motion_required and not motion_commands:
-            status = "command_not_sent"
-            stop_reason = "command_not_sent"
-        elif motion_required and not motion_observed:
-            status = "motion_not_observed"
-            stop_reason = "motion_not_observed"
-        elif not position_reached:
-            status = "position_not_reached"
-            stop_reason = "position_not_reached"
+            goal_match = abs(goal_readback - present) <= 0.1
+            return {
+                "status": (
+                    "complete"
+                    if torque_readback == 0 and goal_match
+                    else "hold_not_verified"
+                    if not goal_match
+                    else "torque_not_disabled"
+                ),
+                "hold_commanded_position": present,
+                "hold_goal_readback": goal_readback,
+                "hold_goal_match": goal_match,
+                "hold_measured_position": held,
+                "hold_movement": abs(held - present),
+                "torque_enable": torque_readback,
+                "torque_disabled": torque_readback == 0,
+                "elapsed_s": (time.monotonic_ns() - started) / 1e9,
+            }
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "error": str(exc),
+                "elapsed_s": (time.monotonic_ns() - started) / 1e9,
+            }
+
+    def _gripper_result(
+        self,
+        *,
+        side: str,
+        operation: str,
+        status: str,
+        stop_reason: str,
+        target: float,
+        initial_position: float | None,
+        final: float | None,
+        raw_final: float | None,
+        commands: list[float],
+        motion_commands: list[float],
+        position_samples: list[dict[str, Any]],
+        diagnostics: dict[str, Any],
+        communication_errors: list[str],
+        safe_stop: dict[str, Any] | None,
+        motion_onset_s: float | None,
+        started: int,
+        load: float | None,
+        current: float | None,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        if initial_position is None or final is None:
+            measured_movement = None
+            position_error = None
+            motion_observed = False
+            position_reached = False
         else:
-            status = "complete"
-            if stop_reason == "pending":
-                stop_reason = "target_reached"
+            measured_movement = abs(final - initial_position)
+            position_error = abs(final - target)
+            motion_observed = measured_movement >= self.gripper.motion_observation_threshold
+            position_reached = position_error <= self.gripper.position_tolerance
         return {
             "side": side,
             "operation": operation,
-            "initial_hold": initial_hold,
             "status": status,
             "stop_reason": stop_reason,
             "target_position": target,
@@ -571,18 +913,27 @@ class RealRobotAdapter:
             "measured_movement": measured_movement,
             "position_error": position_error,
             "position_reached": position_reached,
-            "motion_required": motion_required,
+            "motion_required": abs(target - (initial_position if initial_position is not None else target)) > 1e-9,
             "motion_observation_threshold": self.gripper.motion_observation_threshold,
             "motion_observed": motion_observed,
-            "stopped": stopped,
+            "motion_onset_s": motion_onset_s,
+            "stopped": status == "stopped",
             "commands": commands,
             "motion_commands": motion_commands,
             "command_count": len(commands),
             "motion_command_count": len(motion_commands),
             "command_sent": bool(commands),
             "motion_command_sent": bool(motion_commands),
+            "position_samples": position_samples,
+            "sample_count": len(position_samples),
+            "poll_interval_s": self.gripper.poll_interval_s,
+            "motion_timeout_s": self.gripper.motion_timeout_s,
+            "diagnostics": diagnostics,
+            "communication_errors": communication_errors,
+            "safe_stop": safe_stop,
             "load": load,
-            "current": current_reading,
+            "current": current,
+            "error": error,
             "timestamp_monotonic_ns": time.monotonic_ns(),
             "elapsed_s": (time.monotonic_ns() - started) / 1e9,
             "grasp_verified": False,

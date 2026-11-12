@@ -160,6 +160,7 @@ class FakeGripperBus:
         current: float = 0.0,
         fail_reads: bool = False,
         ignore_write: bool = False,
+        motion_delay_reads: int = 0,
     ):
         from lerobot.motors import MotorCalibration, MotorNormMode
 
@@ -172,6 +173,17 @@ class FakeGripperBus:
         self.current = current
         self.fail_reads = fail_reads
         self.ignore_write = ignore_write
+        self.motion_delay_reads = motion_delay_reads
+        self.delay_remaining = None
+        self.goal_position = float(initial_position)
+        self.goal_readback_offset = 0.0
+        self.write_count = 0
+        self.torque_enabled = 0
+        self.operating_mode = 0
+        self.voltage = 12.0
+        self.temperature = 30.0
+        self.motor_status = 0
+        self.moving = 0
         self.commands = []
         self.enabled = []
         self.active_writes = 0
@@ -189,7 +201,30 @@ class FakeGripperBus:
         if self.fail_reads:
             raise ConnectionError("fake gripper bus disconnected")
         if data_name == "Present_Position":
+            if self.delay_remaining is not None:
+                if self.delay_remaining <= 0:
+                    self.position = self.goal_position
+                    self.delay_remaining = None
+                    self.moving = 0
+                else:
+                    self.delay_remaining -= 1
+                    self.moving = 1
             return {"gripper": self.position}
+        if data_name == "Goal_Position":
+            offset = self.goal_readback_offset if self.write_count > 1 else 0.0
+            return {"gripper": self.goal_position + offset}
+        if data_name == "Torque_Enable":
+            return {"gripper": self.torque_enabled}
+        if data_name == "Operating_Mode":
+            return {"gripper": self.operating_mode}
+        if data_name == "Present_Voltage":
+            return {"gripper": self.voltage}
+        if data_name == "Present_Temperature":
+            return {"gripper": self.temperature}
+        if data_name == "Moving":
+            return {"gripper": self.moving}
+        if data_name == "Status":
+            return {"gripper": self.motor_status}
         if data_name == "Present_Load":
             return {"gripper": self.load}
         if data_name == "Present_Current":
@@ -200,11 +235,15 @@ class FakeGripperBus:
         if data_name != "Goal_Position":
             raise KeyError(data_name)
         target = float(values["gripper"])
+        self.write_count += 1
+        self.goal_position = target
+        if not self.ignore_write and self.motion_delay_reads:
+            self.delay_remaining = self.motion_delay_reads
         self.active_writes += 1
         self.max_active_writes = max(self.max_active_writes, self.active_writes)
         time.sleep(0.01)
         self.commands.append(target)
-        if self.ignore_write:
+        if self.ignore_write or self.motion_delay_reads:
             pass
         elif (
             self.stall_position is not None
@@ -219,7 +258,11 @@ class FakeGripperBus:
     def enable_torque(self, motors):
         if self.torque_jump_position is not None:
             self.position = float(self.torque_jump_position)
+        self.torque_enabled = 1
         self.enabled.extend(motors)
+
+    def disable_torque(self, motors):
+        self.torque_enabled = 0
 
     def disconnect(self, disable_torque=True):
         self.is_connected = False
@@ -268,6 +311,9 @@ class FakeCombinedRobot(FakeRobot):
 
     def connect(self):
         return None
+
+    def stop_gripper(self, side):
+        return self.adapter.stop_gripper(side)
 
     def read(self):
         reading = self.adapter.read()
@@ -1011,6 +1057,8 @@ def test_small_gripper_motion_is_commanded_and_observed_despite_position_toleran
         motion_observation_threshold=0.1,
         max_step=2.0,
         settle_s=0.001,
+        poll_interval_s=0.001,
+        motion_timeout_s=0.05,
         grasp_timeout_s=0.2,
     )
     robot = FakeCombinedRobot(spec)
@@ -1040,7 +1088,82 @@ def test_small_gripper_motion_is_commanded_and_observed_despite_position_toleran
     assert row["motion_observed"] is True
     assert row["motion_command_count"] == 1
     assert row["motion_commands"][0] == pytest.approx(target)
+
+
+def test_delayed_gripper_motion_is_polled_until_observed(tmp_path):
+    initial = 2.025139664804469
+    target = initial + 1.0
+    spec = GripperSpec(
+        position_tolerance=2.0,
+        motion_observation_threshold=0.1,
+        max_step=2.0,
+        settle_s=0.001,
+        poll_interval_s=0.001,
+        motion_timeout_s=0.1,
+        grasp_timeout_s=0.2,
+    )
+    robot = FakeCombinedRobot(spec)
+    robot.adapter.follower.left_bus.position = initial
+    robot.adapter.follower.left_bus.motion_delay_reads = 2
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(
+        harness,
+        arms=["left"],
+        action="set_position",
+        max_position_delta=1.0,
+    )
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=target,
+    )
+    row = result["results"][0]
+    assert row["status"] == "complete"
+    assert row["stop_reason"] == "target_reached"
+    assert row["sample_count"] >= 3
+    assert row["motion_onset_s"] is not None
+    assert row["motion_onset_s"] > 0
+    assert row["motion_observed"] is True
+    assert row["diagnostics"]["goal_readback"] == pytest.approx(target)
+    assert row["diagnostics"]["torque_enable"] == 1
+    assert row["diagnostics"]["operating_mode"] == 0
     assert row["commands"] == pytest.approx([initial, target])
+
+
+def test_gripper_rejects_non_position_operating_mode(tmp_path):
+    robot = FakeCombinedRobot()
+    robot.adapter.follower.left_bus.operating_mode = 1
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(harness, arms=["left"], action="set_position")
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=1.0,
+    )
+    row = result["results"][0]
+    assert row["status"] == "invalid_operating_mode"
+    assert row["stop_reason"] == "invalid_operating_mode"
+    assert row["motion_commands"] == []
+    assert row["diagnostics"]["operating_mode"] == 1
+    assert row["safe_stop"]["torque_disabled"] is True
+
+
+def test_gripper_rejects_goal_readback_mismatch(tmp_path):
+    robot = FakeCombinedRobot()
+    robot.adapter.follower.left_bus.goal_readback_offset = 5.0
+    harness = _harness(tmp_path, robot=robot)
+    _issue_gripper_grant(harness, arms=["left"], action="set_position")
+    result = harness.control_gripper(
+        action="set_position",
+        arms="left",
+        position=1.0,
+    )
+    row = result["results"][0]
+    assert row["status"] == "goal_write_invalid"
+    assert row["stop_reason"] == "goal_write_invalid"
+    assert row["motion_command_count"] == 1
+    assert row["diagnostics"]["goal_readback_error"] == pytest.approx(5.0)
+    assert row["safe_stop"]["torque_disabled"] is True
 
 
 def test_gripper_motion_not_observed_is_not_reported_as_complete(tmp_path):
@@ -1051,6 +1174,8 @@ def test_gripper_motion_not_observed_is_not_reported_as_complete(tmp_path):
         motion_observation_threshold=0.1,
         max_step=2.0,
         settle_s=0.001,
+        poll_interval_s=0.001,
+        motion_timeout_s=0.05,
         grasp_timeout_s=0.2,
     )
     robot = FakeCombinedRobot(spec)
@@ -1080,6 +1205,11 @@ def test_gripper_motion_not_observed_is_not_reported_as_complete(tmp_path):
     assert row["motion_observed"] is False
     assert row["motion_command_count"] == 1
     assert row["motion_commands"][0] == pytest.approx(target)
+    assert row["sample_count"] >= 2
+    assert row["motion_onset_s"] is None
+    assert row["safe_stop"]["torque_disabled"] is True
+    assert robot.adapter.follower.left_bus.torque_enabled == 0
+    assert robot.adapter.follower.left_bus.goal_position == pytest.approx(initial)
 
 
 def test_limited_gripper_test_reports_command_and_observed_motion(tmp_path):
@@ -1091,6 +1221,8 @@ def test_limited_gripper_test_reports_command_and_observed_motion(tmp_path):
         motion_observation_threshold=0.1,
         max_step=2.0,
         settle_s=0.001,
+        poll_interval_s=0.001,
+        motion_timeout_s=0.1,
         grasp_timeout_s=0.2,
     )
     robot = FakeCombinedRobot(spec)
@@ -1116,6 +1248,9 @@ def test_limited_gripper_test_reports_command_and_observed_motion(tmp_path):
     assert result["motion_observed"] is True
     assert result["motion_command_count"] == 1
     assert result["stop_requested"] is True
+    assert result["final_torque_enabled"] == 0
+    assert result["safe_stop"]["torque_disabled"] is True
+    assert result["stop_report"]["gripper_stops"][0]["side"] == "left"
 
 
 def test_gripper_initial_hold_rejects_stale_goal_motion(tmp_path):
@@ -1124,11 +1259,16 @@ def test_gripper_initial_hold_rejects_stale_goal_motion(tmp_path):
     robot.adapter.follower.left_bus.torque_jump_position = 50.0
     harness = _harness(tmp_path, robot=robot)
     _issue_gripper_grant(harness, arms=["left"], action="close")
-    with pytest.raises(RuntimeError, match="moved while enabling the initial position hold"):
-        harness.control_gripper(
-            action="close",
-            arms="left",
-        )
+    result = harness.control_gripper(
+        action="close",
+        arms="left",
+    )
+    row = result["results"][0]
+    assert row["status"] == "initial_hold_motion"
+    assert row["stop_reason"] == "initial_hold_motion"
+    assert row["motion_commands"] == []
+    assert row["safe_stop"]["torque_disabled"] is True
+    assert robot.adapter.follower.left_bus.torque_enabled == 0
 
 
 def test_operation_grant_file_is_consumed_and_deleted(tmp_path):
@@ -1272,11 +1412,15 @@ def test_gripper_stop_and_communication_errors_are_reported(tmp_path):
 
     robot.adapter.follower.left_bus.fail_reads = True
     _issue_gripper_grant(harness, arms=["left"], action="close")
-    with pytest.raises(ConnectionError, match="fake gripper bus disconnected"):
-        harness.control_gripper(
-            action="close",
-            arms="left",
-        )
+    result = harness.control_gripper(
+        action="close",
+        arms="left",
+    )
+    row = result["results"][0]
+    assert row["status"] == "communication_error"
+    assert row["stop_reason"] == "communication_error"
+    assert any("fake gripper bus disconnected" in item for item in row["communication_errors"])
+    assert row["safe_stop"]["status"] == "failed"
 
 
 def test_grasp_is_unverified_without_threshold_evidence(tmp_path):

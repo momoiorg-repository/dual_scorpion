@@ -75,6 +75,7 @@ class ScorpionAgentHarness:
         self.motion_plans: dict[str, dict[str, Any]] = {}
         self.motion_plan_plan_ids: dict[str, str] = {}
         self.jobs: dict[str, ExecutionJob] = {}
+        self.last_gripper_sides: list[str] = []
 
     def close(self) -> None:
         self.cameras.close()
@@ -244,6 +245,7 @@ class ScorpionAgentHarness:
         if action not in {"open", "close", "set_position", "hold", "release", "grasp"}:
             raise ValueError("unsupported gripper action")
         sides = _arms_to_sides(arms)
+        self.last_gripper_sides = list(sides)
         if action == "set_position" and position is None:
             raise ValueError("set_position requires a normalized position")
         if self.safety.stop_requested:
@@ -598,7 +600,17 @@ class ScorpionAgentHarness:
 
     def stop_motion(self) -> dict[str, Any]:
         self.safety.request_stop()
-        return {"stop_requested": True, "active_executions": [job.execution_id for job in self.jobs.values() if job.status == "running"]}
+        gripper_stops = []
+        if self.robot is not None:
+            for side in self.last_gripper_sides:
+                gripper_stops.append(self.robot.stop_gripper(side))
+        return {
+            "stop_requested": True,
+            "active_executions": [
+                job.execution_id for job in self.jobs.values() if job.status == "running"
+            ],
+            "gripper_stops": gripper_stops,
+        }
 
     def execution_report(self, execution_id: str) -> dict[str, Any]:
         if execution_id not in self.jobs:

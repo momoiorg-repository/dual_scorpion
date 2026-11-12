@@ -37,6 +37,9 @@ gripper:
   # Conservative software slew limit; physical response is not yet verified.
   max_step: 2.0
   settle_s: 0.02
+  # Bounded diagnostic polling for encoder motion.
+  poll_interval_s: 0.05
+  motion_timeout_s: 1.0
   grasp_timeout_s: 2.0
   # Optional raw Feetech thresholds. Leave unset unless measured for this robot.
   load_threshold: null

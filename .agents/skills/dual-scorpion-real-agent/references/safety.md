@@ -16,8 +16,10 @@ The harness enforces these rules locally:
 - Arm-only replay never commands the gripper. The separate gripper path uses the same calibrated LeRobot bus and a shared local lock.
 - Gripper commands are range-checked, slew-rate limited, stop-aware, and never infer a grasp success from position alone.
 - A requested nonzero gripper movement is commanded even when it is smaller than `position_tolerance`. A separate `motion_observation_threshold` decides whether encoder movement was observed.
+- Gripper motion is polled over a bounded `motion_timeout_s`; it is never judged from a single immediate encoder read.
 - `motion_not_observed`, `command_not_sent`, and `position_not_reached` are failures, not successful motion.
 - Before enabling torque, the execution loop commands the measured present positions, re-reads the encoders, and rejects unexpected initial-hold motion.
+- Failed gripper motion commands the measured present position, disables gripper torque, reads back `Torque_Enable`, and reports the final hold state.
 
 The harness never homes the robot automatically. The `start_pose: work` and `retarget_start_pose: neutral` values initialize existing kinematic/replay components; real harness planning starts from the current encoder pose.
 

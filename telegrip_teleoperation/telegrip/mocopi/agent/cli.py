@@ -233,7 +233,11 @@ def _run_limited_gripper_test(harness: ScorpionAgentHarness, args: argparse.Name
     )
     after = harness.read_gripper_state(args.arm)
     command = result["results"][0]
-    harness.stop_motion()
+    stop_report = harness.stop_motion()
+    final_stop = next(
+        (item for item in stop_report["gripper_stops"] if item.get("side") == args.arm),
+        None,
+    )
     return {
         "status": command["status"],
         "stop_reason": command["stop_reason"],
@@ -250,9 +254,14 @@ def _run_limited_gripper_test(harness: ScorpionAgentHarness, args: argparse.Name
         "motion_observation_threshold": command["motion_observation_threshold"],
         "command_count": command["command_count"],
         "motion_command_count": command["motion_command_count"],
+        "position_samples": command["position_samples"],
+        "diagnostics": command["diagnostics"],
+        "safe_stop": final_stop or command["safe_stop"],
+        "final_torque_enabled": None if final_stop is None else final_stop.get("torque_enable"),
         "before": before,
         "command": result,
         "after": after,
+        "stop_report": stop_report,
         "stop_requested": True,
         "timestamp_unix": time.time(),
     }
