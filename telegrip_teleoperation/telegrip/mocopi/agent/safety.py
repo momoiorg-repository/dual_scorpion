@@ -33,6 +33,11 @@ class AuthorizationManager:
     def required(self) -> bool:
         return self._token is not None
 
+    @property
+    def local_token(self) -> str | None:
+        """Token loaded by the local server process; never exposed through MCP."""
+        return self._token
+
     def verify(self, token: str | None) -> None:
         if self._token is None:
             raise AuthorizationError("motion authorization is not configured")

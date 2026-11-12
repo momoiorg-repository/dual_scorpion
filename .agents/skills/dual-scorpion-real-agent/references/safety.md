@@ -3,8 +3,8 @@
 The harness enforces these rules locally:
 
 - The LLM cannot create, infer, or persist motion authorization.
-- The operator supplies a token through a local file outside Git and passes it only to the authorized MCP calls.
-- `connect_robot` and `execute_motion` require that token.
+- The operator supplies a token through a local file outside Git. The MCP server loads it at startup.
+- No MCP tool accepts or exposes the token; JOUZU and Gemini never receive it.
 - `stop_motion` is always available and does not depend on model reasoning.
 - Motion is rejected unless the follower buses are connected and calibrated.
 - Motion is rejected unless the measured table, 45 cm support stick, scene-to-robot transform, and arm collision radius are present.

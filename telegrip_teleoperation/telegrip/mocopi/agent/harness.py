@@ -119,8 +119,8 @@ class ScorpionAgentHarness:
             "hardware_commands_sent_by_constructor": 0,
         }
 
-    def connect_robot(self, authorization_token: str | None) -> dict[str, Any]:
-        self.safety.authorize_motion(authorization_token)
+    def connect_robot(self, authorization_token: str | None = None) -> dict[str, Any]:
+        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
         if self.robot is None:
             raise RuntimeError("real robot adapter is not configured")
         calibration = self.robot.validate_calibration()
@@ -257,7 +257,7 @@ class ScorpionAgentHarness:
                     for side in sides
                 ],
             }
-        self.safety.authorize_motion(authorization_token)
+        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
         scene_status = self.kinematics.scene_status()
         if not scene_status["execution_allowed"]:
             raise RuntimeError("measured table/stick scene geometry is required before gripper motion")
@@ -384,13 +384,13 @@ class ScorpionAgentHarness:
     def execute_motion(
         self,
         motion_plan_id: str,
-        authorization_token: str | None,
+        authorization_token: str | None = None,
         *,
         capture_before_after: bool = False,
     ) -> dict[str, Any]:
         if motion_plan_id not in self.motion_plans:
             raise KeyError(f"unknown motion plan {motion_plan_id!r}")
-        self.safety.authorize_motion(authorization_token)
+        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
         if self.robot is None:
             raise RuntimeError("real robot adapter is not configured")
         if not self.robot.is_connected:
@@ -467,13 +467,13 @@ class ScorpionAgentHarness:
     def execute_task_plan(
         self,
         plan_id: str,
-        authorization_token: str | None,
+        authorization_token: str | None = None,
         *,
         capture_before_after: bool = False,
     ) -> dict[str, Any]:
         if plan_id not in self.plans:
             raise KeyError(f"unknown plan {plan_id!r}")
-        self.safety.authorize_motion(authorization_token)
+        self.safety.authorize_motion(authorization_token or self.authorization.local_token)
         plan = self.plans[plan_id]
         execution_id = "task-" + uuid.uuid4().hex[:12]
         report_path = self.config.execution_report_dir / f"{execution_id}.json"

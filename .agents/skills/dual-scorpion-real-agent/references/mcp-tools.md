@@ -13,17 +13,17 @@ All arguments are JSON objects. Results include machine-readable `structuredCont
 | Tool | Purpose | Authorization |
 | --- | --- | --- |
 | `get_status` | Robot, camera, safety, execution, and skill status | None |
-| `connect_robot` | Validate calibration, connect follower buses, and read current encoders without homing | Operator token |
+| `connect_robot` | Validate calibration, connect follower buses, and read current encoders without homing | Local server pre-authorization |
 | `get_world_state` | Current provenance-labelled robot/camera/object state | None |
 | `list_skills` | Robot Skill contracts and implementation status | None |
 | `capture_images` | MCP image content plus camera ID, timestamp, size, hash | None |
 | `update_object_estimates` | Store semantic or validated object estimates | None |
 | `submit_task_plan` | Validate a `dual_scorpion.agent.task_plan.v2` plan | None |
 | `plan_motion` | Generate and validate a joint trajectory | None |
-| `execute_motion` | Start the real follower execution job; optionally capture before/after images | Operator token |
+| `execute_motion` | Start the real follower execution job; optionally capture before/after images | Local server pre-authorization |
 | `read_gripper_state` | Read one gripper's calibrated position, state, load, and current | None |
-| `control_gripper` | Open, close, set, hold, release, or attempt a generic monitored grasp | Operator token |
-| `execute_task_plan` | Execute arm and gripper steps in dependency order | Operator token |
+| `control_gripper` | Open, close, set, hold, release, or attempt a generic monitored grasp | Local server pre-authorization |
+| `execute_task_plan` | Execute arm and gripper steps in dependency order | Local server pre-authorization |
 | `stop_motion` | Set the local stop event | None |
 | `get_execution_report` | Return execution metrics and failure state | None |
 | `get_replan_context` | Return failure and observation requirements | None |

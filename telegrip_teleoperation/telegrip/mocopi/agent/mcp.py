@@ -69,11 +69,10 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "connect_robot",
-                "Validate calibration, connect the follower buses, and read current encoders without homing. Requires operator authorization.",
+                "Validate calibration, connect the follower buses, and read current encoders without homing. The local server must already hold operator authorization.",
                 {
                     "type": "object",
-                    "properties": {"authorization_token": {"type": "string"}},
-                    "required": ["authorization_token"],
+                    "properties": {},
                     "additionalProperties": False,
                 },
             ),
@@ -144,21 +143,20 @@ class ScorpionMcpServer:
             ),
             _tool(
                 "execute_motion",
-                "Start a real-robot motion execution job. Requires operator authorization.",
+                "Start a real-robot motion execution job. The local server must already hold operator authorization.",
                 {
                     "type": "object",
                     "properties": {
                         "motion_plan_id": {"type": "string"},
-                        "authorization_token": {"type": "string"},
                         "capture_before_after": {"type": "boolean"},
                     },
-                    "required": ["motion_plan_id", "authorization_token"],
+                    "required": ["motion_plan_id"],
                     "additionalProperties": False,
                 },
             ),
             _tool(
                 "control_gripper",
-                "Open, close, set, hold, release, or attempt a generic monitored grasp on one or both grippers. Requires operator authorization.",
+                "Open, close, set, hold, release, or attempt a generic monitored grasp on one or both grippers. The local server must already hold operator authorization.",
                 {
                     "type": "object",
                     "properties": {
@@ -168,23 +166,21 @@ class ScorpionMcpServer:
                         },
                         "arms": {"type": "string", "enum": ["left", "right", "both"]},
                         "position": {"type": "number", "minimum": 0, "maximum": 100},
-                        "authorization_token": {"type": "string"},
                     },
-                    "required": ["action", "arms", "authorization_token"],
+                    "required": ["action", "arms"],
                     "additionalProperties": False,
                 },
             ),
             _tool(
                 "execute_task_plan",
-                "Execute a validated task plan in dependency order, combining arm motion and gripper skills. Requires operator authorization.",
+                "Execute a validated task plan in dependency order, combining arm motion and gripper skills. The local server must already hold operator authorization.",
                 {
                     "type": "object",
                     "properties": {
                         "plan_id": {"type": "string"},
-                        "authorization_token": {"type": "string"},
                         "capture_before_after": {"type": "boolean"},
                     },
-                    "required": ["plan_id", "authorization_token"],
+                    "required": ["plan_id"],
                     "additionalProperties": False,
                 },
             ),
@@ -219,7 +215,7 @@ class ScorpionMcpServer:
         if name == "get_status":
             return _structured(self.harness.status())
         if name == "connect_robot":
-            return _structured(self.harness.connect_robot(arguments["authorization_token"]))
+            return _structured(self.harness.connect_robot())
         if name == "get_world_state":
             return _structured(self.harness.world_state().to_dict())
         if name == "read_gripper_state":
@@ -252,7 +248,6 @@ class ScorpionMcpServer:
             return _structured(
                 self.harness.execute_motion(
                     arguments["motion_plan_id"],
-                    arguments["authorization_token"],
                     capture_before_after=arguments.get("capture_before_after", False),
                 )
             )
@@ -262,14 +257,12 @@ class ScorpionMcpServer:
                     action=arguments["action"],
                     arms=arguments["arms"],
                     position=arguments.get("position"),
-                    authorization_token=arguments["authorization_token"],
                 )
             )
         if name == "execute_task_plan":
             return _structured(
                 self.harness.execute_task_plan(
                     arguments["plan_id"],
-                    arguments["authorization_token"],
                     capture_before_after=arguments.get("capture_before_after", False),
                 )
             )

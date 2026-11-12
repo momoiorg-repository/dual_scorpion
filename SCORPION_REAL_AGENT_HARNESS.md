@@ -308,17 +308,17 @@ The server implements JSON-RPC `initialize`, `tools/list`, and `tools/call`. JOU
 | Tool | Purpose | Authorization |
 | --- | --- | --- |
 | `get_status` | robot, camera, safety, execution, and skill status | none |
-| `connect_robot` | connect both calibrated follower buses | operator token |
+| `connect_robot` | connect both calibrated follower buses | local server pre-authorization |
 | `get_world_state` | current provenance-labelled state | none |
 | `list_skills` | skill contracts and implementation status | none |
 | `capture_images` | MCP image content and metadata | none |
 | `update_object_estimates` | semantic or validated object estimates | none |
 | `submit_task_plan` | validate and store a task plan | none |
 | `plan_motion` | generate and validate a joint trajectory | none |
-| `execute_motion` | start a real execution job; optionally capture before/after images | operator token |
+| `execute_motion` | start a real execution job; optionally capture before/after images | local server pre-authorization |
 | `read_gripper_state` | read one gripper's calibrated position, load, and current | none |
-| `control_gripper` | open, close, set, hold, release, or attempt a generic monitored grasp | operator token |
-| `execute_task_plan` | execute arm and gripper steps in dependency order | operator token |
+| `control_gripper` | open, close, set, hold, release, or attempt a generic monitored grasp | local server pre-authorization |
+| `execute_task_plan` | execute arm and gripper steps in dependency order | local server pre-authorization |
 | `stop_motion` | set the local stop event | none |
 | `get_execution_report` | execution metrics and failure state | none |
 | `get_replan_context` | failure, current state, and required observations | none |
@@ -327,11 +327,12 @@ The server implements JSON-RPC `initialize`, `tools/list`, and `tools/call`. JOU
 
 1. The operator creates a token file outside Git, for example `/run/user/1000/scorpion-agent-motion.token`.
 2. The harness reads that path from its YAML config.
-3. `connect_robot` and `execute_motion` require the token value.
-4. The LLM cannot create, infer, or persist the token.
-5. `stop_motion` is local and always available.
-6. Execution is rejected unless the buses are connected, calibration is valid, encoder feedback is fresh and finite, the measured table/stick scene is loaded, the current pose is clear, and the generated trajectory passes the existing validator.
-7. On stop, tracking error, limit violation, initial-hold movement, table/stick clearance violation, or communication failure, the execution loop holds the measured pose and disconnects without commanding the gripper.
+3. The local MCP server loads the token at startup.
+4. No MCP tool accepts or returns the token. JOUZU and Gemini never see it.
+5. The LLM cannot create, infer, or persist the token.
+6. `stop_motion` is local and always available.
+7. Execution is rejected unless the buses are connected, calibration is valid, encoder feedback is fresh and finite, the measured table/stick scene is loaded, the current pose is clear, and the generated trajectory passes the existing validator.
+8. On stop, tracking error, limit violation, initial-hold movement, table/stick clearance violation, or communication failure, the execution loop holds the measured pose and disconnects without commanding the gripper.
 
 Physical robot operation still requires the operator's physical safety procedure and explicit authorization. Software tests do not authorize or verify real motion.
 

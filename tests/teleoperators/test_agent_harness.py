@@ -384,7 +384,20 @@ def test_camera_service_returns_mcp_image_content(tmp_path):
 
 def test_mcp_lists_tools_and_requires_motion_authorization(tmp_path):
     spec = CameraSpec(camera_id="head", device="/dev/null", width=6, height=4, fps=30)
-    harness = _harness(tmp_path)
+    config = HarnessConfig(
+        robot_config_path=CONFIG,
+        cameras=(),
+        authorization_token_file=None,
+        max_feedback_age_s=0.5,
+        max_plan_frames=240,
+        execution_report_dir=tmp_path / "reports",
+    )
+    harness = ScorpionAgentHarness(
+        config,
+        robot=FakeRobot(),
+        kinematics=FakeKinematics(),
+        authorization=AuthorizationManager(),
+    )
     harness.cameras = CameraService((spec,), backend_factory=lambda camera_spec: FakeCamera())
     server = ScorpionMcpServer(harness)
     initialized = server.handle({"jsonrpc": "2.0", "id": 0, "method": "initialize"})
@@ -392,6 +405,7 @@ def test_mcp_lists_tools_and_requires_motion_authorization(tmp_path):
     listed = server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {tool["name"] for tool in listed["result"]["tools"]}
     assert {"get_status", "capture_images", "submit_task_plan", "execute_motion", "stop_motion"} <= names
+    assert all("authorization_token" not in tool["inputSchema"].get("properties", {}) for tool in listed["result"]["tools"])
 
     captured = server.handle(
         {
@@ -415,12 +429,12 @@ def test_mcp_lists_tools_and_requires_motion_authorization(tmp_path):
             "method": "tools/call",
             "params": {
                 "name": "execute_motion",
-                "arguments": {"motion_plan_id": motion["motion_plan_id"], "authorization_token": None},
+                "arguments": {"motion_plan_id": motion["motion_plan_id"]},
             },
         }
     )
     assert "error" in response
-    assert "authorization" in response["error"]["message"]
+    assert "motion authorization is not configured" in response["error"]["message"]
 
 
 def test_motion_planner_generates_and_validates_fk_ik_trajectory():
@@ -1037,7 +1051,6 @@ def test_mcp_exposes_gripper_state_and_control_tools(tmp_path):
                 "arguments": {
                     "action": "close",
                     "arms": "left",
-                    "authorization_token": "operator-token",
                 },
             },
         }
