@@ -790,8 +790,8 @@ MuJoCoの再生で `--slowdown 3` などを指定して計画を作り直して�
 本機能は実機未検証です。通常の [AGENT_GUIDE.md](AGENT_GUIDE.md) に従って先に実機を校正してください。
 
 ```bash
-export LEFT_FOLLOWER_PORT=/dev/ttyACM0   # 実際の左腕ポートへ変更
-export RIGHT_FOLLOWER_PORT=/dev/ttyACM1  # 実際の右腕ポートへ変更
+export RIGHT_FOLLOWER_PORT=/dev/ttyACM0  # 実際の右腕ポートへ変更
+export LEFT_FOLLOWER_PORT=/dev/ttyACM1   # 実際の左腕ポートへ変更
 export ROBOT_ID=my_robot                 # 実際の校正IDへ変更
 uv run --no-sync --active python -m telegrip.mocopi.dataset replay-real \
   --plan outputs/mocopi/plans/episode-001.json --execute \
