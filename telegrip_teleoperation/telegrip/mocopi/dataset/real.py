@@ -4,6 +4,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from threading import Event
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -246,6 +247,7 @@ def execute_plan(
     max_sim_error_m=0.025,
     max_sim_orientation_error_deg=None,
     realtime=True,
+    stop_event: Event | None = None,
 ):
     """Replay a prevalidated plan; retain partial quantitative results on failure."""
     if not (0 < max_start_error_deg <= 2 and 0 < max_tracking_error_deg <= 5):
@@ -316,6 +318,8 @@ def execute_plan(
             report["status"] = "running"
             start_time = time.monotonic()
             for index, frame in enumerate(plan["frames"]):
+                if stop_event is not None and stop_event.is_set():
+                    raise RuntimeError("Operator stop requested")
                 desired = _joint_map(frame)
                 limited = {
                     side: np.clip(desired[side], current[side] - limit, current[side] + limit)
