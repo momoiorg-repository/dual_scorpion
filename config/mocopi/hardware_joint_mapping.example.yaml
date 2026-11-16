@@ -1,43 +1,44 @@
 # Example only. Do not use this file for hardware replay.
-# Generate the real mapping with:
-#   python -m telegrip.mocopi.dataset verify-dataset-mapping --mode joint-wise ...
+# Generate the real mapping with independent per-joint verification (no whole-body posing):
+#   PYTHONPATH=telegrip_teleoperation uv run --no-sync python -m telegrip.mocopi.dataset verify-dataset-mapping --mode joint-wise ...
 #
-# The mapping formula is motor = sign * model + offset.
+# The mapping formula is motor = sign * model + offset_deg.
 # offset_deg is the motor angle at MuJoCo model zero.  The calibration zero
 # (MotorNormMode.DEGREES = 0) is a different pose and is represented by
-# model_at_calibration_zero_deg = -offset / sign.
+# model_at_calibration_zero_deg = -offset_deg / sign.
 #
 # A real mapping also contains, for every joint on each side:
 #   sides.<side>.joint_verification.<joint>:
 #     schema: dual_scorpion.mocopi.hardware_joint_verification.v1
-#     side, joint, motor_id, motor_model, method, verified
-#     model_joint, model_axis, calibration
+#     side, joint, motor_id, motor_model, method, verification_method, verified
+#     model_joint, parent_link, child_link, model_axis, calibration
 #     model_angles_deg, motor_angles_deg, model_range_deg
 #     slope, sign, offset_deg, rms_deg, max_residual_deg
 #     positive_delta_deg, negative_delta_deg
-#     scale_basis, scale_verified, evidence, failures
-# Every joint must be verified before replay-dataset allows motor commands.
+#     scale_basis, scale_verified, evidence, verification_evidence, failures
+# Partial mappings keep verified: false at the top level and use null for unmeasured joints.
+# Every joint must have verified: true before replay-dataset allows motor commands.
 schema: dual_scorpion.mocopi.hardware_joint_mapping.v1
 robot_id: CHANGE_ME
 calibration_sha256: CHANGE_ME
 mujoco_model_sha256: CHANGE_ME
-dataset: /path/to/episode-001-robot-final12
-dataset_sha256: CHANGE_ME
-dataset_manifest_sha256: CHANGE_ME
-episode: 0
+dataset: null
+dataset_sha256: null
+dataset_manifest_sha256: null
+episode: null
 verified: false
 model_kind: full_mujoco
-verification_method: reference_pose_bidirectional_direction
+verification_method: per_joint_reference
 created_at: null
 verification: null
 sides:
   right:
-    sign: [1, 1, 1, 1, 1, 1, 1]
-    offset_deg: [0, 0, 0, 0, 0, 0, 0]
+    sign: [null, null, null, null, null, null, null]
+    offset_deg: [null, null, null, null, null, null, null]
     # Optional tighter limits.  If omitted, the calibrated motor range is used.
     # joint_limits_deg:
     #   min: [-180, -180, -180, -180, -180, -180, -180]
     #   max: [180, 180, 180, 180, 180, 180, 180]
   left:
-    sign: [1, 1, 1, 1, 1, 1, 1]
-    offset_deg: [0, 0, 0, 0, 0, 0, 0]
+    sign: [null, null, null, null, null, null, null]
+    offset_deg: [null, null, null, null, null, null, null]

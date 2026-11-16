@@ -253,46 +253,49 @@ offsetを推測したりしません。
 ### 関節ごとの情報（`inspect-dataset-mapping`）
 
 `inspect-dataset-mapping` は較正JSONとMJCFを読み、左右7関節ずつ、関節順序、`motor_id`、
-MJCF軸、モデルゼロ、較正ゼロ、較正範囲、マッピング後の角度、左右対応、`verified`を
-表示します。マッピングがなければ符号とoffsetは`null`で、14関節が`unverified`になります。
-接続・トルク変更・指令は行いません。`--check-start`を付けたときだけ現在角度を読みます。
+MJCF軸・親子リンク・CAD基準幾何、モデルゼロ、較正ゼロ、較正範囲、マッピング後の角度、
+左右対応、`verification_method`、`verification_evidence`、`verified`を表示します。
+マッピングがなければ符号とoffsetは`null`で、14関節が`unverified`になります。
+`--check-start`を付けたときだけ現在角度を読みますが、`enable_torque()` / `disable_torque()`は
+一切呼ばず、切断時も`disable_torque=False`を保ちます（正常終了・例外終了・部分接続失敗すべてで既存のトルク状態を維持）。
 
-### joint-wise検証（`verify-dataset-mapping --mode joint-wise`）
+### 関節ごとの独立検証（`verify-dataset-mapping --mode joint-wise`）
 
-1つの参照フレーム姿勢を全身で1回合わせ、その後は1関節ずつモデル正方向・負方向へ
-10度以上動かし、各試験のあとその関節を参照姿勢へ戻します。最初に、14関節すべてがサーボホーン直結（1:1）であることを
-確認します。参照フレームは`--reference-frame`で明示します。frame 0はモデルの
-neutral姿勢（全関節0）なので暗黙の既定にはしません。トルクは切ったまま、腕を支えて行います。ツールはモーターを駆動しません。
-各関節について次を記録します。
+全身14関節の同時姿勢合わせは不要です（`--reference-frame`は使用不可）。各関節について独立に、
+正負の方向テストと既知のモデル角度（1点基準＋直結1:1確認、または2点以上フィット）および
+測定根拠を記録します。対話形式でトルク解除する場合は事前に腕の支持確認を求め、拒否時は
+トルクを変更せず終了します。`--joints` / `--arm` / `--existing-mapping` / `--allow-partial` に
+より部分検証や段階的追記ができ、`--measurements` により記録済みの関節測定YAML/JSONからの
+オフライン検証もできます。未測定の関節は`verified: false`・`offset_deg: null`のまま維持し、
+エンコーダー現在値から推測しません。
 
 | 指標 | 意味 |
 |---|---|
 | `motor_id` / `motor_model` | 較正JSONのモーターID・機種との照合 |
-| `model_joint` / `model_axis` | MJCFの関節名と親body座標の回転軸 |
-| `evidence.model_positive_axis_world` | 参照姿勢でのワールド座標の回転軸（右手則用） |
-| `sign` | 正方向試験のエンコーダー変化から決定 |
-| `offset_deg` | 参照姿勢の`motor_ref - sign × model_ref` |
-| `positive_delta_deg` / `negative_delta_deg` | 2方向試験の実測変化 |
-| `other_joint_violations` | 他の関節が5度を超えて動いた場合の関節と変化量 |
-| `scale_verified` | joint-wiseでは`false`（直接駆動1:1を前提） |
-| `verified` | 1関節でもfalseならマッピングを書かない |
+| `model_joint` / `model_axis` | MJCFの関節名と親リンク座標の回転軸 |
+| `sign` / `sign_verified` | 正負2方向テストの実測変化から決定（他関節変動は5度以下） |
+| `offset_deg` / `offset_verified` | 既知モデル角度の測定値からのみ確定（未測定なら`null`） |
+| `verification_method` | `per_joint_reference` / `per_joint_multi_angle` / `per_joint_direction_only` / `unmeasured` |
+| `verification_evidence` | 測定根拠・方向テスト結果・CAD基準・直結確認フラグ |
+| `scale_verified` | 1点基準では`false`（2点以上多点フィット・posesモードで`true`） |
+| `verified` | 全14関節が`true`の場合のみトップレベル`verified: true` |
 
-`--mode poses`は従来の3〜5姿勢フィットで、`slope`（±1からのずれ）と残差も検証します。
-全身姿勢を複数合わせられる場合はこちらが強い検証になります。
+`--mode poses`は従来の3〜5姿勢の全身フィット方式です。
 
 ### 事前検証（`--execute`なし）
 
 `replay-dataset`は`--execute`なしではモーターへ指令しません。データセット、マッピング、
-較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲、IK状態、衝突、
-フレーム間ステップを検証します。`--check-start`を付けると現在角度を読み、開始誤差と
-初期移行の安全性を評価します。`initial_transition`には次が入ります。
+較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲と`joint_limits_deg`、
+IK状態、衝突、フレーム間ステップを検証します。`--check-start`を付けると現在角度を読み
+（既存のトルク状態は不変）、開始誤差と初期移行の安全性を評価します。`initial_transition`には次が入ります。
 
 | 指標 | 意味 |
 |---|---|
 | `delta_deg` / `steps` / `estimated_duration_s` | 現在姿勢から先頭フレームまでの関節空間移動 |
-| `limit_violations` | 較正範囲を外れる端点 |
+| `max_command_step_deg` / `max_command_speed_deg_s` | 補間指令の最大ステップと速度 |
+| `limit_violations` | 較正半幅および`joint_limits_deg`を外れる端点 |
 | `collision_frames` / `max_penetration_m` | Full MJCF上の床・自己衝突（外部障害物は未モデル化） |
-| `safe` | 上記に違反がない場合だけtrue |
+| `safe` | 全チェック通過かつステップ・速度上限内である場合のみtrue |
 
 開始誤差が2度を超える場合、`--execute`は拒否します。`--allow-initial-move`は
 `initial_transition.safe: true`を確認した場合だけ明示的に使用でき、既定は無効です。

@@ -182,11 +182,13 @@ outputs/
 *.xml
 *.part
 
-# Locally measured mocopi camera/head calibrations; never commit personal tracking.
+# Locally measured mocopi camera/head calibrations and hardware joint mappings; never commit personal measurements.
 config/mocopi/calibration/*.yaml
 config/mocopi/calibration/*.yml
 /config/mocopi/calibration/*
 !/config/mocopi/calibration/README.md
+/config/mocopi/hardware/*
+!/config/mocopi/hardware/.gitkeep
 telegrip_teleoperation/.venv/
 
 # Local recordings, checkerboard photographs, SLAM maps/vocabulary and engine logs.

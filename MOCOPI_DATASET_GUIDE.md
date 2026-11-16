@@ -593,11 +593,13 @@ Dual Scorpion実機のホーム姿勢はMuJoCoのゼロ姿勢と一致しませ�
 「較正ゼロに対応するモデル角」を表します。実機をMuJoCoのゼロ姿勢へ無理に移動させる
 必要はありません。現在姿勢をoffsetの確定値として扱うことも禁止です。
 
-#### 1. 関節ごとの情報を読む（モーターを動かさない）
+#### 1. 関節ごとの情報を読む（モーターを動かさず・トルク状態を変えない）
 
 最初に、モデル・較正・データセットから確定できる項目だけを表示します。
 `inspect-dataset-mapping` はFollowerを構築して較正JSONを読みますが、接続もトルク変更も
-指令も行いません。`--check-start` を付けた場合だけ、現在角度を読み取ります。
+指令も行いません。`--check-start` を付けた場合だけ現在角度を読み取ります。この際、
+接続前にトルクが有効なら有効のまま、無効なら無効のまま終了し（異常終了時も同じ）、
+`enable_torque()` / `disable_torque()` は呼びません。
 
 ```bash
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset inspect-dataset-mapping \
@@ -607,31 +609,48 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --output outputs/mocopi/reports/episode-001-joint-inspection.json
 ```
 
+現在姿勢も確認したい場合（読み取り専用・トルク不変）:
+
+```bash
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset inspect-dataset-mapping \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --episode 0 \
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --right-port /dev/ttyACM0 \
+  --left-port /dev/ttyACM1 \
+  --check-start \
+  --output outputs/mocopi/reports/episode-001-joint-inspection.json
+```
+
 出力には左右7関節ずつ、次が入ります。
 
 - データセット内の関節順序と`motor_id`
-- MJCFの関節名・回転軸・親body
+- MJCFの関節名・親子リンク・CAD基準幾何（回転軸・正方向回転の効果）
 - モデルゼロ（0度）と較正ゼロ（モーター0度）
 - 較正範囲`[min, max]`（度）と、マッピング後のモデル角換算
-- `sign` / `offset_deg` / 関節ごとの`verified`
+- `sign` / `offset_deg` / `verification_method` / `verification_evidence` / 関節ごとの`verified`
 - 左右の対応（同じindexの関節名、モーターID、軸の関係）
 
 マッピング未作成の場合、`sign`と`offset_deg`は`null`、`unverified_joints`に14関節が
-並びます。これは正常です。符号とゼロ位置は実機でしか確定できません。
+並びます。これは正常です。符号とゼロ位置のオフセットは実機での測定・根拠に基づいてのみ確定できます。
 
-#### 2. 実機の関節対応を検証する（トルク解除・受動読み取り）
+#### 2. 実機の関節対応を1関節ずつ独立検証する（全身姿勢合わせ不要）
 
-`verify-dataset-mapping`の既定`--mode joint-wise`は、**全身姿勢を1回だけ**合わせ、
-そのあと**1関節ずつ**正方向・負方向へ手で動かして符号を確認します。5つの全身姿勢を
-再現する必要はありません。トルクは切ったままです。腕の落下を防ぐ支持を必ず行って
-ください。このコマンドはモーターを駆動しません。
+`verify-dataset-mapping`の既定`--mode joint-wise`は、**全身14関節を同時にデータセット姿勢へ
+合わせる必要がありません**（`--reference-frame`はjoint-wiseモードでは禁止されています）。
+1関節ずつ順番に、腕を支えながら正負の方向テストと既知の基準角度（CAD基準合わせ、90度スコヤ、
+水平器、分度器、治具などで実測できる角度）を確認します。
+
+トルク解除前には必ず「腕を手で支えて落下しないこと」の明示確認（`y`）を求めます。
+拒否した場合はトルクを変更せず中止します。コマンド実行中はモーターを駆動しません。
+
+全関節を対話形式で順番に検証するコマンド例：
 
 ```bash
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
+  --mode joint-wise \
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
   --episode 0 \
-  --mode joint-wise \
-  --reference-frame 124 \
   --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
   --robot-id dual_scorpion_follower_2026_1026 \
   --right-port /dev/ttyACM0 \
@@ -640,32 +659,50 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --report outputs/mocopi/reports/episode-001-mapping-verification.json
 ```
 
-手順は次のとおりです。
+特定の関節だけ検証し、未測定関節を`verified: false`のまま一時保存するコマンド例：
 
-0. 14関節すべてがサーボホーン直結（減速機・ベルトなし、1:1）であることを確認する。
-   確認できない場合は`--mode poses`を使う。
-1. トルクを切り、腕を支え、表示された参照フレームの姿勢に全身を手で合わせる。
-   この1姿勢がoffsetの基準になる。ホーム姿勢と一致している必要はない。
-2. 各関節について、表示される`axis_world`（参照姿勢でのワールド座標の回転軸）を
-   右手則で確認しながら、その関節だけをモデル正方向へ10度以上動かしてEnter。
-3. 同じ関節だけをモデル負方向へ10度以上動かしてEnter。
-4. その関節を参照姿勢へ戻してEnter。次の関節の試験前に、他の関節も参照姿勢に戻す。
-5. ツールが`sign`と`offset_deg`を記録し、`motor_id`と較正範囲を照合する。
-   他の関節が5度を超えて動いた場合は、その試験を失敗として扱う（`--max-other-joint-delta-deg`）。
+```bash
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
+  --mode joint-wise \
+  --arm right \
+  --joints right_joint3 \
+  --existing-mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --allow-partial \
+  --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping-v2.yaml \
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --right-port /dev/ttyACM0
+```
 
-`--reference-frame`は必須です。frame 0はモデルのneutral姿勢（全関節0）なので暗黙の
-既定にはしていません。実機で安全に再現できるデータセット中の1フレームを明示して
-ください（上の例の124は説明用で、安全を保証する値ではありません）。全身を1回合わせる
-必要はありますが、5姿勢を順に再現する必要はありません。`--mode poses`は
-従来の3〜5姿勢の最小二乗フィットで、`slope`（±1からのずれ）も検証します。joint-wise
-モードは直接駆動の1:1を前提とするため、記録に`scale_verified: false`が入ります。
-`slope`まで確認したい場合は`--mode poses`を使ってください。
+実機で1関節ごとに記録した測定ファイル（方向テスト＋既知モデル角・根拠）から検証・生成することもできます：
 
-次の場合はマッピングを書きません。
+```bash
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
+  --mode joint-wise \
+  --measurements config/mocopi/hardware/measured_joints.yaml \
+  --allow-partial \
+  --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --robot-id dual_scorpion_follower_2026_1026
+```
 
-- 指定方向へ必要量動いていない、または2回の試験で方向が反転しない
-- `motor_id`が較正JSONと一致しない
-- MJCF軸・モデル関節名が対応しない
+各関節の手順は次のとおりです（他関節の同時姿勢合わせは不要）。
+
+0. トルク解除前の明示確認（腕を支える）に `y` で応答する。
+1. 1点基準で `offset_deg` を求める場合はサーボホーン直結（減速比1:1）であるか確認する。
+   減速比が未知・非直結の場合は各関節で2点以上のモデル角度（例: `'0, 90'`）を実測して傾きも検証する。
+2. 対象関節だけを基準姿勢から CAD 正方向・負方向へそれぞれ `10度`（`--sign-test-deg`）以上
+   手で動かしてEnter。他の関節が5度を超えて動いた場合は方向テスト失敗とする（`--max-other-joint-delta-deg`）。
+3. その関節の既知のモデル角度（例: `0`、`90`、または2点以上 `'0, 90'`）と測定根拠を入力し、
+   その角度に合わせた状態でEnter（他関節は安全な任意位置のままでよい）。
+4. 未測定のまま残す場合は `'skip'` または `'unmeasured'` を入力する。ツールが推測で `offset_deg` を埋めることはしない（`verified: false`, `offset_deg: null`）。
+
+`--mode poses` は3〜5種類の全身姿勢から最小二乗フィットを行う従来方式です（すべての全身姿勢を
+安全に再現できる場合のみ使用）。
+
+次の場合は、`--allow-partial`なしではマッピングを書きません（`--allow-partial`指定時は`verified: false`として保存され、`replay-dataset`では拒否されます）。
+
+- 方向テストで必要量動いていない、または正負で方向が反転しない
+- `motor_id` や MJCF `model_joint` が一致しない
+- 基準角度が未測定、または測定根拠が記載されていない
 - 1関節でも`verified: false`が残る
 
 #### 3. モーターを動かさずに事前検証する

@@ -3,7 +3,6 @@
 import argparse
 import json
 import logging
-from contextlib import suppress
 from pathlib import Path
 
 from ..config import camera_device, load_config
@@ -188,23 +187,50 @@ def parser():
     )
     verify_map = sub.add_parser(
         "verify-dataset-mapping",
-        help="Verify full-CAD model joints against manually posed real robot joints",
+        help="Verify full-CAD model joints independently per joint or from recorded measurements",
     )
-    verify_map.add_argument("--dataset", required=True, help="Full-CAD joint dataset")
+    verify_map.add_argument(
+        "--dataset",
+        help="Optional Full-CAD joint dataset (required for poses mode; optional context for joint-wise)",
+    )
     verify_map.add_argument("--episode", type=int, default=0)
-    verify_map.add_argument("--output", required=True, help="New verified mapping YAML")
+    verify_map.add_argument("--output", required=True, help="New verified or partial mapping YAML")
     verify_map.add_argument(
         "--mode",
         choices=["joint-wise", "poses"],
         default="joint-wise",
-        help="joint-wise: one reference pose plus per-joint direction tests; "
+        help="joint-wise: independent per-joint sign/reference verification (no whole-body pose required); "
         "poses: legacy multi-pose least-squares fit",
+    )
+    verify_map.add_argument(
+        "--joints",
+        action="append",
+        help="Target joints for joint-wise verification (e.g. right_joint3, left_joint0, or joint3); may repeat",
+    )
+    verify_map.add_argument(
+        "--arm",
+        choices=["both", "right", "left"],
+        default="both",
+        help="Target arm(s) for joint-wise verification when --joints is not narrower",
+    )
+    verify_map.add_argument(
+        "--existing-mapping",
+        help="Existing partial/verified mapping YAML to preserve or merge unmeasured joints",
+    )
+    verify_map.add_argument(
+        "--measurements",
+        help="Offline YAML/JSON file containing per-joint direction tests and grounded reference measurements",
+    )
+    verify_map.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="Allow writing a partial mapping YAML with verified: false when some joints are unverified",
     )
     verify_map.add_argument(
         "--reference-frame",
         type=int,
         action="append",
-        help="Reference frame; joint-wise requires exactly one explicit frame, poses repeats at least three",
+        help="Legacy poses mode only: reference frames (repeats at least three). Disallowed in joint-wise mode.",
     )
     verify_map.add_argument(
         "--sign-test-deg",
@@ -220,8 +246,10 @@ def parser():
     )
     verify_map.add_argument("--max-fit-residual-deg", type=float, default=3.0)
     verify_map.add_argument("--min-model-range-deg", type=float, default=5.0)
-    verify_map.add_argument("--left-port", required=True, help="Left follower serial device")
-    verify_map.add_argument("--right-port", required=True, help="Right follower serial device")
+    verify_map.add_argument("--left-port", default="/dev/not-used-left", help="Left follower serial device")
+    verify_map.add_argument(
+        "--right-port", default="/dev/not-used-right", help="Right follower serial device"
+    )
     verify_map.add_argument("--robot-id", required=True, help="Existing calibrated robot id")
     verify_map.add_argument("--calibration-dir", help="Override the existing calibration directory")
     verify_map.add_argument("--report", help="Optional verification report JSON")
@@ -581,10 +609,14 @@ def main():
                 with output.open("x", encoding="utf-8") as file:
                     file.write(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
         elif args.command == "verify-dataset-mapping":
-            from .hardware_dataset import load_joint_episode
+            from .hardware_dataset import (
+                _resolve_arm_joint_selectors,
+                load_joint_episode,
+                verify_dataset_mapping,
+                verify_dataset_mapping_jointwise,
+            )
             from .real import arm_only_follower
 
-            episode = load_joint_episode(args.dataset, args.episode)
             robot = arm_only_follower(
                 args.left_port,
                 args.right_port,
@@ -593,28 +625,41 @@ def main():
                 args.calibration_dir,
             )
             if args.mode == "joint-wise":
-                from .hardware_dataset import verify_dataset_mapping_jointwise
-
-                if args.reference_frame and len(args.reference_frame) != 1:
-                    raise ValueError("joint-wise mode accepts exactly one --reference-frame")
-                if not args.reference_frame:
+                if args.reference_frame:
                     raise ValueError(
-                        "joint-wise mode requires an explicit --reference-frame; "
-                        "frame 0 is the model-neutral start and is not selected implicitly"
+                        "joint-wise mode verifies each joint independently without whole-body "
+                        "dataset pose matching; do not pass --reference-frame"
                     )
+                if args.measurements is None:
+                    selected = _resolve_arm_joint_selectors(joints=args.joints, arm=args.arm)
+                    needed_sides = {side for side, _ in selected}
+                    if "left" in needed_sides and args.left_port == "/dev/not-used-left":
+                        raise ValueError("joint-wise live verification of left joints requires --left-port")
+                    if "right" in needed_sides and args.right_port == "/dev/not-used-right":
+                        raise ValueError("joint-wise live verification of right joints requires --right-port")
+                episode = load_joint_episode(args.dataset, args.episode) if args.dataset else None
                 result = verify_dataset_mapping_jointwise(
                     episode,
                     robot,
                     args.output,
                     config=config,
-                    reference_frame=args.reference_frame[0],
+                    joints=args.joints,
+                    arm=args.arm,
+                    existing_mapping=args.existing_mapping,
+                    measurements=args.measurements,
                     sign_test_deg=args.sign_test_deg,
                     max_other_joint_delta_deg=args.max_other_joint_delta_deg,
+                    max_residual_deg=args.max_fit_residual_deg,
+                    min_model_range_deg=args.min_model_range_deg,
+                    allow_partial=args.allow_partial,
                     report=args.report,
                 )
             else:
-                from .hardware_dataset import verify_dataset_mapping
-
+                if not args.dataset:
+                    raise ValueError("poses mode requires --dataset")
+                if args.left_port == "/dev/not-used-left" or args.right_port == "/dev/not-used-right":
+                    raise ValueError("poses mode requires --left-port and --right-port")
+                episode = load_joint_episode(args.dataset, args.episode)
                 result = verify_dataset_mapping(
                     episode,
                     robot,
@@ -626,16 +671,14 @@ def main():
                     config=config,
                 )
         elif args.command == "inspect-dataset-mapping":
-            from .hardware_dataset import (
-                build_pose_context,
-                inspect_joint_mapping,
-                load_joint_episode,
-                load_mapping,
-            )
-            from .real import _read_joints, arm_only_follower
+            from .hardware_dataset import inspect_dataset_mapping, load_joint_episode
+            from .real import arm_only_follower
 
+            if args.check_start and (
+                args.left_port == "/dev/not-used-left" or args.right_port == "/dev/not-used-right"
+            ):
+                raise ValueError("--check-start requires --left-port and --right-port")
             episode = load_joint_episode(args.dataset, args.episode)
-            document = load_mapping(args.mapping)["document"] if args.mapping else None
             robot = arm_only_follower(
                 args.left_port,
                 args.right_port,
@@ -643,48 +686,13 @@ def main():
                 config["robot"]["max_joint_step_deg"],
                 args.calibration_dir,
             )
-            current = None
-            connected = False
-            try:
-                if args.check_start:
-                    for side in ("right", "left"):
-                        getattr(robot, side + "_bus").connect()
-                    connected = True
-                    if not robot.is_calibrated:
-                        raise ValueError(
-                            "Motor calibration does not match the robot; recalibrate before inspection"
-                        )
-                    current = _read_joints(robot)
-                inspection = inspect_joint_mapping(episode, document, robot, config, current=current)
-                result = {
-                    "schema": "dual_scorpion.mocopi.hardware_joint_inspection.v1",
-                    "dataset": str(episode.root),
-                    "episode": episode.episode,
-                    "mapping": str(args.mapping) if args.mapping else None,
-                    "mapping_verified": bool(document and document.get("verified") is True),
-                    "inspection": inspection,
-                    "pose_context": (
-                        build_pose_context(episode, document, robot, config, current=current)
-                        if document is not None
-                        else None
-                    ),
-                    "robot_current_motor_deg": (
-                        {side: current[side].tolist() for side in ("right", "left")}
-                        if current is not None
-                        else None
-                    ),
-                    "scope": (
-                        "Read-only inspection. Constructing the follower loads the existing "
-                        "calibration file; no motor command or torque change is made."
-                    ),
-                }
-            finally:
-                if connected:
-                    for side in ("right", "left"):
-                        bus = getattr(robot, side + "_bus")
-                        if bus.is_connected:
-                            with suppress(Exception):
-                                bus.disconnect(disable_torque=True)
+            result = inspect_dataset_mapping(
+                episode,
+                robot,
+                config,
+                mapping_path=args.mapping,
+                check_start=args.check_start,
+            )
             if args.output:
                 output = Path(args.output)
                 output.parent.mkdir(parents=True, exist_ok=True)
