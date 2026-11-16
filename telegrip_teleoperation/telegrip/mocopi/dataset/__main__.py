@@ -288,6 +288,49 @@ def parser():
         help="With --execute, allow the explicit joint-space move from the current pose to the "
         "dataset start after the dry-run transition check; disabled by default",
     )
+    replay_dataset.add_argument(
+        "--initial-move-strategy",
+        choices=["auto", "linear", "lift-first"],
+        default="auto",
+        help="Initial transition path: auto falls back to lift-first (wrist/elbow pitch lift first) "
+        "when linear collides",
+    )
+    export_ft = sub.add_parser(
+        "export-ft-dataset",
+        help="Apply a verified hardware mapping to a full-CAD joint dataset for policy fine-tuning",
+    )
+    export_ft.add_argument("--dataset", required=True, help="Source full-CAD joint dataset")
+    export_ft.add_argument("--mapping", required=True, help="Verified hardware joint mapping YAML")
+    export_ft.add_argument("--output", required=True, help="New local FT LeRobot dataset folder")
+    export_ft.add_argument("--repo-id", required=True, help="Output LeRobot repo_id")
+    export_ft.add_argument("--robot-id", help="Override robot id if different lookup needed")
+    export_ft.add_argument("--calibration-dir", help="Override existing calibration directory")
+    export_ft.add_argument(
+        "--replay-report",
+        help="Completed hardware_dataset_replay report JSON confirming physical execution",
+    )
+    export_ft.add_argument(
+        "--allow-without-replay-report",
+        action="store_true",
+        help="Allow FT export using only the verified mapping YAML without a physical replay report",
+    )
+    export_ft.add_argument(
+        "--arm-only",
+        action="store_true",
+        help="Export 14-dim arm joints without synthesized constant gripper entries",
+    )
+    export_ft.add_argument(
+        "--gripper-value",
+        type=float,
+        default=0.0,
+        help="Constant gripper degree used when exporting 16-dim follower FT datasets (default: 0.0)",
+    )
+    export_ft.add_argument(
+        "--image-key",
+        default="observation.images.head",
+        help="Target camera feature key (e.g. observation.images.head or observation.images.top)",
+    )
+    export_ft.add_argument("--episode", type=int, help="Export only one source episode index")
     inspect_map = sub.add_parser(
         "inspect-dataset-mapping",
         help="Print the per-joint model/calibration/mapping table without moving the robot",
@@ -722,6 +765,7 @@ def main():
                 max_sim_orientation_error_deg=args.max_sim_orientation_error_deg,
                 check_start=args.check_start,
                 allow_initial_move=args.allow_initial_move,
+                initial_move_strategy=args.initial_move_strategy,
             )
             if args.execute:
                 result = {
@@ -737,6 +781,24 @@ def main():
                 }
             else:
                 result = real_result
+        elif args.command == "export-ft-dataset":
+            from .hardware_dataset import export_ft_dataset
+
+            result = export_ft_dataset(
+                args.dataset,
+                args.mapping,
+                args.output,
+                args.repo_id,
+                config=config,
+                robot_id=args.robot_id,
+                calibration_dir=args.calibration_dir,
+                replay_report=args.replay_report,
+                allow_without_replay_report=args.allow_without_replay_report,
+                include_gripper=not args.arm_only,
+                gripper_value_deg=args.gripper_value,
+                image_key=args.image_key,
+                episode_index=args.episode,
+            )
         print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     except (ValueError, RuntimeError, OSError) as exc:
         parser().exit(1, f"Error: {exc}\n")

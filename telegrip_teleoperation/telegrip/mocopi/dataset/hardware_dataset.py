@@ -34,9 +34,11 @@ REPLAY_SCHEMA = "dual_scorpion.mocopi.hardware_dataset_replay.v1"
 MAPPING_VERIFICATION_SCHEMA = "dual_scorpion.mocopi.hardware_mapping_verification.v1"
 JOINT_VERIFICATION_SCHEMA = "dual_scorpion.mocopi.hardware_joint_verification.v1"
 POSE_CONTEXT_SCHEMA = "dual_scorpion.mocopi.hardware_pose_context.v1"
+FT_DATASET_SCHEMA = "dual_scorpion.mocopi.ft_motor_dataset.v1"
 METHOD_MULTI_POSE = "multi_pose_least_squares"
 METHOD_REFERENCE_DIRECTION = "reference_pose_bidirectional_direction"
 METHOD_PER_JOINT_REFERENCE = "per_joint_reference_angle_and_direction"
+METHOD_PER_JOINT_UNIDIRECTIONAL = "per_joint_reference_unidirectional"
 METHOD_PER_JOINT_MULTI_ANGLE = "per_joint_multi_angle_fit"
 METHOD_UNMEASURED = "unmeasured"
 METHOD_DIRECTION_ONLY = "direction_only_unmeasured_offset"
@@ -1074,6 +1076,44 @@ def _model_evidence(config, side, joint_index):
     return record["model_joint"], record["axis"], record.get("parent_link"), record.get("child_link")
 
 
+def _parse_model_direction(value):
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value in (1, -1, 1.0, -1.0):
+        return int(value)
+    text = str(value).strip().lower()
+    if text in ("+", "+1", "1", "pos", "positive"):
+        return 1
+    if text in ("-", "-1", "neg", "negative"):
+        return -1
+    raise ValueError(f"Expected model direction '+'/'-1' or '-'/+1, got {value!r}")
+
+
+def _direction_summary(
+    sign,
+    positive_delta,
+    negative_delta,
+    failures,
+    *,
+    direction_mode,
+    extra=None,
+):
+    payload = {
+        "sign": sign,
+        "motor_direction": "same_as_model"
+        if sign == 1
+        else "opposite_to_model"
+        if sign == -1
+        else "unverified",
+        "direction_mode": direction_mode,
+        "positive_delta_deg": positive_delta,
+        "negative_delta_deg": negative_delta,
+        "sign_verified": not failures and sign in (-1, 1),
+        "failures": failures,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 def verify_joint_direction(
     motor_baseline_deg,
     motor_positive_deg,
@@ -1116,18 +1156,58 @@ def verify_joint_direction(
         sign = -1
     else:
         sign = None
-    return {
-        "sign": sign,
-        "motor_direction": "same_as_model"
-        if sign == 1
-        else "opposite_to_model"
-        if sign == -1
-        else "unverified",
-        "positive_delta_deg": positive_delta,
-        "negative_delta_deg": negative_delta,
-        "sign_verified": not failures and sign in (-1, 1),
-        "failures": failures,
-    }
+    return _direction_summary(
+        sign,
+        positive_delta,
+        negative_delta,
+        failures,
+        direction_mode="bidirectional",
+    )
+
+
+def verify_joint_direction_unidirectional(
+    motor_start_deg,
+    motor_moved_deg,
+    *,
+    expected_model_direction,
+    side,
+    joint,
+    min_test_deg=10.0,
+    other_joint_violations=None,
+):
+    """Verify motor sign from a single unobstructed movement away from a desk/stop."""
+    values = np.asarray([motor_start_deg, motor_moved_deg], dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError(f"{side}_{joint} unidirectional test readings must be finite")
+    if not np.isfinite(min_test_deg) or not 0 < min_test_deg <= 90:
+        raise ValueError("min_test_deg must be in (0, 90]")
+    dir_int = _parse_model_direction(expected_model_direction)
+    observed_delta = float(motor_moved_deg - motor_start_deg)
+    failures = []
+    if abs(observed_delta) < min_test_deg:
+        failures.append(
+            f"{side}_{joint}: unidirectional direction test moved only {observed_delta:+.2f} deg "
+            f"(need {min_test_deg:g})"
+        )
+    if other_joint_violations:
+        failures.append(
+            f"{side}_{joint}: other joints moved during the direction test: "
+            + ", ".join(sorted(other_joint_violations))
+        )
+    sign = (1 if observed_delta * dir_int > 0 else -1) if abs(observed_delta) >= 1e-6 else None
+    return _direction_summary(
+        sign,
+        observed_delta if dir_int == 1 else None,
+        observed_delta if dir_int == -1 else None,
+        failures,
+        direction_mode="unidirectional",
+        extra={
+            "expected_model_direction": dir_int,
+            "observed_delta_deg": observed_delta,
+            "start_motor_deg": float(motor_start_deg),
+            "moved_motor_deg": float(motor_moved_deg),
+        },
+    )
 
 
 def build_unmeasured_joint_record(
@@ -1287,8 +1367,8 @@ def fit_joint_verification(
 def fit_joint_from_reference(
     model_reference_deg,
     motor_reference_deg,
-    motor_positive_deg,
-    motor_negative_deg,
+    motor_positive_deg=None,
+    motor_negative_deg=None,
     *,
     side,
     joint,
@@ -1306,44 +1386,50 @@ def fit_joint_from_reference(
     measurement_basis=None,
     method=METHOD_REFERENCE_DIRECTION,
     evidence=None,
+    direction_result=None,
 ):
-    """Verify one joint from a grounded reference angle and two opposite-direction nudges."""
-    baseline = motor_reference_deg if motor_baseline_deg is None else motor_baseline_deg
-    values = np.asarray(
-        [model_reference_deg, motor_reference_deg, baseline, motor_positive_deg, motor_negative_deg],
-        dtype=float,
-    )
-    if not np.isfinite(values).all():
-        raise ValueError(f"{side}_{joint} direction test and reference readings must be finite")
-    direction = verify_joint_direction(
-        baseline,
-        motor_positive_deg,
-        motor_negative_deg,
-        side=side,
-        joint=joint,
-        min_test_deg=min_test_deg,
-        other_joint_violations=other_joint_violations,
-    )
+    """Verify one joint from a grounded reference angle and bidirectional or unidirectional motion."""
+    if not np.isfinite([float(model_reference_deg), float(motor_reference_deg)]).all():
+        raise ValueError(f"{side}_{joint} reference readings must be finite")
+    if direction_result is None:
+        if motor_positive_deg is None or motor_negative_deg is None:
+            raise ValueError(f"{side}_{joint} requires bidirectional readings or direction_result")
+        baseline = motor_reference_deg if motor_baseline_deg is None else motor_baseline_deg
+        if not np.isfinite([float(baseline), float(motor_positive_deg), float(motor_negative_deg)]).all():
+            raise ValueError(f"{side}_{joint} direction test readings must be finite")
+        direction = verify_joint_direction(
+            baseline,
+            motor_positive_deg,
+            motor_negative_deg,
+            side=side,
+            joint=joint,
+            min_test_deg=min_test_deg,
+            other_joint_violations=other_joint_violations,
+        )
+    else:
+        direction = direction_result
     failures = list(direction["failures"])
     if not direct_drive_confirmed:
         failures.append(f"{side}_{joint}: direct-drive 1:1 coupling was not confirmed")
     if measurement_basis is not None and not str(measurement_basis).strip():
         failures.append(f"{side}_{joint}: measurement_basis is empty")
-    sign = (
-        direction["sign"]
-        if direction["sign"] in (-1, 1)
-        else (1 if direction["positive_delta_deg"] > 0 else -1)
-    )
-    offset = float(motor_reference_deg - sign * model_reference_deg)
+    sign = direction["sign"] if direction["sign"] in (-1, 1) else None
+    offset = float(motor_reference_deg - sign * model_reference_deg) if sign in (-1, 1) else None
     ev = dict(evidence or {})
     if measurement_basis is not None:
         ev.setdefault("measurement_basis", str(measurement_basis).strip())
+    ev.setdefault("direction_mode", direction.get("direction_mode", "bidirectional"))
     ev.setdefault("reference_model_deg", float(model_reference_deg))
     ev.setdefault("reference_motor_deg", float(motor_reference_deg))
-    ev.setdefault("direction_baseline_motor_deg", float(baseline))
-    ev.setdefault("model_positive_motor_deg", float(motor_positive_deg))
-    ev.setdefault("model_negative_motor_deg", float(motor_negative_deg))
-    record = {
+    if direction_result is None:
+        baseline = motor_reference_deg if motor_baseline_deg is None else motor_baseline_deg
+        ev.setdefault("direction_baseline_motor_deg", float(baseline))
+        ev.setdefault("model_positive_motor_deg", float(motor_positive_deg))
+        ev.setdefault("model_negative_motor_deg", float(motor_negative_deg))
+    else:
+        ev.setdefault("direction_test", direction)
+    verified = bool(not failures and direction["sign_verified"] and sign in (-1, 1) and offset is not None)
+    return {
         "schema": JOINT_VERIFICATION_SCHEMA,
         "side": side,
         "joint": joint,
@@ -1354,20 +1440,20 @@ def fit_joint_from_reference(
         "child_link": child_link,
         "method": method,
         "verification_method": method,
-        "verified": not failures,
-        "sign_verified": direction["sign_verified"],
-        "offset_verified": bool(not failures and direction["sign_verified"]),
+        "verified": verified,
+        "sign_verified": bool(direction["sign_verified"] and sign in (-1, 1)),
+        "offset_verified": verified,
         "model_axis": model_axis,
         "calibration": calibration,
         "model_angles_deg": [float(model_reference_deg)],
         "motor_angles_deg": [float(motor_reference_deg)],
         "model_range_deg": None,
-        "slope": float(sign),
-        "sign": sign,
-        "motor_direction": "same_as_model" if sign == 1 else "opposite_to_model",
+        "slope": float(sign) if sign in (-1, 1) else None,
+        "sign": int(sign) if sign in (-1, 1) else None,
+        "motor_direction": direction["motor_direction"],
         "offset_deg": offset,
-        "rms_deg": 0.0,
-        "max_residual_deg": 0.0,
+        "rms_deg": 0.0 if offset is not None else None,
+        "max_residual_deg": 0.0 if offset is not None else None,
         "positive_delta_deg": direction["positive_delta_deg"],
         "negative_delta_deg": direction["negative_delta_deg"],
         "min_test_deg": float(min_test_deg),
@@ -1378,7 +1464,60 @@ def fit_joint_from_reference(
         "verification_evidence": ev,
         "failures": failures,
     }
-    return record
+
+
+def fit_joint_from_unidirectional_reference(
+    model_reference_deg,
+    motor_reference_deg,
+    motor_start_deg,
+    motor_moved_deg,
+    *,
+    expected_model_direction,
+    side,
+    joint,
+    motor_id,
+    motor_model=None,
+    model_joint=None,
+    parent_link=None,
+    child_link=None,
+    model_axis=None,
+    calibration=None,
+    min_test_deg=10.0,
+    other_joint_violations=None,
+    direct_drive_confirmed=True,
+    measurement_basis=None,
+    evidence=None,
+):
+    """Verify one joint using a single unobstructed movement direction and one reference angle."""
+    direction = verify_joint_direction_unidirectional(
+        motor_start_deg,
+        motor_moved_deg,
+        expected_model_direction=expected_model_direction,
+        side=side,
+        joint=joint,
+        min_test_deg=min_test_deg,
+        other_joint_violations=other_joint_violations,
+    )
+    return fit_joint_from_reference(
+        model_reference_deg,
+        motor_reference_deg,
+        side=side,
+        joint=joint,
+        motor_id=motor_id,
+        motor_model=motor_model,
+        model_joint=model_joint,
+        parent_link=parent_link,
+        child_link=child_link,
+        model_axis=model_axis,
+        calibration=calibration,
+        min_test_deg=min_test_deg,
+        other_joint_violations=other_joint_violations,
+        direct_drive_confirmed=direct_drive_confirmed,
+        measurement_basis=measurement_basis,
+        method=METHOD_PER_JOINT_UNIDIRECTIONAL,
+        evidence=evidence,
+        direction_result=direction,
+    )
 
 
 def _build_mapping_document(
@@ -1691,15 +1830,28 @@ def _evaluate_single_joint_measurement(
     if dir_info is not None:
         if not isinstance(dir_info, dict):
             raise ValueError(f"{side}_{joint} direction_test must be a mapping")
-        dir_result = verify_joint_direction(
-            dir_info["baseline_motor_deg"],
-            dir_info["positive_motor_deg"],
-            dir_info["negative_motor_deg"],
-            side=side,
-            joint=joint,
-            min_test_deg=sign_test_deg,
-            other_joint_violations=dir_info.get("other_joint_violations"),
-        )
+        if dir_info.get("mode") == "unidirectional" or (
+            "start_motor_deg" in dir_info and "moved_motor_deg" in dir_info
+        ):
+            dir_result = verify_joint_direction_unidirectional(
+                dir_info["start_motor_deg"],
+                dir_info["moved_motor_deg"],
+                expected_model_direction=dir_info["expected_model_direction"],
+                side=side,
+                joint=joint,
+                min_test_deg=sign_test_deg,
+                other_joint_violations=dir_info.get("other_joint_violations"),
+            )
+        else:
+            dir_result = verify_joint_direction(
+                dir_info["baseline_motor_deg"],
+                dir_info["positive_motor_deg"],
+                dir_info["negative_motor_deg"],
+                side=side,
+                joint=joint,
+                min_test_deg=sign_test_deg,
+                other_joint_violations=dir_info.get("other_joint_violations"),
+            )
 
     if "model_angles_deg" in entry and "motor_angles_deg" in entry:
         model_angles = [float(v) for v in entry["model_angles_deg"]]
@@ -1774,7 +1926,7 @@ def _evaluate_single_joint_measurement(
                 record["sign_verified"] = False
         return record
 
-    # Single reference point: requires independent direction test + direct-drive 1:1 confirmation + basis.
+    # Single reference point: requires independent bidirectional or unidirectional direction_test.
     if dir_info is None:
         return build_unmeasured_joint_record(
             side=side,
@@ -1786,16 +1938,19 @@ def _evaluate_single_joint_measurement(
             child_link=child_link,
             model_axis=model_axis,
             calibration=calibration,
-            reason="single reference angle requires an independent bidirectional direction_test",
+            reason="single reference angle requires an independent bidirectional or unidirectional direction_test",
             evidence={"model_reference_deg": model_angles[0], "motor_reference_deg": motor_angles[0]},
         )
 
     direct_drive_confirmed = entry.get("direct_drive_confirmed") is True
+    single_method = (
+        METHOD_PER_JOINT_UNIDIRECTIONAL
+        if dir_result.get("direction_mode") == "unidirectional"
+        else METHOD_PER_JOINT_REFERENCE
+    )
     return fit_joint_from_reference(
         model_angles[0],
         motor_angles[0],
-        dir_info["positive_motor_deg"],
-        dir_info["negative_motor_deg"],
         side=side,
         joint=joint,
         motor_id=motor_id,
@@ -1806,16 +1961,17 @@ def _evaluate_single_joint_measurement(
         model_axis=model_axis,
         calibration=calibration,
         min_test_deg=sign_test_deg,
-        motor_baseline_deg=dir_info["baseline_motor_deg"],
         other_joint_violations=dir_info.get("other_joint_violations"),
         direct_drive_confirmed=direct_drive_confirmed,
         measurement_basis=basis,
-        method=METHOD_PER_JOINT_REFERENCE,
+        method=single_method,
         evidence={
             "measurement_basis": basis,
+            "direction_mode": dir_result.get("direction_mode"),
             "operator_confirmed_direct_drive_1_to_1": direct_drive_confirmed,
             "whole_body_pose_required": False,
         },
+        direction_result=dir_result,
     )
 
 
@@ -2084,50 +2240,91 @@ def verify_dataset_mapping_jointwise(
                 f"axis={np.round(model_info['axis'], 4).tolist()}\n"
                 f"  calibration: drive_mode={calibration['drive_mode']} homing_offset={calibration['homing_offset']} "
                 f"limits=[{calibration['min_motor_deg']:+.2f}, {calibration['max_motor_deg']:+.2f}] deg\n"
-                f"  CAD zero: {cad_geom['cad_reference_note']} ({cad_geom['positive_rotation_effect']})"
+                f"  CAD zero: {cad_geom['cad_reference_note']} ({cad_geom['positive_rotation_effect']})\n"
+                "  全関節をMID(中央)に揃える必要はありません。机に置いた現在位置から動かせる側へ1回動かすだけで検証できます。"
             )
-            base_prompt = input(
-                f"{side}_{joint} を両方向に動かせる安全な姿勢で支えてEnterで基準読み取り "
-                "(未測定のままスキップする場合は 'skip'): "
+            mode_prompt = (
+                input(
+                    f"{side}_{joint} の方向テスト方法を選択してEnter\n"
+                    f"  [Enter/'both': 正負両方向 | '+': CAD正方向のみ | '-': CAD負方向のみ | 'skip': 未測定スキップ]: "
+                )
+                .strip()
+                .lower()
             )
-            if base_prompt.strip().lower() in ("s", "skip", "unmeasured"):
+            if mode_prompt in ("s", "skip", "unmeasured"):
                 measured_entries[f"{side}_{joint}"] = {
                     "unmeasured": True,
                     "reason": "operator skipped joint",
                 }
                 continue
 
-            baseline_all = _read_joints_for_sides(robot, active_sides)
-            baseline_motor = float(baseline_all[side][joint_index])
-            input(
-                f"{side}_{joint} だけをモデル正方向（{cad_geom['positive_rotation_effect']}）へ "
-                f"{sign_test_deg:g} deg 以上動かしてEnter（腕を支える）: "
-            )
-            positive_all = _read_joints_for_sides(robot, active_sides)
-            input(
-                f"{side}_{joint} だけをモデル負方向（基準位置を反対側へ {sign_test_deg:g} deg 以上超える位置）"
-                "へ動かしてEnter（腕を支える）: "
-            )
-            negative_all = _read_joints_for_sides(robot, active_sides)
+            if mode_prompt in ("+", "+1", "pos", "positive", "-", "-1", "neg", "negative"):
+                expected_dir = _parse_model_direction(mode_prompt)
+                start_all = _read_joints_for_sides(robot, active_sides)
+                start_motor = float(start_all[side][joint_index])
+                dir_desc = (
+                    f"CAD正方向（{cad_geom['positive_rotation_effect']}）"
+                    if expected_dir == 1
+                    else f"CAD負方向（{cad_geom['positive_rotation_effect']} の反対側）"
+                )
+                input(
+                    f"{side}_{joint}（現在 {start_motor:+.2f} deg）だけを {dir_desc} へ "
+                    f"{sign_test_deg:g} deg 以上（机・ストッパに当たらない側へ）動かしてEnter（腕を支える）: "
+                )
+                moved_all = _read_joints_for_sides(robot, active_sides)
+                other_joint_violations = {}
+                for other_side in active_sides:
+                    for other_index, other_joint in enumerate(JOINTS):
+                        if other_side == side and other_index == joint_index:
+                            continue
+                        deviation = abs(
+                            moved_all[other_side][other_index] - start_all[other_side][other_index]
+                        )
+                        if deviation > max_other_joint_delta_deg:
+                            other_joint_violations[f"{other_side}_{other_joint}"] = float(deviation)
+                direction_test = {
+                    "mode": "unidirectional",
+                    "start_motor_deg": start_motor,
+                    "moved_motor_deg": float(moved_all[side][joint_index]),
+                    "expected_model_direction": expected_dir,
+                    "other_joint_violations": other_joint_violations,
+                }
+            else:
+                baseline_all = _read_joints_for_sides(robot, active_sides)
+                baseline_motor = float(baseline_all[side][joint_index])
+                input(
+                    f"{side}_{joint} だけをモデル正方向（{cad_geom['positive_rotation_effect']}）へ "
+                    f"{sign_test_deg:g} deg 以上動かしてEnter（腕を支える）: "
+                )
+                positive_all = _read_joints_for_sides(robot, active_sides)
+                input(
+                    f"{side}_{joint} だけをモデル負方向（基準位置を反対側へ {sign_test_deg:g} deg 以上超える位置）"
+                    "へ動かしてEnter（腕を支える）: "
+                )
+                negative_all = _read_joints_for_sides(robot, active_sides)
 
-            other_joint_violations = {}
-            for other_side in active_sides:
-                for other_index, other_joint in enumerate(JOINTS):
-                    if other_side == side and other_index == joint_index:
-                        continue
-                    deviation = max(
-                        abs(positive_all[other_side][other_index] - baseline_all[other_side][other_index]),
-                        abs(negative_all[other_side][other_index] - baseline_all[other_side][other_index]),
-                    )
-                    if deviation > max_other_joint_delta_deg:
-                        other_joint_violations[f"{other_side}_{other_joint}"] = float(deviation)
+                other_joint_violations = {}
+                for other_side in active_sides:
+                    for other_index, other_joint in enumerate(JOINTS):
+                        if other_side == side and other_index == joint_index:
+                            continue
+                        deviation = max(
+                            abs(
+                                positive_all[other_side][other_index] - baseline_all[other_side][other_index]
+                            ),
+                            abs(
+                                negative_all[other_side][other_index] - baseline_all[other_side][other_index]
+                            ),
+                        )
+                        if deviation > max_other_joint_delta_deg:
+                            other_joint_violations[f"{other_side}_{other_joint}"] = float(deviation)
 
-            direction_test = {
-                "baseline_motor_deg": baseline_motor,
-                "positive_motor_deg": float(positive_all[side][joint_index]),
-                "negative_motor_deg": float(negative_all[side][joint_index]),
-                "other_joint_violations": other_joint_violations,
-            }
+                direction_test = {
+                    "baseline_motor_deg": baseline_motor,
+                    "positive_motor_deg": float(positive_all[side][joint_index]),
+                    "negative_motor_deg": float(negative_all[side][joint_index]),
+                    "other_joint_violations": other_joint_violations,
+                }
 
             angle_raw = input(
                 f"{side}_{joint} の既知のモデル角度(deg)を入力してください "
@@ -2232,65 +2429,118 @@ def _collision_at_model_joints(simulation, joints):
         simulation.mujoco.mj_forward(simulation.model, simulation.data)
 
 
-def evaluate_initial_transition(
+def _normalize_initial_move_strategy(strategy):
+    value = str(strategy or "auto").strip().lower().replace("-", "_")
+    if value not in ("auto", "linear", "lift_first"):
+        raise ValueError(f"Unsupported initial_move_strategy {strategy!r}; use auto, linear, or lift-first")
+    return value
+
+
+def _build_transition_stages(current, mapped_first, *, strategy):
+    if strategy == "linear":
+        return [("linear", current, mapped_first)]
+    # Lift wrist/elbow pitch (joint5, joint3) toward dataset start first so low resting wrists
+    # clear any table surface before shoulder yaw/roll sweep sideways.
+    lift_indices = (5, 3)
+    lifted_mid = {}
+    for side in JOINT_SIDES:
+        mid = np.asarray(current[side], dtype=float).copy()
+        for idx in lift_indices:
+            mid[idx] = float(mapped_first[side][idx])
+        lifted_mid[side] = mid
+    stage1_delta = max(float(np.max(np.abs(lifted_mid[s] - current[s]))) for s in JOINT_SIDES)
+    stage2_delta = max(float(np.max(np.abs(mapped_first[s] - lifted_mid[s]))) for s in JOINT_SIDES)
+    if stage1_delta <= 1e-6 or stage2_delta <= 1e-6:
+        return [("linear", current, mapped_first)]
+    return [
+        ("lift_distal_pitch", current, lifted_mid),
+        ("align_remaining_joints", lifted_mid, mapped_first),
+    ]
+
+
+def _evaluate_transition_stages(
+    stage_specs,
+    *,
     current,
-    episode,
+    mapped_first,
     document,
     robot,
-    *,
     max_step_deg,
     max_speed_deg_s,
     control_hz,
-    simulation=None,
+    simulation,
+    chosen_strategy,
 ):
-    """Evaluate a joint-space move from the current pose to the dataset start.
-
-    This only evaluates.  Execution requires the explicit ``allow_initial_move``
-    flag on the replay command.  The modeled path is checked for calibration
-    limits and full-model self/floor collisions; external obstacles remain
-    unverified.
-    """
-    document = document.get("document", document) if isinstance(document, dict) else document
-    first_model = {side: episode.frames[0].joints[side] for side in JOINT_SIDES}
-    mapped_first = {side: map_joints(document, side, first_model[side]) for side in JOINT_SIDES}
-    current_model = {side: unmap_joints(document, side, current[side]) for side in JOINT_SIDES}
     scale = max(float(max_step_deg), 1e-9)
-    delta = max(float(np.max(np.abs(current[side] - mapped_first[side]))) for side in JOINT_SIDES)
-    duration = max(
-        delta / float(max_speed_deg_s) if delta > 0 else 0.0,
-        delta / (scale * float(control_hz)) if delta > 0 else 0.0,
-    )
-    steps = max(1, int(np.ceil(duration * control_hz)), int(np.ceil(delta / scale)))
-    max_command_step_deg = float(delta / steps) if delta > 0 else 0.0
-    max_command_speed_deg_s = float(max_command_step_deg * float(control_hz))
+    limit_violations = motor_pose_limit_violations(
+        current, document, robot, pose_label="current"
+    ) + motor_pose_limit_violations(mapped_first, document, robot, pose_label="dataset_start")
+
+    stages = []
+    collision_frames = []
+    max_penetration_m = 0.0
+    body_pairs = {}
+    total_steps = 0
+    max_command_step_deg = 0.0
+    max_command_speed_deg_s = 0.0
+    total_direct_delta = max(float(np.max(np.abs(current[s] - mapped_first[s]))) for s in JOINT_SIDES)
+
+    for stage_name, stage_start, stage_target in stage_specs:
+        stage_delta = max(float(np.max(np.abs(stage_start[s] - stage_target[s]))) for s in JOINT_SIDES)
+        duration = max(
+            stage_delta / float(max_speed_deg_s) if stage_delta > 0 else 0.0,
+            stage_delta / (scale * float(control_hz)) if stage_delta > 0 else 0.0,
+        )
+        steps = max(1, int(np.ceil(duration * control_hz)), int(np.ceil(stage_delta / scale)))
+        step_size = float(stage_delta / steps) if stage_delta > 0 else 0.0
+        speed_val = float(step_size * float(control_hz))
+        max_command_step_deg = max(max_command_step_deg, step_size)
+        max_command_speed_deg_s = max(max_command_speed_deg_s, speed_val)
+
+        start_model = {s: unmap_joints(document, s, stage_start[s]) for s in JOINT_SIDES}
+        target_model = {s: unmap_joints(document, s, stage_target[s]) for s in JOINT_SIDES}
+        start_step_idx = 0 if not stages else 1
+        for step in range(start_step_idx, steps + 1):
+            alpha = step / steps
+            model_joints = {
+                s: start_model[s] + alpha * (target_model[s] - start_model[s]) for s in JOINT_SIDES
+            }
+            collision = (
+                _collision_at_model_joints(simulation, model_joints) if simulation is not None else None
+            )
+            if collision is not None and collision["count"]:
+                collision_frames.append(total_steps + step)
+                max_penetration_m = max(max_penetration_m, collision["max_penetration_m"])
+                for pair, count in collision["body_pairs"].items():
+                    body_pairs[pair] = body_pairs.get(pair, 0) + count
+
+        stages.append(
+            {
+                "name": stage_name,
+                "start_motor_deg": {s: np.asarray(stage_start[s], dtype=float).tolist() for s in JOINT_SIDES},
+                "target_motor_deg": {
+                    s: np.asarray(stage_target[s], dtype=float).tolist() for s in JOINT_SIDES
+                },
+                "delta_deg": stage_delta,
+                "steps": steps,
+                "max_command_step_deg": step_size,
+                "max_command_speed_deg_s": speed_val,
+            }
+        )
+        total_steps += steps
+
     speed_and_step_within_limits = (
         max_command_step_deg <= float(max_step_deg) + 1e-6
         and max_command_speed_deg_s <= float(max_speed_deg_s) + 1e-6
     )
-    limit_violations = motor_pose_limit_violations(
-        current, document, robot, pose_label="current"
-    ) + motor_pose_limit_violations(mapped_first, document, robot, pose_label="dataset_start")
-    collision_frames = []
-    max_penetration_m = 0.0
-    body_pairs = {}
-    for step in range(steps + 1):
-        alpha = step / steps
-        model_joints = {
-            side: current_model[side] + alpha * (first_model[side] - current_model[side])
-            for side in JOINT_SIDES
-        }
-        collision = _collision_at_model_joints(simulation, model_joints) if simulation is not None else None
-        if collision is not None and collision["count"]:
-            collision_frames.append(step)
-            max_penetration_m = max(max_penetration_m, collision["max_penetration_m"])
-            for pair, count in collision["body_pairs"].items():
-                body_pairs[pair] = body_pairs.get(pair, 0) + count
     return {
-        "required": delta > 0,
+        "required": total_direct_delta > 0,
+        "strategy": chosen_strategy,
+        "stages": stages,
         "safe": not limit_violations and not collision_frames and speed_and_step_within_limits,
-        "delta_deg": delta,
-        "steps": steps,
-        "estimated_duration_s": steps / float(control_hz),
+        "delta_deg": total_direct_delta,
+        "steps": total_steps,
+        "estimated_duration_s": total_steps / float(control_hz),
         "max_step_deg": float(max_step_deg),
         "max_speed_deg_s": float(max_speed_deg_s),
         "max_command_step_deg": max_command_step_deg,
@@ -2303,12 +2553,83 @@ def evaluate_initial_transition(
         "max_penetration_m": max_penetration_m,
         "body_pairs": body_pairs,
         "scope": (
-            "Joint-space linear transition from the measured current pose to the mapped "
-            "dataset first frame. Modeled floor/self collisions, speed/step bounds, "
-            "calibration range, and configured joint limits are checked; external "
+            f"Joint-space {chosen_strategy} transition from the measured current pose to the mapped "
+            "dataset first frame. Modeled floor/self/obstacle collisions, speed/step bounds, "
+            "calibration range, and configured joint limits are checked; unmodeled external "
             "obstacles and physical joint hard stops are not verified."
         ),
     }
+
+
+def evaluate_initial_transition(
+    current,
+    episode,
+    document,
+    robot,
+    *,
+    max_step_deg,
+    max_speed_deg_s,
+    control_hz,
+    simulation=None,
+    strategy="auto",
+):
+    """Evaluate a joint-space move from the current pose to the dataset start.
+
+    Supports ``linear``, ``lift-first`` (lifts wrist/elbow pitch first to clear desk
+    surfaces before sweeping shoulders), and ``auto`` (uses linear when collision-free,
+    falling back to lift-first when linear encounters a modeled collision).
+    """
+    normalized_strategy = _normalize_initial_move_strategy(strategy)
+    document = document.get("document", document) if isinstance(document, dict) else document
+    first_model = {side: episode.frames[0].joints[side] for side in JOINT_SIDES}
+    mapped_first = {side: map_joints(document, side, first_model[side]) for side in JOINT_SIDES}
+
+    if normalized_strategy == "lift_first":
+        specs = _build_transition_stages(current, mapped_first, strategy="lift_first")
+        return _evaluate_transition_stages(
+            specs,
+            current=current,
+            mapped_first=mapped_first,
+            document=document,
+            robot=robot,
+            max_step_deg=max_step_deg,
+            max_speed_deg_s=max_speed_deg_s,
+            control_hz=control_hz,
+            simulation=simulation,
+            chosen_strategy="lift_first" if len(specs) > 1 else "linear",
+        )
+
+    linear_eval = _evaluate_transition_stages(
+        _build_transition_stages(current, mapped_first, strategy="linear"),
+        current=current,
+        mapped_first=mapped_first,
+        document=document,
+        robot=robot,
+        max_step_deg=max_step_deg,
+        max_speed_deg_s=max_speed_deg_s,
+        control_hz=control_hz,
+        simulation=simulation,
+        chosen_strategy="linear",
+    )
+    if normalized_strategy == "auto" and linear_eval["collision_frames"] and linear_eval["required"]:
+        lift_specs = _build_transition_stages(current, mapped_first, strategy="lift_first")
+        if len(lift_specs) > 1:
+            lift_eval = _evaluate_transition_stages(
+                lift_specs,
+                current=current,
+                mapped_first=mapped_first,
+                document=document,
+                robot=robot,
+                max_step_deg=max_step_deg,
+                max_speed_deg_s=max_speed_deg_s,
+                control_hz=control_hz,
+                simulation=simulation,
+                chosen_strategy="lift_first",
+            )
+            if lift_eval["safe"]:
+                lift_eval["fallback_from_linear_collisions"] = linear_eval["collision_frames"][:10]
+                return lift_eval
+    return linear_eval
 
 
 def execute_joint_episode(
@@ -2325,6 +2646,7 @@ def execute_joint_episode(
     max_sim_error_m=0.025,
     max_sim_orientation_error_deg=None,
     allow_initial_move=False,
+    initial_move_strategy="auto",
     realtime=True,
 ):
     """Send a verified joint trajectory with interpolation and existing safety gates."""
@@ -2471,6 +2793,7 @@ def execute_joint_episode(
                 max_speed_deg_s=max_joint_speed_deg_s,
                 control_hz=control_hz,
                 simulation=simulation,
+                strategy=initial_move_strategy,
             )
             transition["applied"] = False
             report["initial_transition"] = transition
@@ -2489,35 +2812,47 @@ def execute_joint_episode(
         next_tick = start_time
         previous_sent = {side: current[side].copy() for side in SIDES}
         if transition["required"]:
-            steps = transition["steps"]
-            transition_start = {side: current[side].copy() for side in SIDES}
-            for substep in range(1, steps + 1):
-                alpha = substep / steps
-                transition_target = {
-                    side: transition_start[side] + alpha * (first[side] - transition_start[side])
-                    for side in SIDES
+            total_steps = transition["steps"]
+            stages = transition.get("stages") or [
+                {
+                    "name": "linear",
+                    "target_motor_deg": {s: first[s].tolist() for s in SIDES},
+                    "steps": total_steps,
                 }
-                sent = robot.send_action(_actions(transition_target))
-                control_steps += 1
-                measured = _read_joints(robot)
-                sent_motor = {
-                    side: np.array([sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
-                    for side in SIDES
+            ]
+            for stage in stages:
+                stage_start = {side: current[side].copy() for side in SIDES}
+                stage_target = {
+                    side: np.asarray(stage["target_motor_deg"][side], dtype=float) for side in SIDES
                 }
-                for side in SIDES:
-                    error = float(np.max(np.abs(transition_target[side] - measured[side])))
-                    if error > max_tracking_error_deg:
-                        raise RuntimeError(
-                            f"Robot fell behind the initial transition ({side}, {error:.2f} deg): HOLD"
-                        )
-                    speed = float(np.max(np.abs(sent_motor[side] - previous_sent[side]))) * control_hz
-                    max_observed_speed = max(max_observed_speed, speed)
-                    previous_sent[side] = sent_motor[side].copy()
-                current = measured
-                initial_sent = sent
-                if realtime:
-                    next_tick += 1.0 / control_hz
-                    time.sleep(max(0.0, next_tick - time.monotonic()))
+                stage_steps = int(stage["steps"])
+                for substep in range(1, stage_steps + 1):
+                    alpha = substep / stage_steps
+                    transition_target = {
+                        side: stage_start[side] + alpha * (stage_target[side] - stage_start[side])
+                        for side in SIDES
+                    }
+                    sent = robot.send_action(_actions(transition_target))
+                    control_steps += 1
+                    measured = _read_joints(robot)
+                    sent_motor = {
+                        side: np.array([sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
+                        for side in SIDES
+                    }
+                    for side in SIDES:
+                        error = float(np.max(np.abs(transition_target[side] - measured[side])))
+                        if error > max_tracking_error_deg:
+                            raise RuntimeError(
+                                f"Robot fell behind the initial transition ({side}, {error:.2f} deg): HOLD"
+                            )
+                        speed = float(np.max(np.abs(sent_motor[side] - previous_sent[side]))) * control_hz
+                        max_observed_speed = max(max_observed_speed, speed)
+                        previous_sent[side] = sent_motor[side].copy()
+                    current = measured
+                    initial_sent = sent
+                    if realtime:
+                        next_tick += 1.0 / control_hz
+                        time.sleep(max(0.0, next_tick - time.monotonic()))
             final_errors = {
                 side: {
                     joint: float(abs(current[side][index] - first[side][index]))
@@ -2531,7 +2866,7 @@ def execute_joint_episode(
                     "applied": True,
                     "final_start_error_deg": final_max,
                     "final_start_error_per_joint_deg": final_errors,
-                    "control_steps": steps,
+                    "control_steps": total_steps,
                     "elapsed_s": time.monotonic() - start_time,
                 }
             )
@@ -2774,6 +3109,7 @@ def replay_joint_dataset(
     max_sim_orientation_error_deg=None,
     check_start=False,
     allow_initial_move=False,
+    initial_move_strategy="auto",
 ):
     episode = load_joint_episode(dataset_path, episode_index)
     mapping = load_mapping(mapping_path)
@@ -2853,6 +3189,7 @@ def replay_joint_dataset(
                 max_speed_deg_s=max_joint_speed_deg_s,
                 control_hz=control_hz,
                 simulation=simulation,
+                strategy=initial_move_strategy,
             )
             result["initial_transition"] = transition
             current_model = {side: unmap_joints(mapping["document"], side, current[side]) for side in SIDES}
@@ -2891,7 +3228,244 @@ def replay_joint_dataset(
         max_sim_error_m=max_sim_error_m,
         max_sim_orientation_error_deg=max_sim_orientation_error_deg,
         allow_initial_move=allow_initial_move,
+        initial_move_strategy=initial_move_strategy,
     )
     if dataset_fingerprint(episode.root, "mocopi_joint_dataset.json") != before:
         raise ValueError("Source joint dataset changed during hardware replay")
     return result
+
+
+def _ft_feature_names(*, include_gripper):
+    if not include_gripper:
+        return [f"{side}_{name}.pos" for side in JOINT_SIDES for name in JOINTS]
+    names = []
+    for side in JOINT_SIDES:
+        names.extend(f"{side}_{name}.pos" for name in JOINTS)
+        names.append(f"{side}_gripper.pos")
+    return names
+
+
+def _map_ft_motor_vector(document, model_vector_14, *, include_gripper, gripper_value_deg):
+    vec = np.asarray(model_vector_14, dtype=float)
+    if vec.shape != (14,) or not np.isfinite(vec).all():
+        raise ValueError(f"Expected 14 finite model joint angles, got shape {vec.shape}")
+    right_motor = map_joints(document, "right", vec[:7])
+    left_motor = map_joints(document, "left", vec[7:])
+    if not include_gripper:
+        return np.concatenate([right_motor, left_motor]).astype(np.float32)
+    grip = np.array([float(gripper_value_deg)], dtype=float)
+    return np.concatenate([right_motor, grip, left_motor, grip]).astype(np.float32)
+
+
+def export_ft_dataset(
+    dataset_path,
+    mapping_path,
+    output,
+    repo_id,
+    *,
+    config=None,
+    robot_id=None,
+    calibration_dir=None,
+    replay_report=None,
+    allow_without_replay_report=False,
+    include_gripper=True,
+    gripper_value_deg=0.0,
+    image_key="observation.images.head",
+    episode_index=None,
+):
+    """Apply a verified hardware mapping to a full-CAD joint dataset for policy fine-tuning.
+
+    Converts ``observation.state`` and ``action`` from uncalibrated Full-CAD model
+    degrees (``q_model``) into the follower's calibrated motor degree space
+    (``q_motor = sign * q_model + offset_deg``), optionally padding constant
+    gripper entries (16-dim follower format) and aliasing the camera key without
+    mutating the source dataset or claiming physical gripper capture.
+    """
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    source_root = Path(dataset_path).resolve()
+    output_root = Path(output).resolve()
+    if output_root.exists():
+        raise FileExistsError(f"FT dataset output already exists: {output_root}")
+    if output_root.is_relative_to(source_root) or source_root.is_relative_to(output_root):
+        raise ValueError("Source and FT output datasets must be in separate directories")
+    if not str(repo_id).strip():
+        raise ValueError("repo_id must be nonempty")
+    if not str(image_key).strip():
+        raise ValueError("image_key must be nonempty")
+    if not np.isfinite(float(gripper_value_deg)):
+        raise ValueError("gripper_value_deg must be finite")
+
+    meta_path = source_root / "meta" / "mocopi_joint_dataset.json"
+    info_path = source_root / "meta" / "info.json"
+    if not meta_path.is_file() or not info_path.is_file():
+        raise ValueError(f"Not a mocopi joint dataset: {source_root}")
+    source_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    source_fp = dataset_fingerprint(source_root, "mocopi_joint_dataset.json")
+    model_hash = (
+        file_sha256(full_model_path(config["robot"])) if config else source_meta.get("mujoco_model_sha256")
+    )
+    if source_meta.get("mujoco_model_sha256") != model_hash:
+        raise ValueError("Dataset MuJoCo model differs from selected config model")
+
+    mapping = load_mapping(mapping_path)
+    document = mapping["document"]
+    effective_robot_id = robot_id or document.get("robot_id")
+    if not effective_robot_id:
+        raise ValueError("robot_id is required either in the mapping YAML or via --robot-id")
+    step_limit = float(config["robot"]["max_joint_step_deg"]) if config else 0.5
+    robot = arm_only_follower(
+        "/dev/not-used-left",
+        "/dev/not-used-right",
+        effective_robot_id,
+        step_limit,
+        calibration_dir,
+    )
+    mapping_info = validate_mapping_for_robot(document, robot, model_sha256=model_hash)
+
+    replay_report_info = None
+    if replay_report is not None:
+        report_path = Path(replay_report).resolve()
+        rep = json.loads(report_path.read_text(encoding="utf-8"))
+        if rep.get("schema") != REPLAY_SCHEMA or rep.get("status") != "complete":
+            raise ValueError(
+                f"Hardware replay report {report_path} must have schema={REPLAY_SCHEMA!r} and status='complete'"
+            )
+        if rep.get("gripper_commanded") is not False:
+            raise ValueError("Hardware replay report shows unexpected gripper commands")
+        if rep.get("dataset_sha256") != source_fp:
+            raise ValueError("Hardware replay report dataset_sha256 does not match source dataset")
+        if rep.get("mujoco_model_sha256") != model_hash:
+            raise ValueError("Hardware replay report mujoco_model_sha256 does not match model")
+        if rep.get("calibration_sha256") != mapping_info["calibration_sha256"]:
+            raise ValueError("Hardware replay report calibration_sha256 does not match robot calibration")
+        if rep.get("robot_id") != effective_robot_id:
+            raise ValueError("Hardware replay report robot_id does not match selected robot")
+        replay_report_info = {
+            "path": str(report_path),
+            "sha256": file_sha256(report_path),
+            "status": rep["status"],
+            "frames": len(rep.get("frames", [])),
+        }
+    elif not allow_without_replay_report:
+        raise ValueError(
+            "FT dataset export requires a completed hardware replay verification report "
+            "(--replay-report), or pass --allow-without-replay-report explicitly"
+        )
+
+    source = LeRobotDataset(source_meta["repo_id"], root=source_root, video_backend="pyav")
+    if episode_index is not None:
+        if not 0 <= int(episode_index) < source.num_episodes:
+            raise ValueError(f"Episode index {episode_index} out of range (0..{source.num_episodes - 1})")
+        episode_indices = [int(episode_index)]
+    else:
+        episode_indices = list(range(source.num_episodes))
+
+    validated_episodes = []
+    for ep_idx in episode_indices:
+        ep = load_joint_episode(source_root, ep_idx)
+        validation = validate_mapped_episode(ep, document, robot)
+        validated_episodes.append((ep_idx, validation))
+
+    src_cam_key = "observation.images.head"
+    if src_cam_key not in source.meta.features:
+        raise ValueError(f"Source dataset missing expected camera feature {src_cam_key!r}")
+    cam_meta = source.meta.features[src_cam_key]
+    ft_names = _ft_feature_names(include_gripper=include_gripper)
+    features = {
+        image_key: {
+            "dtype": "video",
+            "shape": tuple(cam_meta["shape"]),
+            "names": list(cam_meta.get("names") or ["channels", "height", "width"]),
+        },
+        "observation.state": {"dtype": "float32", "shape": (len(ft_names),), "names": ft_names},
+        "action": {"dtype": "float32", "shape": (len(ft_names),), "names": ft_names},
+    }
+    destination = LeRobotDataset.create(
+        repo_id=repo_id,
+        fps=int(source.fps),
+        features=features,
+        root=output_root,
+        robot_type="dual_scorpion_follower",
+        use_videos=True,
+        vcodec="h264",
+        image_writer_threads=2,
+    )
+    exported_episodes = []
+    try:
+        for ep_idx, validation in validated_episodes:
+            ep_meta = source.meta.episodes[ep_idx]
+            start = int(ep_meta["dataset_from_index"])
+            end = int(ep_meta["dataset_to_index"])
+            for row_idx in range(start, end):
+                row = source[row_idx]
+                mapped_state = _map_ft_motor_vector(
+                    document,
+                    row["observation.state"].numpy(),
+                    include_gripper=include_gripper,
+                    gripper_value_deg=gripper_value_deg,
+                )
+                mapped_action = _map_ft_motor_vector(
+                    document,
+                    row["action"].numpy(),
+                    include_gripper=include_gripper,
+                    gripper_value_deg=gripper_value_deg,
+                )
+                destination.add_frame(
+                    {
+                        "task": row["task"],
+                        image_key: row[src_cam_key].numpy(),
+                        "observation.state": mapped_state,
+                        "action": mapped_action,
+                    }
+                )
+            destination.save_episode()
+            exported_episodes.append(
+                {
+                    "episode_index": ep_idx,
+                    "frames": end - start,
+                    "calibration_margins_deg": validation["calibration_margins_deg"],
+                }
+            )
+    finally:
+        destination.finalize()
+
+    if dataset_fingerprint(source_root, "mocopi_joint_dataset.json") != source_fp:
+        raise ValueError("Source dataset changed during FT export")
+
+    manifest = {
+        "schema": FT_DATASET_SCHEMA,
+        "repo_id": repo_id,
+        "source_dataset": str(source_root),
+        "source_dataset_repo_id": source_meta["repo_id"],
+        "source_dataset_sha256": source_fp,
+        "robot_id": effective_robot_id,
+        "calibration_sha256": mapping_info["calibration_sha256"],
+        "mujoco_model_sha256": model_hash,
+        "mapping_path": str(Path(mapping_path).resolve()),
+        "mapping_verification_method": document.get("verification_method"),
+        "hardware_replay_verified": replay_report_info is not None,
+        "hardware_replay_report": replay_report_info,
+        "fps": int(source.fps),
+        "robot_type": "dual_scorpion_follower",
+        "state_action_names": ft_names,
+        "state_action_dim": len(ft_names),
+        "joint_unit": "degree",
+        "include_gripper": bool(include_gripper),
+        "gripper_synthesized_constant": bool(include_gripper),
+        "gripper_value_deg": float(gripper_value_deg) if include_gripper else None,
+        "camera_mapping": {"source_key": src_cam_key, "exported_key": image_key},
+        "state_semantics": (
+            "Full-CAD model joints mapped via verified q_motor = sign * q_model + offset_deg into "
+            "the follower calibrated degree space; synthesized constant gripper if include_gripper=True."
+        ),
+        "action_semantics": (
+            "Next-frame Full-CAD model target mapped via verified q_motor = sign * q_model + offset_deg "
+            "into follower calibrated motor degrees."
+        ),
+        "episodes": exported_episodes,
+    }
+    (output_root / "meta" / "mocopi_ft_dataset.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    return manifest

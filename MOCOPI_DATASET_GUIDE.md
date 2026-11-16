@@ -684,15 +684,13 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --robot-id dual_scorpion_follower_2026_1026
 ```
 
-各関節の手順は次のとおりです（他関節の同時姿勢合わせは不要）。
+各関節の手順は次のとおりです（**全関節を MID へ揃える操作も他関節の同時姿勢合わせも不要**です）。
 
 0. トルク解除前の明示確認（腕を支える）に `y` で応答する。
 1. 1点基準で `offset_deg` を求める場合はサーボホーン直結（減速比1:1）であるか確認する。
-   減速比が未知・非直結の場合は各関節で2点以上のモデル角度（例: `'0, 90'`）を実測して傾きも検証する。
-2. 対象関節だけを基準姿勢から CAD 正方向・負方向へそれぞれ `10度`（`--sign-test-deg`）以上
-   手で動かしてEnter。他の関節が5度を超えて動いた場合は方向テスト失敗とする（`--max-other-joint-delta-deg`）。
-3. その関節の既知のモデル角度（例: `0`、`90`、または2点以上 `'0, 90'`）と測定根拠を入力し、
-   その角度に合わせた状態でEnter（他関節は安全な任意位置のままでよい）。
+   減速比が未知・非直結の場合は、机に干渉しない範囲で各関節2点以上のモデル角度（例: `'0, 45'` や `'0, 90'`）を実測して傾きも検証する。
+2. 机上や可動端付近にある関節（例: `joint5` 等）は無理に両側へ振る必要はない。テスト方法選択時に **`+` または `-`（動かせる片側1方向のみ）** を選ぶか、両側が空いていれば Enter（`both`）を選び、対象関節**だけ**を `10度`（`--sign-test-deg`）以上動かしてEnter。他の関節が5度を超えて動いた場合は失敗とする（`--max-other-joint-delta-deg`）。
+3. その関節の既知のモデル角度（例: `0`、`90`、または2点以上 `'0, 45'`）と測定根拠を入力し、その角度に合わせた状態でEnter（他関節は机に置いたまま等でよい）。
 4. 未測定のまま残す場合は `'skip'` または `'unmeasured'` を入力する。ツールが推測で `offset_deg` を埋めることはしない（`verified: false`, `offset_deg: null`）。
 
 `--mode poses` は3〜5種類の全身姿勢から最小二乗フィットを行う従来方式です（すべての全身姿勢を
@@ -700,7 +698,7 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 
 次の場合は、`--allow-partial`なしではマッピングを書きません（`--allow-partial`指定時は`verified: false`として保存され、`replay-dataset`では拒否されます）。
 
-- 方向テストで必要量動いていない、または正負で方向が反転しない
+- 方向テストで必要量動いていない、または両方向試験で反転しない
 - `motor_id` や MJCF `model_joint` が一致しない
 - 基準角度が未測定、または測定根拠が記載されていない
 - 1関節でも`verified: false`が残る
@@ -710,7 +708,7 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 `--execute`を付けない場合、モーターへ指令を送りません。データセット、マッピング、
 較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲、IK状態、衝突、
 フレーム間ステップを検証します。`--check-start`を付けると、現在角度を読んで
-開始誤差と初期移行の安全性（モデル内衝突・較正範囲）を評価します。読み取りだけで、
+開始誤差と初期移行の安全性（モデル内衝突・較正範囲、`--initial-move-strategy auto|linear|lift-first`）を評価します。読み取りだけで、
 トルク変更や指令は行いません。
 
 ```bash
@@ -721,6 +719,7 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --robot-id dual_scorpion_follower_2026_1026 \
   --right-port /dev/ttyACM0 \
   --left-port /dev/ttyACM1 \
+  --initial-move-strategy auto \
   --check-start
 ```
 
@@ -728,13 +727,15 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 `initial_transition`、`validation.calibration_margins_deg`が入ります。`start_pose`が
 2度を超える場合、`--execute`は開始を拒否します。まず支持した状態で実機をデータセット
 先頭姿勢へ手で移動してください。`--allow-initial-move`は、この事前検証で
-`initial_transition.safe: true`を確認した場合だけ、明示的に使用できます。既定は無効です。
+`initial_transition.safe: true`を確認した場合だけ、明示的に使用できます。`--initial-move-strategy auto`
+（または `lift-first`）では、直線移行で机・障害物に接触する姿勢から開始する場合に先に手首・肘（`joint5`, `joint3`）を
+持ち上げてから他関節を揃える2段階移行経路も検証・選択します。既定は`--allow-initial-move`無効です。
 
 #### 4. 実機で再生する
 
 `--execute`を付けた場合だけ、Followerへ接続して左右7関節を指令します。初回は
-5度/s以下を推奨します（CLI既定は5度/s）。開始誤差2度以内、1指令0.5度以下、
-追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
+5度/s以下を推奨します（CLI既定は5度/s）。開始誤差2度以内（または安全な`--allow-initial-move`）、
+1指令0.5度以下、追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
 グリッパーは読み書きしません。
 
 ```bash
@@ -746,6 +747,8 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --right-port /dev/ttyACM0 \
   --left-port /dev/ttyACM1 \
   --max-joint-speed-deg-s 5 \
+  --allow-initial-move \
+  --initial-move-strategy auto \
   --execute \
   --report outputs/mocopi/reports/episode-001-hardware-replay.json
 ```
@@ -755,6 +758,26 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 再生時間が長くなります。レポートの`time_scale`、`control_steps`、
 `max_observed_speed_deg_s`、`tracking`、`tcp_warning_frames`を確認してください。
 左腕172〜173フレームの手先回転誤差警告は収録時の警告であり、この機能では隠しません。
+
+#### 5. 実機検証済みマッピングを変換データへ適用し FT 用データセットを生成する（`export-ft-dataset`）
+
+実機再生（`episode-001-hardware-replay.json` の `status: "complete"`）で動作確認した後、
+元の変換データセット（`q_model` 14次元・非改変）の `observation.state` / `action` に対し、
+検証済みマッピング `q_motor = sign * q_model + offset_deg` を適用して実機モーター座標系の
+LeRobot v3 FT データセットを新規出力できます（既定では16次元 `right_joint0..6 + right_gripper(0.0) + left_joint0..6 + left_gripper(0.0)`、`--arm-only` で14次元）。
+
+```bash
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset export-ft-dataset \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --replay-report outputs/mocopi/reports/episode-001-hardware-replay.json \
+  --output outputs/mocopi/datasets/episode-001-ft-motor16 \
+  --repo-id local/mocopi-episode-001-ft-motor16 \
+  --image-key observation.images.head
+```
+
+- グリッパー値は物理収録されていないため一定値（`--gripper-value 0.0`）として補完され、`meta/mocopi_ft_dataset.json` に `gripper_synthesized_constant: true` として明記されます。
+- `--replay-report` なしの事前テスト出力は `--allow-without-replay-report` を明示した場合のみ許可されます。
 
 #### 未検証として残る項目
 

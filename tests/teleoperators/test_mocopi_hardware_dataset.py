@@ -14,16 +14,20 @@ from telegrip.mocopi.config import load_config
 from telegrip.mocopi.dataset.__main__ import main as mocopi_dataset_cli
 from telegrip.mocopi.dataset.fingerprint import dataset_fingerprint, file_sha256
 from telegrip.mocopi.dataset.hardware_dataset import (
+    FT_DATASET_SCHEMA,
     JOINT_VERIFICATION_SCHEMA,
     MAPPING_SCHEMA,
     METHOD_MULTI_POSE,
     METHOD_PER_JOINT_MULTI_ANGLE,
     METHOD_PER_JOINT_REFERENCE,
+    METHOD_PER_JOINT_UNIDIRECTIONAL,
     METHOD_UNMEASURED,
     build_pose_context,
     evaluate_initial_transition,
     execute_joint_episode,
+    export_ft_dataset,
     fit_joint_from_reference,
+    fit_joint_from_unidirectional_reference,
     fit_joint_mapping,
     fit_joint_verification,
     inspect_dataset_mapping,
@@ -36,6 +40,7 @@ from telegrip.mocopi.dataset.hardware_dataset import (
     validate_mapping_for_robot,
     verify_dataset_mapping,
     verify_dataset_mapping_jointwise,
+    verify_joint_direction_unidirectional,
 )
 from telegrip.mocopi.dataset.real import JOINTS, arm_only_follower
 from telegrip.mocopi.dataset.real_dataset import export_hardware_replay_dataset
@@ -1769,3 +1774,422 @@ def test_cli_workflows_and_dataset_immutability(tmp_path, monkeypatch, capsys):
     # 5. Dataset directory files & hashes remain strictly unmodified.
     after_fp = dataset_fingerprint(LOCAL_DATASET, manifest_name="mocopi_joint_dataset.json")
     assert before_fp == after_fp
+
+
+def test_unidirectional_desk_safe_verification_for_joint5_at_limit(tmp_path, monkeypatch):
+    pytest.importorskip("mujoco")
+    # Simulate physical 45cm desk robot: left_joint5 sits at +96.53 deg (max +98.55 deg, margin only +2.02 deg).
+    # Unidirectional lift (- direction only) determines sign=-1 and offset_deg without MID or pushing into desk.
+    direct = verify_joint_direction_unidirectional(
+        96.53,
+        66.53,
+        expected_model_direction="+",
+        side="left",
+        joint="joint5",
+        min_test_deg=10.0,
+    )
+    assert direct["sign_verified"] is True
+    assert direct["sign"] == -1
+    assert direct["direction_mode"] == "unidirectional"
+
+    rec = fit_joint_from_unidirectional_reference(
+        0.0,
+        15.0,
+        96.53,
+        66.53,
+        expected_model_direction="+",
+        side="left",
+        joint="joint5",
+        motor_id=6,
+        measurement_basis="机上の静止位置(+96.53°)から上へ持ち上げて水平一直線(q=0°)を計測",
+    )
+    assert rec["verified"] is True
+    assert rec["sign"] == -1
+    assert rec["offset_deg"] == pytest.approx(15.0)
+    assert rec["method"] == METHOD_PER_JOINT_UNIDIRECTIONAL
+
+    # Verify both --measurements unidirectional YAML and interactive CLI joint-wise '-'/'+' prompt work.
+    robot = _fake_robot(tmp_path)
+    config = load_config(CONFIG)
+    meas = {
+        "joints": {
+            "left_joint5": {
+                "direction_test": {
+                    "mode": "unidirectional",
+                    "start_motor_deg": 96.53,
+                    "moved_motor_deg": 56.53,
+                    "expected_model_direction": "+",
+                },
+                "direct_drive_confirmed": True,
+                "measurement_basis": "手首を上方向へ片側1回持ち上げ+一直線0度基準",
+                "model_reference_deg": 0.0,
+                "motor_reference_deg": 20.0,
+            }
+        }
+    }
+    partial_out = tmp_path / "uni-partial.yaml"
+    verify_dataset_mapping_jointwise(
+        None,
+        robot,
+        partial_out,
+        config=config,
+        measurements=meas,
+        allow_partial=True,
+    )
+    partial_doc = yaml.safe_load(partial_out.read_text(encoding="utf-8"))
+    rec_yaml = partial_doc["sides"]["left"]["joint_verification"]["joint5"]
+    assert rec_yaml["verified"] is True
+    assert rec_yaml["sign"] == -1
+    assert rec_yaml["offset_deg"] == pytest.approx(20.0)
+    assert rec_yaml["verification_method"] == METHOD_PER_JOINT_UNIDIRECTIONAL
+
+    # Interactive single-joint unidirectional flow using '+' without ever moving to MID.
+    base_rest = {
+        f"{s}_joint{i}.pos": (96.53 if (s == "left" and i == 5) else 0.0)
+        for s in ("right", "left")
+        for i in range(7)
+    }
+    lifted = dict(base_rest)
+    lifted["left_joint5.pos"] = 60.53  # moved -36 deg away from limit in CAD '+' direction => sign=-1
+    inline_ref = dict(base_rest)
+    inline_ref["left_joint5.pos"] = 18.0
+    live_robot = _fake_robot(tmp_path / "live", measurements=[base_rest, lifted, inline_ref])
+
+    def _uni_input(prompt=""):
+        if "トルクを解除" in prompt or "直結" in prompt:
+            return "y"
+        if "方向テスト方法" in prompt:
+            return "+"
+        if "既知のモデル角度" in prompt:
+            return "0"
+        if "測定根拠" in prompt:
+            return "机上から持ち上げて一直線0度"
+        return ""
+
+    monkeypatch.setattr("builtins.input", _uni_input)
+    live_out = tmp_path / "live-uni.yaml"
+    verify_dataset_mapping_jointwise(
+        None,
+        live_robot,
+        live_out,
+        config=config,
+        joints=["left_joint5"],
+        arm="left",
+        allow_partial=True,
+    )
+    live_doc = yaml.safe_load(live_out.read_text(encoding="utf-8"))
+    assert live_doc["sides"]["left"]["joint_verification"]["joint5"]["verified"] is True
+    assert live_doc["sides"]["left"]["joint_verification"]["joint5"]["sign"] == -1
+    assert live_doc["sides"]["left"]["joint_verification"]["joint5"]["offset_deg"] == pytest.approx(18.0)
+
+
+def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path):
+    pytest.importorskip("mujoco")
+    from telegrip.mocopi.full_mujoco import FullMujocoSimulation
+
+    config = load_config(CONFIG)
+    obs = [
+        {
+            "name": "cup_block",
+            "center_m": [0.27, 0.16, 0.02],
+            "half_size_m": [0.06, 0.06, 0.05],
+            "rotation_deg": [0.0, 0.0, 0.0],
+        }
+    ]
+    start = {"right": np.array([0.0, 60.0, 0.0, 0.0, 0.0, -40.0, 0.0]), "left": np.zeros(7)}
+    target = {"right": np.array([0.0, -40.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "left": np.zeros(7)}
+    episode = _fake_episode(
+        [
+            target,
+            {"right": target["right"] + np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "left": np.zeros(7)},
+        ]
+    )
+    episode.metadata["obstacles"] = obs
+    robot = _fake_robot(tmp_path, current=start)
+    document = _mapping_document("robot-test", file_sha256(robot.calibration_fpath))
+
+    sim = FullMujocoSimulation(config["robot"], gui=False, obstacles=obs)
+    try:
+        linear_eval = evaluate_initial_transition(
+            start,
+            episode,
+            document,
+            robot,
+            max_step_deg=0.5,
+            max_speed_deg_s=5.0,
+            control_hz=20.0,
+            simulation=sim,
+            strategy="linear",
+        )
+        assert linear_eval["safe"] is False
+        assert linear_eval["collision_frames"]
+
+        auto_eval = evaluate_initial_transition(
+            start,
+            episode,
+            document,
+            robot,
+            max_step_deg=0.5,
+            max_speed_deg_s=5.0,
+            control_hz=20.0,
+            simulation=sim,
+            strategy="auto",
+        )
+        assert auto_eval["strategy"] == "lift_first"
+        assert auto_eval["safe"] is True
+        assert not auto_eval["collision_frames"]
+        assert len(auto_eval["stages"]) == 2
+        assert auto_eval["stages"][0]["name"] == "lift_distal_pitch"
+    finally:
+        sim.close()
+
+    # Execution with linear strategy refuses before enabling torque.
+    refuse_report = tmp_path / "linear-refuse.json"
+    with pytest.raises(RuntimeError, match="not safe"):
+        execute_joint_episode(
+            episode,
+            document,
+            config,
+            robot,
+            refuse_report,
+            allow_initial_move=True,
+            initial_move_strategy="linear",
+            realtime=False,
+        )
+    assert not robot.right_bus.enable_torque_calls
+
+    # Execution with auto/lift-first completes safely and tracks stages properly.
+    ok_report = tmp_path / "lift-first-ok.json"
+    rep = execute_joint_episode(
+        episode,
+        document,
+        config,
+        robot,
+        ok_report,
+        allow_initial_move=True,
+        initial_move_strategy="auto",
+        realtime=False,
+    )
+    assert rep["status"] == "complete"
+    assert rep["initial_transition"]["strategy"] == "lift_first"
+    assert rep["initial_transition"]["applied"] is True
+
+
+def test_export_ft_dataset_maps_to_16dim_follower_and_validates_replay_report(tmp_path, monkeypatch):
+    pytest.importorskip("datasets")
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    config = load_config(CONFIG)
+    model_hash = file_sha256(full_model_path(config["robot"]))
+    robot = _fake_robot(tmp_path)
+    cal_hash = file_sha256(robot.calibration_fpath)
+    signs = np.array([1, -1, 1, -1, 1, -1, 1])
+    offsets = np.array([10.0, -20.0, 5.0, -90.0, 15.0, 30.0, -5.0])
+    document = _mapping_document("robot-test", cal_hash, signs=signs, offsets=offsets)
+    mapping_path = tmp_path / "verified-mapping.yaml"
+    mapping_path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    # Build a synthetic source kinematic joint dataset (14-dim q_model + head image + kinematic cols).
+    src_root = tmp_path / "src_joint_ds"
+    joint_names = [f"{s}_joint{i}.pos" for s in ("right", "left") for i in range(7)]
+    src_ds = LeRobotDataset.create(
+        repo_id="local/src-joint-test",
+        fps=15,
+        features={
+            "observation.images.head": {
+                "dtype": "video",
+                "shape": (3, 48, 64),
+                "names": ["channels", "height", "width"],
+            },
+            "observation.state": {"dtype": "float32", "shape": (14,), "names": joint_names},
+            "action": {"dtype": "float32", "shape": (14,), "names": joint_names},
+            "observation.robot.target_pose": {"dtype": "float32", "shape": (14,), "names": None},
+            "observation.robot.status": {"dtype": "float32", "shape": (6,), "names": None},
+            "observation.robot.collision": {"dtype": "float32", "shape": (2,), "names": None},
+            "observation.robot.warning": {"dtype": "float32", "shape": (2,), "names": None},
+            "observation.sim.frame": {"dtype": "int64", "shape": (2,), "names": None},
+            "observation.robot.plan_time_s": {"dtype": "float64", "shape": (1,), "names": None},
+        },
+        root=src_root,
+        robot_type="dual_scorpion_kinematic",
+        use_videos=True,
+        vcodec="h264",
+    )
+    q_frames = [
+        np.zeros(14, dtype=np.float32),
+        np.linspace(1.0, 7.0, 14, dtype=np.float32),
+        np.linspace(2.0, 10.0, 14, dtype=np.float32),
+        np.linspace(3.0, 12.0, 14, dtype=np.float32),
+    ]
+    for idx, (s0, s1) in enumerate(zip(q_frames[:-1], q_frames[1:], strict=True)):
+        img = np.full((3, 48, 64), 0.5, dtype=np.float32)
+        src_ds.add_frame(
+            {
+                "task": "pick cup",
+                "observation.images.head": img,
+                "observation.state": s0,
+                "action": s1,
+                "observation.robot.target_pose": np.tile(
+                    np.array([0.25, 0.0, 0.3, 0.0, 0.0, 0.0, 1.0], dtype=np.float32), 2
+                ),
+                "observation.robot.status": np.array([1, 0, 0, 1, 0, 0], dtype=np.float32),
+                "observation.robot.collision": np.zeros(2, dtype=np.float32),
+                "observation.robot.warning": np.zeros(2, dtype=np.float32),
+                "observation.sim.frame": np.array([idx, idx], dtype=np.int64),
+                "observation.robot.plan_time_s": np.array([idx / 15.0], dtype=np.float64),
+            }
+        )
+    src_ds.save_episode()
+    src_ds.finalize()
+    src_meta = {
+        "schema": "dual_scorpion.mocopi.kinematic_joint_dataset.v1",
+        "repo_id": "local/src-joint-test",
+        "model_kind": "full_mujoco",
+        "robot_state_source": "kinematic_simulation_not_real_encoders",
+        "joint_names": joint_names,
+        "joint_unit": "degree",
+        "gripper_recorded": False,
+        "gripper_commanded": False,
+        "gripper_feature_included": False,
+        "quaternion_order": "xyzw",
+        "mujoco_model_sha256": model_hash,
+        "obstacles": [],
+        "ik": {"preview_max_joint_step_deg": 20.0},
+    }
+    (src_root / "meta" / "mocopi_joint_dataset.json").write_text(json.dumps(src_meta), encoding="utf-8")
+    before_fp = dataset_fingerprint(src_root, "mocopi_joint_dataset.json")
+
+    cal_dir = tmp_path / "cal_dir"
+    cal_dir.mkdir()
+    (cal_dir / "robot-test.json").write_text(
+        robot.calibration_fpath.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    # 1. Refuses without replay report unless --allow-without-replay-report.
+    with pytest.raises(ValueError, match="replay verification report"):
+        export_ft_dataset(
+            src_root,
+            mapping_path,
+            tmp_path / "ft-blocked",
+            "local/ft-blocked",
+            config=config,
+            calibration_dir=str(cal_dir),
+        )
+
+    aborted_report = tmp_path / "replay-aborted.json"
+    aborted_report.write_text(
+        json.dumps(
+            {
+                "schema": "dual_scorpion.mocopi.hardware_dataset_replay.v1",
+                "status": "aborted",
+                "gripper_commanded": False,
+                "dataset_sha256": before_fp,
+                "mujoco_model_sha256": model_hash,
+                "calibration_sha256": cal_hash,
+                "robot_id": "robot-test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="status='complete'"):
+        export_ft_dataset(
+            src_root,
+            mapping_path,
+            tmp_path / "ft-aborted",
+            "local/ft-aborted",
+            config=config,
+            calibration_dir=str(cal_dir),
+            replay_report=aborted_report,
+        )
+
+    # 2. Succeeds with a matching completed replay report -> 16-dim follower motor space + aliased image key.
+    report_path = tmp_path / "replay-ok.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema": "dual_scorpion.mocopi.hardware_dataset_replay.v1",
+                "status": "complete",
+                "gripper_commanded": False,
+                "dataset_sha256": before_fp,
+                "mujoco_model_sha256": model_hash,
+                "calibration_sha256": cal_hash,
+                "robot_id": "robot-test",
+                "frames": [{"plan_frame": i} for i in range(4)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ft_out = tmp_path / "ft-16dim"
+    _run_cli(
+        monkeypatch,
+        [
+            "--config",
+            str(CONFIG),
+            "export-ft-dataset",
+            "--dataset",
+            str(src_root),
+            "--mapping",
+            str(mapping_path),
+            "--output",
+            str(ft_out),
+            "--repo-id",
+            "local/ft-16dim",
+            "--calibration-dir",
+            str(cal_dir),
+            "--replay-report",
+            str(report_path),
+            "--image-key",
+            "observation.images.top",
+        ],
+    )
+    manifest = json.loads((ft_out / "meta" / "mocopi_ft_dataset.json").read_text(encoding="utf-8"))
+    assert manifest["schema"] == FT_DATASET_SCHEMA
+    assert manifest["hardware_replay_verified"] is True
+    assert manifest["state_action_dim"] == 16
+    assert manifest["include_gripper"] is True
+    assert manifest["gripper_synthesized_constant"] is True
+    assert manifest["camera_mapping"] == {
+        "source_key": "observation.images.head",
+        "exported_key": "observation.images.top",
+    }
+
+    ft_ds = LeRobotDataset("local/ft-16dim", root=ft_out, video_backend="pyav")
+    assert len(ft_ds) == 3
+    row0 = ft_ds[0]
+    assert row0["observation.state"].shape == (16,)
+    assert row0["action"].shape == (16,)
+    assert row0["observation.images.top"].shape == (3, 48, 64)
+    # Verify exact mapping q_motor = sign * q_model + offset and 0.0 gripper padding.
+    expected_r0 = signs * q_frames[0][:7] + offsets
+    expected_l0 = signs * q_frames[0][7:] + offsets
+    np.testing.assert_allclose(row0["observation.state"][:7].numpy(), expected_r0, atol=1e-4)
+    assert row0["observation.state"][7].item() == pytest.approx(0.0)
+    np.testing.assert_allclose(row0["observation.state"][8:15].numpy(), expected_l0, atol=1e-4)
+    assert row0["observation.state"][15].item() == pytest.approx(0.0)
+
+    # 3. Also test 14-dim --arm-only export with explicit --allow-without-replay-report.
+    ft_arm_out = tmp_path / "ft-14dim"
+    manifest_14 = export_ft_dataset(
+        src_root,
+        mapping_path,
+        ft_arm_out,
+        "local/ft-14dim",
+        config=config,
+        calibration_dir=str(cal_dir),
+        allow_without_replay_report=True,
+        include_gripper=False,
+    )
+    assert manifest_14["state_action_dim"] == 14
+    assert manifest_14["hardware_replay_verified"] is False
+    ft_ds14 = LeRobotDataset("local/ft-14dim", root=ft_arm_out, video_backend="pyav")
+    row1 = ft_ds14[1]
+    assert row1["observation.state"].shape == (14,)
+    np.testing.assert_allclose(
+        row1["observation.state"][:7].numpy(), signs * q_frames[1][:7] + offsets, atol=1e-4
+    )
+    np.testing.assert_allclose(
+        row1["observation.state"][7:].numpy(), signs * q_frames[1][7:] + offsets, atol=1e-4
+    )
+
+    # 4. Source dataset strictly untouched.
+    assert dataset_fingerprint(src_root, "mocopi_joint_dataset.json") == before_fp

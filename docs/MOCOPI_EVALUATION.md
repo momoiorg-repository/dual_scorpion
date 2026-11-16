@@ -261,8 +261,8 @@ MJCF軸・親子リンク・CAD基準幾何、モデルゼロ、較正ゼロ、�
 
 ### 関節ごとの独立検証（`verify-dataset-mapping --mode joint-wise`）
 
-全身14関節の同時姿勢合わせは不要です（`--reference-frame`は使用不可）。各関節について独立に、
-正負の方向テストと既知のモデル角度（1点基準＋直結1:1確認、または2点以上フィット）および
+全身14関節の同時姿勢合わせも全関節の MID（中点）配置も不要です（`--reference-frame`は使用不可）。各関節について独立に、
+正負2方向または机や可動端を避けた**片側1方向のみ（`+` / `-`）**の方向テストと、既知のモデル角度（1点基準＋直結1:1確認、または2点以上フィット）および
 測定根拠を記録します。対話形式でトルク解除する場合は事前に腕の支持確認を求め、拒否時は
 トルクを変更せず終了します。`--joints` / `--arm` / `--existing-mapping` / `--allow-partial` に
 より部分検証や段階的追記ができ、`--measurements` により記録済みの関節測定YAML/JSONからの
@@ -273,9 +273,9 @@ MJCF軸・親子リンク・CAD基準幾何、モデルゼロ、較正ゼロ、�
 |---|---|
 | `motor_id` / `motor_model` | 較正JSONのモーターID・機種との照合 |
 | `model_joint` / `model_axis` | MJCFの関節名と親リンク座標の回転軸 |
-| `sign` / `sign_verified` | 正負2方向テストの実測変化から決定（他関節変動は5度以下） |
+| `sign` / `sign_verified` | 両方向または片側1方向テストの実測変化から決定（他関節変動は5度以下） |
 | `offset_deg` / `offset_verified` | 既知モデル角度の測定値からのみ確定（未測定なら`null`） |
-| `verification_method` | `per_joint_reference` / `per_joint_multi_angle` / `per_joint_direction_only` / `unmeasured` |
+| `verification_method` | `per_joint_reference_angle_and_direction` / `per_joint_reference_unidirectional` / `per_joint_multi_angle_fit` / `direction_only_unmeasured_offset` / `unmeasured` |
 | `verification_evidence` | 測定根拠・方向テスト結果・CAD基準・直結確認フラグ |
 | `scale_verified` | 1点基準では`false`（2点以上多点フィット・posesモードで`true`） |
 | `verified` | 全14関節が`true`の場合のみトップレベル`verified: true` |
@@ -287,15 +287,22 @@ MJCF軸・親子リンク・CAD基準幾何、モデルゼロ、較正ゼロ、�
 `replay-dataset`は`--execute`なしではモーターへ指令しません。データセット、マッピング、
 較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲と`joint_limits_deg`、
 IK状態、衝突、フレーム間ステップを検証します。`--check-start`を付けると現在角度を読み
-（既存のトルク状態は不変）、開始誤差と初期移行の安全性を評価します。`initial_transition`には次が入ります。
+（既存のトルク状態は不変）、開始誤差と初期移行の安全性を評価します。`--initial-move-strategy auto`
+では直線移行が衝突する場合に先に手首・肘ピッチ（`joint5`, `joint3`）を持ち上げてから残りを揃える `lift-first` 経路も評価します。`initial_transition`には次が入ります。
 
 | 指標 | 意味 |
 |---|---|
+| `strategy` / `stages` | 選択された初期移行戦略（`linear` / `lift_first`）と段階ごとの目標角・ステップ数 |
 | `delta_deg` / `steps` / `estimated_duration_s` | 現在姿勢から先頭フレームまでの関節空間移動 |
 | `max_command_step_deg` / `max_command_speed_deg_s` | 補間指令の最大ステップと速度 |
 | `limit_violations` | 較正半幅および`joint_limits_deg`を外れる端点 |
-| `collision_frames` / `max_penetration_m` | Full MJCF上の床・自己衝突（外部障害物は未モデル化） |
+| `collision_frames` / `max_penetration_m` | Full MJCF上の床・自己・障害物衝突（未指定の外部障害物は対象外） |
 | `safe` | 全チェック通過かつステップ・速度上限内である場合のみtrue |
+
+### FT用データ変換（`export-ft-dataset`）
+
+実機再生レポート（`--replay-report`、または明示的な`--allow-without-replay-report`）と検証済みマッピングに基づき、
+`q_model` データセットの `observation.state` / `action` を `q_motor`（既定16次元＋一定値グリッパー補完、または `--arm-only` 14次元）へ変換した LeRobot v3 データセットを出力します。元データセットは改変しません。
 
 開始誤差が2度を超える場合、`--execute`は拒否します。`--allow-initial-move`は
 `initial_transition.safe: true`を確認した場合だけ明示的に使用でき、既定は無効です。

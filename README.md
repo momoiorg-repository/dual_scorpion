@@ -60,13 +60,15 @@ writes per-mode plans, per-frame metrics, summary CSV/JSON, a fairness check,
 300 dpi PNG/SVG figures, and a factual comparison report. Omitting `--ik-mode`
 keeps the previous mocopi behaviour and its numerical output.
 Full-CAD 14-joint datasets can also be replayed on the follower through
-`inspect-dataset-mapping`, `verify-dataset-mapping`, and `replay-dataset`. The mapping
-is verified independently per joint (no whole-body dataset pose matching required) and
+`inspect-dataset-mapping`, `verify-dataset-mapping`, `replay-dataset`, and
+exported for policy fine-tuning with `export-ft-dataset`. The mapping
+is verified independently per joint (no whole-body dataset pose or MID positioning
+required, supporting unidirectional motion away from desk/stops) and
 refused when any joint is unverified or when calibrated/configured limits, signs,
 offsets, or calibration/model hashes do not match. Read-only inspection (`--check-start`)
-preserves existing motor torque state; playback retains the 0.5-degree step,
-15-degree/s max speed (5 deg/s default), 2-degree start, and 5-degree HOLD limits,
-and never commands the gripper.
+preserves existing motor torque state; playback supports two-stage `--initial-move-strategy`
+(`auto`/`lift-first`), retains the 0.5-degree step, 15-degree/s max speed (5 deg/s default),
+2-degree start, and 5-degree HOLD limits, and never commands the gripper.
 The 14-joint dataset remains a kinematic simulation source, not encoder data.
 
 ## Contents
