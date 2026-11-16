@@ -14,14 +14,17 @@ from telegrip.mocopi.config import load_config
 from telegrip.mocopi.dataset.__main__ import main as mocopi_dataset_cli
 from telegrip.mocopi.dataset.fingerprint import dataset_fingerprint, file_sha256
 from telegrip.mocopi.dataset.hardware_dataset import (
+    DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0,
     FT_DATASET_SCHEMA,
     JOINT_VERIFICATION_SCHEMA,
     MAPPING_SCHEMA,
+    METHOD_CALIBRATION_MIDPOINT,
     METHOD_MULTI_POSE,
     METHOD_PER_JOINT_MULTI_ANGLE,
     METHOD_PER_JOINT_REFERENCE,
     METHOD_PER_JOINT_UNIDIRECTIONAL,
     METHOD_UNMEASURED,
+    build_calibration_mapping,
     build_pose_context,
     evaluate_initial_transition,
     execute_joint_episode,
@@ -2191,5 +2194,87 @@ def test_export_ft_dataset_maps_to_16dim_follower_and_validates_replay_report(tm
         row1["observation.state"][7:].numpy(), signs * q_frames[1][7:] + offsets, atol=1e-4
     )
 
-    # 4. Source dataset strictly untouched.
+    # 4. Also test omitting --mapping (auto calibration midpoint mapping) on export-ft-dataset.
+    ft_auto_out = tmp_path / "ft-auto-cal"
+    _run_cli(
+        monkeypatch,
+        [
+            "--config",
+            str(CONFIG),
+            "export-ft-dataset",
+            "--dataset",
+            str(src_root),
+            "--output",
+            str(ft_auto_out),
+            "--repo-id",
+            "local/ft-auto-cal",
+            "--robot-id",
+            "robot-test",
+            "--calibration-dir",
+            str(cal_dir),
+            "--allow-without-replay-report",
+        ],
+    )
+    auto_manifest = json.loads((ft_auto_out / "meta" / "mocopi_ft_dataset.json").read_text(encoding="utf-8"))
+    assert auto_manifest["mapping_path"] is None
+    assert auto_manifest["mapping_verification_method"] == METHOD_CALIBRATION_MIDPOINT
+    assert auto_manifest["state_action_dim"] == 16
+
+    # 5. Source dataset strictly untouched.
     assert dataset_fingerprint(src_root, "mocopi_joint_dataset.json") == before_fp
+
+
+def test_calibration_midpoint_mapping_and_optional_mapping_cli(tmp_path, monkeypatch):
+    """Verify calibration-based mapping builds without manual CAD posing and works when --mapping is omitted."""
+    config = load_config(CONFIG)
+    cal_dir = tmp_path / "cal"
+    cal_dir.mkdir(parents=True, exist_ok=True)
+    cal_path = cal_dir / "robot-cal.json"
+    cal_data = {
+        f"{side}_joint{i}": {
+            "id": i + 1,
+            "drive_mode": 1 if (side == "right" and i == 2) else 0,
+            "homing_offset": 0,
+            "range_min": 0,
+            "range_max": 4095,
+        }
+        for side in ("right", "left")
+        for i in range(7)
+    }
+    cal_path.write_text(json.dumps(cal_data), encoding="utf-8")
+    robot = arm_only_follower("/dev/not-used-left", "/dev/not-used-right", "robot-cal", 0.5, cal_dir)
+    doc, report = build_calibration_mapping(robot, config=config)
+    assert doc["verified"] is True
+    assert doc["verification_method"] == METHOD_CALIBRATION_MIDPOINT
+    assert report["status"] == "ok"
+    assert report["manual_cad_pose_required"] is False
+    expected_right = list(DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0["right"])
+    expected_right[2] *= -1  # drive_mode == 1 flips sign
+    assert doc["sides"]["right"]["sign"] == expected_right
+    assert doc["sides"]["left"]["sign"] == list(DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0["left"])
+    assert doc["sides"]["right"]["offset_deg"] == [0.0] * 7
+    assert doc["sides"]["left"]["offset_deg"] == [0.0] * 7
+
+    # CLI verify-dataset-mapping --mode calibration --overwrite
+    out_yaml = tmp_path / "cal-mapping.yaml"
+    out_yaml.write_text("stale: true\n", encoding="utf-8")
+    _run_cli(
+        monkeypatch,
+        [
+            "--config",
+            str(CONFIG),
+            "verify-dataset-mapping",
+            "--mode",
+            "calibration",
+            "--overwrite",
+            "--robot-id",
+            "robot-cal",
+            "--calibration-dir",
+            str(cal_dir),
+            "--output",
+            str(out_yaml),
+        ],
+    )
+    saved = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
+    assert saved["verified"] is True
+    assert saved["verification_method"] == METHOD_CALIBRATION_MIDPOINT

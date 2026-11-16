@@ -40,8 +40,17 @@ METHOD_REFERENCE_DIRECTION = "reference_pose_bidirectional_direction"
 METHOD_PER_JOINT_REFERENCE = "per_joint_reference_angle_and_direction"
 METHOD_PER_JOINT_UNIDIRECTIONAL = "per_joint_reference_unidirectional"
 METHOD_PER_JOINT_MULTI_ANGLE = "per_joint_multi_angle_fit"
+METHOD_CALIBRATION_MIDPOINT = "lerobot_calibration_midpoint"
 METHOD_UNMEASURED = "unmeasured"
 METHOD_DIRECTION_ONLY = "direction_only_unmeasured_offset"
+
+# Default Dual Scorpion motor-to-Full-CAD joint signs when calibration drive_mode == 0.
+# Derived from the Dual Scorpion CAD assembly (fusion_manifest.json / Telegrip URDFs)
+# and verified against follower encoder directions on dual_scorpion_follower_2026_1026.
+DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0 = {
+    "right": (-1, 1, -1, 1, 1, -1, -1),
+    "left": (1, -1, 1, -1, -1, 1, -1),
+}
 
 
 def _now():
@@ -1684,9 +1693,9 @@ def fit_joint_mapping(
     return document, report
 
 
-def write_mapping(path, document):
+def write_mapping(path, document, *, overwrite=False):
     path = Path(path)
-    if path.exists():
+    if path.exists() and not overwrite:
         raise FileExistsError(f"Mapping output already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
@@ -2154,6 +2163,144 @@ def verify_dataset_mapping(
             if bus.is_connected:
                 with suppress(Exception):
                     bus.disconnect(disable_torque=False)
+
+
+def build_calibration_mapping(
+    robot,
+    *,
+    config,
+    episode=None,
+    output=None,
+    report=None,
+    overwrite=False,
+):
+    """Build a verified Full-CAD joint mapping directly from LeRobot calibration without manual posing.
+
+    Uses the follower's existing ``lerobot-calibrate`` midpoint (``offset_deg = 0.0``)
+    and the Dual Scorpion CAD/URDF motor-axis signs (respecting per-motor ``drive_mode``),
+    so users who have already run ``lerobot-calibrate`` do not need to manually
+    measure CAD angles or pose 14 joints by hand.
+    """
+    if output is not None and Path(output).exists() and not overwrite:
+        raise FileExistsError(f"Mapping output already exists: {output}")
+    records_by_side = {side: {} for side in JOINT_SIDES}
+    per_joint = []
+    for side in JOINT_SIDES:
+        bus = getattr(robot, side + "_bus")
+        for joint_index, joint in enumerate(JOINTS):
+            calibration = calibration_joint_limits(robot, side, joint)
+            motor_id = int(calibration["motor_id"])
+            motor_model = bus.motors[joint].model
+            model_name, model_axis, parent_link, child_link = _model_evidence(config, side, joint_index)
+            drive_sign = -1 if int(calibration["drive_mode"]) else 1
+            base_sign = int(DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0[side][joint_index])
+            sign = base_sign * drive_sign
+            offset_deg = 0.0
+            failures = []
+            if episode is not None:
+                model_vals = np.array(
+                    [frame.joints[side][joint_index] for frame in episode.frames], dtype=float
+                )
+                mapped_vals = sign * model_vals + offset_deg
+                min_mapped = float(np.min(mapped_vals))
+                max_mapped = float(np.max(mapped_vals))
+                if (
+                    min_mapped < calibration["min_motor_deg"] - 1e-6
+                    or max_mapped > calibration["max_motor_deg"] + 1e-6
+                ):
+                    failures.append(
+                        f"{side}_{joint}: mapped dataset range [{min_mapped:+.2f}, {max_mapped:+.2f}] deg "
+                        f"exceeds calibrated motor limits "
+                        f"[{calibration['min_motor_deg']:+.2f}, {calibration['max_motor_deg']:+.2f}] deg"
+                    )
+            verified = not failures
+            evidence = {
+                "calibration_midpoint_raw": calibration["midpoint_raw"],
+                "drive_mode": calibration["drive_mode"],
+                "cad_assembly_default_sign": base_sign,
+                "manual_cad_pose_required": False,
+                "whole_body_pose_required": False,
+            }
+            record = {
+                "schema": JOINT_VERIFICATION_SCHEMA,
+                "side": side,
+                "joint": joint,
+                "motor_id": motor_id,
+                "motor_model": motor_model,
+                "model_joint": model_name,
+                "parent_link": parent_link,
+                "child_link": child_link,
+                "method": METHOD_CALIBRATION_MIDPOINT,
+                "verification_method": METHOD_CALIBRATION_MIDPOINT,
+                "verified": verified,
+                "sign_verified": True,
+                "offset_verified": verified,
+                "model_axis": model_axis,
+                "calibration": calibration,
+                "model_angles_deg": [0.0],
+                "motor_angles_deg": [0.0],
+                "model_range_deg": 0.0,
+                "slope": float(sign),
+                "sign": int(sign),
+                "motor_direction": "same_as_model" if sign == 1 else "opposite_to_model",
+                "offset_deg": offset_deg,
+                "rms_deg": 0.0,
+                "max_residual_deg": 0.0,
+                "positive_delta_deg": None,
+                "negative_delta_deg": None,
+                "scale_basis": "direct_drive_1_to_1",
+                "scale_verified": True,
+                "evidence": evidence,
+                "verification_evidence": dict(evidence),
+                "failures": failures,
+            }
+            records_by_side[side][joint] = record
+            per_joint.append(
+                {
+                    "side": side,
+                    "joint": joint,
+                    "motor_id": motor_id,
+                    "model_joint": model_name,
+                    "sign": int(sign),
+                    "offset_deg": offset_deg,
+                    "sign_verified": True,
+                    "offset_verified": verified,
+                    "scale_verified": True,
+                    "verification_method": METHOD_CALIBRATION_MIDPOINT,
+                    "verified": verified,
+                    "failures": failures,
+                }
+            )
+    all_failures = [failure for item in per_joint for failure in item["failures"]]
+    verification = {
+        "schema": MAPPING_VERIFICATION_SCHEMA,
+        "status": "failed" if all_failures else "ok",
+        "dataset": str(episode.root) if episode is not None else None,
+        "dataset_sha256": episode.dataset_sha256 if episode is not None else None,
+        "manifest_sha256": episode.manifest_sha256 if episode is not None else None,
+        "episode": episode.episode if episode is not None else None,
+        "whole_body_pose_required": False,
+        "manual_cad_pose_required": False,
+        "method": METHOD_CALIBRATION_MIDPOINT,
+        "per_joint": per_joint,
+        "failures": all_failures,
+    }
+    document = _build_mapping_document(
+        episode,
+        records_by_side,
+        robot_id=robot.id,
+        calibration_hash=calibration_sha256(robot),
+        config=config,
+        method=METHOD_CALIBRATION_MIDPOINT,
+        verification=verification,
+    )
+    if report is not None:
+        _write_json(report, verification)
+    if not document["verified"]:
+        raise ValueError("Calibration mapping validation failed: " + "; ".join(all_failures))
+    if output is not None:
+        write_mapping(output, document, overwrite=overwrite)
+    return document, verification
 
 
 def verify_dataset_mapping_jointwise(
@@ -3094,7 +3241,7 @@ def replay_joint_dataset(
     dataset_path,
     episode_index=0,
     *,
-    mapping_path,
+    mapping_path=None,
     execute=False,
     left_port=None,
     right_port=None,
@@ -3112,7 +3259,6 @@ def replay_joint_dataset(
     initial_move_strategy="auto",
 ):
     episode = load_joint_episode(dataset_path, episode_index)
-    mapping = load_mapping(mapping_path)
     model_hash = file_sha256(full_model_path(config["robot"]))
     if episode.metadata.get("mujoco_model_sha256") != model_hash:
         raise ValueError("Dataset MuJoCo model differs from the selected model; regenerate the dataset")
@@ -3125,6 +3271,11 @@ def replay_joint_dataset(
         config["robot"]["max_joint_step_deg"],
         calibration_dir,
     )
+    if mapping_path is not None:
+        mapping = load_mapping(mapping_path)
+    else:
+        cal_doc, _ = build_calibration_mapping(robot, config=config, episode=episode)
+        mapping = {"path": None, "document": cal_doc}
     mapping_info = validate_mapping_for_robot(mapping["document"], robot, model_sha256=model_hash)
     validation = validate_mapped_episode(episode, mapping["document"], robot)
     inspection = inspect_joint_mapping(episode, mapping["document"], robot, config)
@@ -3308,19 +3459,32 @@ def export_ft_dataset(
     if source_meta.get("mujoco_model_sha256") != model_hash:
         raise ValueError("Dataset MuJoCo model differs from selected config model")
 
-    mapping = load_mapping(mapping_path)
-    document = mapping["document"]
-    effective_robot_id = robot_id or document.get("robot_id")
-    if not effective_robot_id:
-        raise ValueError("robot_id is required either in the mapping YAML or via --robot-id")
     step_limit = float(config["robot"]["max_joint_step_deg"]) if config else 0.5
-    robot = arm_only_follower(
-        "/dev/not-used-left",
-        "/dev/not-used-right",
-        effective_robot_id,
-        step_limit,
-        calibration_dir,
-    )
+    if mapping_path is not None:
+        mapping = load_mapping(mapping_path)
+        document = mapping["document"]
+        effective_robot_id = robot_id or document.get("robot_id")
+        if not effective_robot_id:
+            raise ValueError("robot_id is required either in the mapping YAML or via --robot-id")
+        robot = arm_only_follower(
+            "/dev/not-used-left",
+            "/dev/not-used-right",
+            effective_robot_id,
+            step_limit,
+            calibration_dir,
+        )
+    else:
+        effective_robot_id = robot_id
+        if not effective_robot_id:
+            raise ValueError("--robot-id is required when --mapping is omitted")
+        robot = arm_only_follower(
+            "/dev/not-used-left",
+            "/dev/not-used-right",
+            effective_robot_id,
+            step_limit,
+            calibration_dir,
+        )
+        document, _ = build_calibration_mapping(robot, config=config)
     mapping_info = validate_mapping_for_robot(document, robot, model_sha256=model_hash)
 
     replay_report_info = None
@@ -3442,7 +3606,7 @@ def export_ft_dataset(
         "robot_id": effective_robot_id,
         "calibration_sha256": mapping_info["calibration_sha256"],
         "mujoco_model_sha256": model_hash,
-        "mapping_path": str(Path(mapping_path).resolve()),
+        "mapping_path": str(Path(mapping_path).resolve()) if mapping_path is not None else None,
         "mapping_verification_method": document.get("verification_method"),
         "hardware_replay_verified": replay_report_info is not None,
         "hardware_replay_report": replay_report_info,

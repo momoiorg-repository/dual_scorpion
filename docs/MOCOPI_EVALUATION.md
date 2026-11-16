@@ -259,9 +259,11 @@ MJCF軸・親子リンク・CAD基準幾何、モデルゼロ、較正ゼロ、�
 `--check-start`を付けたときだけ現在角度を読みますが、`enable_torque()` / `disable_torque()`は
 一切呼ばず、切断時も`disable_torque=False`を保ちます（正常終了・例外終了・部分接続失敗すべてで既存のトルク状態を維持）。
 
-### 関節ごとの独立検証（`verify-dataset-mapping --mode joint-wise`）
+### 関節マッピングの生成と独立検証（`verify-dataset-mapping`）
 
-全身14関節の同時姿勢合わせも全関節の MID（中点）配置も不要です（`--reference-frame`は使用不可）。各関節について独立に、
+`lerobot-calibrate` 済みの Dual Scorpion Follower では、`--mode calibration`（または `replay-dataset` / `export-ft-dataset` で `--mapping` を省略）により、手動の CAD 角度入力や実機の姿勢合わせなしに既存の較正中点（`offset_deg = 0.0`）と CAD アセンブリ軸符号からマッピングを生成・適用できます。
+
+また、`--mode joint-wise` では全身14関節の同時姿勢合わせも全関節の MID（中点）配置も不要です（`--reference-frame`は使用不可）。各関節について独立に、
 正負2方向または机や可動端を避けた**片側1方向のみ（`+` / `-`）**の方向テストと、既知のモデル角度（1点基準＋直結1:1確認、または2点以上フィット）および
 測定根拠を記録します。対話形式でトルク解除する場合は事前に腕の支持確認を求め、拒否時は
 トルクを変更せず終了します。`--joints` / `--arm` / `--existing-mapping` / `--allow-partial` に

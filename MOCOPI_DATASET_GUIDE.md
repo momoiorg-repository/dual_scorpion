@@ -659,7 +659,19 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --report outputs/mocopi/reports/episode-001-mapping-verification.json
 ```
 
-特定の関節だけ検証し、未測定関節を`verified: false`のまま一時保存するコマンド例：
+`lerobot-calibrate` 済みの Dual Scorpion Follower では、`--mode calibration` を使うことで手動の CAD 角度入力や実機の姿勢合わせなしに、既存の較正ファイル（`midpoint = 0.0 deg`）と CAD アセンブリ軸符号からマッピング YAML を直接生成できます（また `replay-dataset` や `export-ft-dataset` で `--mapping` を省略した場合も、この較正ベースのマッピングが自動適用されます）：
+
+```bash
+PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
+  --mode calibration \
+  --overwrite \
+  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
+  --episode 0 \
+  --robot-id dual_scorpion_follower_2026_1026 \
+  --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml
+```
+
+特定の関節だけ手動で検証し、未測定関節を`verified: false`のまま一時保存するコマンド例：
 
 ```bash
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \

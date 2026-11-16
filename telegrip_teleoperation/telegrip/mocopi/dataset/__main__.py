@@ -196,10 +196,16 @@ def parser():
     verify_map.add_argument("--episode", type=int, default=0)
     verify_map.add_argument("--output", required=True, help="New verified or partial mapping YAML")
     verify_map.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite an existing mapping YAML at --output",
+    )
+    verify_map.add_argument(
         "--mode",
-        choices=["joint-wise", "poses"],
+        choices=["calibration", "joint-wise", "poses"],
         default="joint-wise",
-        help="joint-wise: independent per-joint sign/reference verification (no whole-body pose required); "
+        help="calibration: build directly from lerobot-calibrate midpoint without manual CAD posing; "
+        "joint-wise: independent per-joint sign/reference verification; "
         "poses: legacy multi-pose least-squares fit",
     )
     verify_map.add_argument(
@@ -259,7 +265,10 @@ def parser():
     )
     replay_dataset.add_argument("--dataset", required=True, help="Full-CAD joint dataset")
     replay_dataset.add_argument("--episode", type=int, default=0)
-    replay_dataset.add_argument("--mapping", required=True, help="Verified hardware joint mapping YAML")
+    replay_dataset.add_argument(
+        "--mapping",
+        help="Optional verified hardware joint mapping YAML; defaults to the lerobot-calibrate midpoint mapping",
+    )
     replay_dataset.add_argument("--execute", action="store_true", help="Connect and move the real arms")
     replay_dataset.add_argument("--left-port", help="Left follower serial device")
     replay_dataset.add_argument("--right-port", help="Right follower serial device")
@@ -300,7 +309,10 @@ def parser():
         help="Apply a verified hardware mapping to a full-CAD joint dataset for policy fine-tuning",
     )
     export_ft.add_argument("--dataset", required=True, help="Source full-CAD joint dataset")
-    export_ft.add_argument("--mapping", required=True, help="Verified hardware joint mapping YAML")
+    export_ft.add_argument(
+        "--mapping",
+        help="Optional verified hardware joint mapping YAML; defaults to the lerobot-calibrate midpoint mapping",
+    )
     export_ft.add_argument("--output", required=True, help="New local FT LeRobot dataset folder")
     export_ft.add_argument("--repo-id", required=True, help="Output LeRobot repo_id")
     export_ft.add_argument("--robot-id", help="Override robot id if different lookup needed")
@@ -654,6 +666,7 @@ def main():
         elif args.command == "verify-dataset-mapping":
             from .hardware_dataset import (
                 _resolve_arm_joint_selectors,
+                build_calibration_mapping,
                 load_joint_episode,
                 verify_dataset_mapping,
                 verify_dataset_mapping_jointwise,
@@ -667,7 +680,17 @@ def main():
                 config["robot"]["max_joint_step_deg"],
                 args.calibration_dir,
             )
-            if args.mode == "joint-wise":
+            if args.mode == "calibration":
+                episode = load_joint_episode(args.dataset, args.episode) if args.dataset else None
+                _, result = build_calibration_mapping(
+                    robot,
+                    config=config,
+                    episode=episode,
+                    output=args.output,
+                    report=args.report,
+                    overwrite=args.overwrite,
+                )
+            elif args.mode == "joint-wise":
                 if args.reference_frame:
                     raise ValueError(
                         "joint-wise mode verifies each joint independently without whole-body "
