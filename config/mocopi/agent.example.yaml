@@ -1,0 +1,57 @@
+robot_config: tracking.yaml
+
+# The CLI and MCP server construct this adapter without opening serial ports or
+# moving the robot. Calibration is loaded by LeRobot's standard
+# robots/dual_scorpion_follower/<robot.id>.json lookup; no values are rewritten.
+robot:
+  id: dual_scorpion_follower_2026_1026
+  left_port: /dev/ttyACM1
+  right_port: /dev/ttyACM0
+  max_step_deg: 0.5
+  # Omit calibration_dir to use LeRobot's standard calibration root. Set it
+  # only when the robot host uses a different calibrated robot ID.
+  # calibration_dir: ~/.cache/huggingface/lerobot/calibration/robots/dual_scorpion_follower
+
+# Replace the device IDs on the machine that runs the robot. They are examples
+# only and are not inferred from the connected hardware.
+cameras:
+  - id: camera
+    device: /dev/video2
+    width: 640
+    height: 480
+    fps: 30
+    fourcc: MJPG
+    coordinate_frame: camera_uncalibrated
+
+# Existing teleoperation gripper semantics, expressed in LeRobot's
+# RANGE_0_100 normalized units. These are reused, not recalibrated.
+gripper:
+  open_position: 0.0
+  closed_position: 45.0
+  min_position: 0.0
+  max_position: 100.0
+  # Control acceptance tolerance. This does not suppress a requested motion.
+  position_tolerance: 2.0
+  # Separate from position_tolerance: minimum encoder change accepted as motion.
+  motion_observation_threshold: 0.1
+  # Conservative software slew limit; physical response is not yet verified.
+  max_step: 2.0
+  settle_s: 0.02
+  # Bounded diagnostic polling for encoder motion.
+  poll_interval_s: 0.05
+  motion_timeout_s: 1.0
+  grasp_timeout_s: 2.0
+  # Optional raw Feetech thresholds. Leave unset unless measured for this robot.
+  load_threshold: null
+  current_threshold: null
+
+# The local CLI writes a short-lived, one-shot operation grant here. MCP tools
+# never receive a token; the harness consumes and deletes this file locally.
+operation_grants_file: /run/user/1000/scorpion-agent-operation-grant.json
+max_feedback_age_s: 0.5
+max_plan_frames: 240
+execution_report_dir: outputs/agent/executions
+
+# Motion is rejected until this points to a measured scene containing the
+# table, the 45 cm support stick, and the measured scene-to-robot transform.
+scene_geometry: null

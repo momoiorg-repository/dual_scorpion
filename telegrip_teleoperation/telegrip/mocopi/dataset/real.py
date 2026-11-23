@@ -4,6 +4,7 @@ import hashlib
 import json
 import time
 from pathlib import Path
+from threading import Event
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -178,8 +179,11 @@ def validate_plan(
     }
 
 
-def arm_only_follower(left_port, right_port, robot_id, max_step, calibration_dir=None):
-    """Construct the existing follower using only joint0..joint6 on each bus."""
+GRIPPER = "gripper"
+
+
+def _configured_follower(left_port, right_port, robot_id, max_step, calibration_dir, include_gripper):
+    """Construct the existing follower with either arm-only or arm+gripper buses."""
     from lerobot.motors.feetech import FeetechMotorsBus
     from lerobot.robots.dual_scorpion_follower import DualScorpionFollower, DualScorpionFollowerConfig
 
@@ -193,17 +197,35 @@ def arm_only_follower(left_port, right_port, robot_id, max_step, calibration_dir
         disable_torque_on_disconnect=False,
     )
     robot = DualScorpionFollower(options)
+    motor_names = (*JOINTS, GRIPPER) if include_gripper else JOINTS
     for side in SIDES:
         previous = getattr(robot, side + "_bus")
-        if not set(JOINTS) <= previous.calibration.keys():
-            raise ValueError(f"Missing {side} arm calibration for {robot_id}; calibrate before replay")
+        if not set(motor_names) <= previous.calibration.keys():
+            missing = sorted(set(motor_names) - set(previous.calibration))
+            raise ValueError(
+                f"Missing {side} calibration for {robot_id}: {missing}; calibrate before replay"
+            )
         bus = FeetechMotorsBus(
             port=previous.port,
-            motors={name: previous.motors[name] for name in JOINTS},
-            calibration={name: previous.calibration[name] for name in JOINTS},
+            motors={name: previous.motors[name] for name in motor_names},
+            calibration={name: previous.calibration[name] for name in motor_names},
         )
         setattr(robot, side + "_bus", bus)
     return robot
+
+
+def arm_only_follower(left_port, right_port, robot_id, max_step, calibration_dir=None):
+    """Construct the existing follower using only joint0..joint6 on each bus."""
+    return _configured_follower(
+        left_port, right_port, robot_id, max_step, calibration_dir, include_gripper=False
+    )
+
+
+def arm_and_gripper_follower(left_port, right_port, robot_id, max_step, calibration_dir=None):
+    """Construct the existing follower with joint0..joint6 and each gripper."""
+    return _configured_follower(
+        left_port, right_port, robot_id, max_step, calibration_dir, include_gripper=True
+    )
 
 
 def _read_joints(robot):
@@ -246,6 +268,7 @@ def execute_plan(
     max_sim_error_m=0.025,
     max_sim_orientation_error_deg=None,
     realtime=True,
+    stop_event: Event | None = None,
 ):
     """Replay a prevalidated plan; retain partial quantitative results on failure."""
     if not (0 < max_start_error_deg <= 2 and 0 < max_tracking_error_deg <= 5):
@@ -283,6 +306,11 @@ def execute_plan(
         "frames": [],
         "failure": None,
         "limits": "TCP estimated from motor encoders and URDF, not an independent physical measurement",
+        "startup_behavior": {
+            "auto_home": False,
+            "initial_state_source": "encoder_reading_only",
+            "hold_strategy": "present_position_before_torque_enable",
+        },
     }
     active = False
     failure = None
@@ -309,13 +337,31 @@ def execute_plan(
                     )
             # First set the present position as the goal, then enable only
             # the seven arm joints. The grippers are never read or written.
+            hold_start = {side: current[side].copy() for side in SIDES}
             robot.send_action(_actions(current))
             active = True
             for side in SIDES:
                 getattr(robot, side + "_bus").enable_torque(list(JOINTS))
+            hold_measured = _read_joints(robot)
+            hold_step = {
+                side: float(np.max(np.abs(hold_measured[side] - hold_start[side])))
+                for side in SIDES
+            }
+            report["initial_hold"] = {
+                "max_joint_step_deg": hold_step,
+                "within_start_tolerance": all(value <= max_start_error_deg for value in hold_step.values()),
+                "strategy": "present_position_before_torque_enable",
+            }
+            if any(value > max_start_error_deg for value in hold_step.values()):
+                raise RuntimeError(
+                    "Robot moved while enabling the initial position hold: "
+                    f"{report['initial_hold']}"
+                )
             report["status"] = "running"
             start_time = time.monotonic()
             for index, frame in enumerate(plan["frames"]):
+                if stop_event is not None and stop_event.is_set():
+                    raise RuntimeError("Operator stop requested")
                 desired = _joint_map(frame)
                 limited = {
                     side: np.clip(desired[side], current[side] - limit, current[side] + limit)

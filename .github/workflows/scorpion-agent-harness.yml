@@ -1,0 +1,40 @@
+name: scorpion-agent-harness
+
+on:
+  push:
+    branches: [scorpion-agent-harness]
+    paths:
+      - "telegrip_teleoperation/telegrip/mocopi/agent/**"
+      - "tests/teleoperators/test_agent_harness.py"
+      - ".agents/skills/dual-scorpion-real-agent/**"
+      - "config/mocopi/agent.example.yaml"
+      - ".github/workflows/scorpion-agent-harness.yml"
+  pull_request:
+    paths:
+      - "telegrip_teleoperation/telegrip/mocopi/agent/**"
+      - "tests/teleoperators/test_agent_harness.py"
+      - ".agents/skills/dual-scorpion-real-agent/**"
+      - "config/mocopi/agent.example.yaml"
+      - ".github/workflows/scorpion-agent-harness.yml"
+
+jobs:
+  hardware-free-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Sync locked dependencies
+        run: uv sync --locked --all-packages --extra dual_scorpion
+      - name: Run agent harness tests
+        run: >
+          uv run --no-sync pytest
+          tests/teleoperators/test_agent_harness.py -q
+      - name: Run focused real-replay regression
+        run: >
+          uv run --no-sync pytest
+          "tests/teleoperators/test_mocopi_dataset.py::test_real_plan_preflight_and_fake_follower_never_command_gripper" -q
