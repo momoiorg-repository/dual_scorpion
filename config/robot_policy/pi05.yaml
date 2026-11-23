@@ -1,0 +1,60 @@
+# Full LeRobot checkpoint revision and the physical feature order used in training.
+policy:
+  adapter: pi05
+  checkpoint: syun88/dual_scorpion_pi05_pick_place_cube
+  capabilities:
+    policy_id: pi05
+    robot_types: [dual_scorpion]
+    required_images: [head, right_wrist, left_wrist]
+    state_features: &features
+      - right_joint0.pos
+      - right_joint1.pos
+      - right_joint2.pos
+      - right_joint3.pos
+      - right_joint4.pos
+      - right_joint5.pos
+      - right_joint6.pos
+      - right_gripper.pos
+      - left_joint0.pos
+      - left_joint1.pos
+      - left_joint2.pos
+      - left_joint3.pos
+      - left_joint4.pos
+      - left_joint5.pos
+      - left_joint6.pos
+      - left_gripper.pos
+    state_units: &units
+      right_joint0.pos: deg
+      right_joint1.pos: deg
+      right_joint2.pos: deg
+      right_joint3.pos: deg
+      right_joint4.pos: deg
+      right_joint5.pos: deg
+      right_joint6.pos: deg
+      right_gripper.pos: lerobot_0_100
+      left_joint0.pos: deg
+      left_joint1.pos: deg
+      left_joint2.pos: deg
+      left_joint3.pos: deg
+      left_joint4.pos: deg
+      left_joint5.pos: deg
+      left_joint6.pos: deg
+      left_gripper.pos: lerobot_0_100
+    action_features: *features
+    action_units: *units
+    action_horizon: 50
+    action_representation: absolute_joint_position
+    control_fps: 30
+    requires_task: true
+  options:
+    revision: "13985a6d2b0ddefb8303e992d0b36ee042b87ec6"
+    device: cuda
+    images:
+      observation.images.head: head
+      observation.images.right_wrist: right_wrist
+      observation.images.left_wrist: left_wrist
+
+inference:
+  transport: local
+  timeout_s: 120
+  max_response_age_s: 120

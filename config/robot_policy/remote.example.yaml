@@ -1,0 +1,19 @@
+# Client profile. Change the ID to match the worker's capabilities.
+robot:
+  adapter: dual_scorpion
+
+policy:
+  id: pi05
+
+inference:
+  transport: grpc
+  endpoint: grpc://127.0.0.1:50051
+  token_env: ROBOT_POLICY_TOKEN
+  timeout_s: 30
+  max_response_age_s: 30
+  # For TLS with a privately issued certificate:
+  # endpoint: grpcs://gpu.example.edu:50051
+  # ca_file: ./lab-ca.pem
+
+execution:
+  dry_run: true

@@ -1,0 +1,23 @@
+robot:
+  adapter: mock
+
+policy:
+  adapter: mock
+  capabilities:
+    policy_id: mock
+    robot_types: [mock_arm]
+    required_images: [front]
+    state_features: [joint, gripper]
+    state_units: &units {joint: deg, gripper: lerobot_0_100}
+    action_features: [gripper, joint]
+    action_units: *units
+    action_horizon: 4
+    action_representation: relative_joint_position
+    absolute_features: [gripper]
+    control_fps: 30
+
+inference:
+  transport: local
+
+execution:
+  dry_run: true

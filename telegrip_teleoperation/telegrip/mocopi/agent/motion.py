@@ -193,7 +193,58 @@ class KinematicsService:
                 }
             )
 
-        plan = {
+        plan = self._plan_document(frames, fps, task, source, ik_info)
+        if self.collision_checker is not None:
+            self.validate_scene_trajectory(plan)
+        return plan
+
+    def build_joint_plan(
+        self, waypoints: list[dict[str, np.ndarray]], *, fps: int, task: str,
+    ) -> dict[str, Any]:
+        """Create a legacy arm plan from a locally validated joint-space chunk."""
+        if len(waypoints) < 2:
+            raise MotionPlanningError("joint plan requires a measured start and at least one target")
+        frames = []
+        for index, joints in enumerate(waypoints):
+            arms = {}
+            for side in SIDES:
+                vector = self.pose_vector(side, joints[side])
+                arms[side] = {
+                    "joint_deg": joints[side].tolist(),
+                    "target_pose": vector,
+                    "simulated_pose": vector,
+                    "valid": True,
+                    "workspace_clamped": False,
+                    "retarget_clamped": False,
+                }
+            frames.append({"time_s": index / fps, "arms": arms})
+        plan = self._plan_document(frames, fps, task, "real", {})
+        self.validate(plan)
+        for start, target in zip(waypoints[:-1], waypoints[1:], strict=True):
+            self.check_joint_segment(start, target)
+        return plan
+
+    def check_joint_segment(self, start: dict[str, np.ndarray], end: dict[str, np.ndarray]) -> None:
+        """Check the endpoints and midpoint of a rate-limited joint segment."""
+        if self.collision_checker is None:
+            raise MotionPlanningError("measured scene geometry is required before checking a joint segment")
+        for side in SIDES:
+            arm = self.simulation.arms[side]
+            positions = np.vstack((start[side], end[side]))
+            if not np.isfinite(positions).all() or np.any(positions < arm.lower[:7] - 1e-6) or np.any(
+                positions > arm.upper[:7] + 1e-6
+            ):
+                raise MotionPlanningError(f"{side} joint segment exceeds the URDF limits")
+        midpoint = {side: (start[side] + end[side]) / 2 for side in SIDES}
+        for pose_joints in (start, midpoint, end):
+            report = self.collision_checker.check_pose(pose_joints, include_self=True)
+            if not report["checked"] or not report["self_checked"] or report["count"]:
+                raise MotionPlanningError(f"joint segment violates scene or self-collision clearance: {report}")
+
+    def _plan_document(
+        self, frames: list[dict[str, Any]], fps: int, task: str, source: str, ik_info: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
             "schema": "dual_scorpion.mocopi.robot_plan.v1",
             "source": source,
             "task": task,
@@ -205,8 +256,8 @@ class KinematicsService:
             "expected_frames": len(frames),
             "frames": frames,
             "failures": [],
-            "max_joint_step_deg": min(0.5, 15.0 / fps, configured_step),
-            "hardware_max_joint_step_deg": configured_step,
+            "max_joint_step_deg": min(0.5, 15.0 / fps, float(self.config["max_joint_step_deg"])),
+            "hardware_max_joint_step_deg": float(self.config["max_joint_step_deg"]),
             "ik_info": ik_info,
             "scene_schema": None if self.scene is None else "dual_scorpion.agent.scene.v1",
             "scene_sha256": None if self.scene is None else self.scene.sha256,
@@ -219,10 +270,6 @@ class KinematicsService:
                 "hold_strategy": "present_position_before_torque_enable",
             },
         }
-        if self.collision_checker is not None:
-            self.validate_scene_trajectory(plan)
-        return plan
-
     def validate_scene_trajectory(self, plan: dict[str, Any]) -> dict[str, Any]:
         if self.collision_checker is None:
             raise MotionPlanningError("measured scene geometry is required before real motion")

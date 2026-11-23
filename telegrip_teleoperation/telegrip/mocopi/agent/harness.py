@@ -8,7 +8,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -22,6 +22,9 @@ from .scene import SceneGeometry
 from .schema import PlanValidationError, TaskPlan, validate_task_plan
 from .skills import SkillRegistry, built_in_skill_registry
 from .world import ArmState, CameraState, ObjectState, StateSource, WorldState
+
+if TYPE_CHECKING:
+    from ..dataset.real import CommandGuard
 
 SIDES = ("left", "right")
 
@@ -416,6 +419,7 @@ class ScorpionAgentHarness:
         authorization_grant: AuthorizationGrant | None = None,
         *,
         capture_before_after: bool = False,
+        before_command: CommandGuard | None = None,
     ) -> dict[str, Any]:
         if motion_plan_id not in self.motion_plans:
             raise KeyError(f"unknown motion plan {motion_plan_id!r}")
@@ -475,6 +479,7 @@ class ScorpionAgentHarness:
                     self.kinematics.simulation,
                     report_path,
                     stop_event=self.safety.stop_event,
+                    **({"before_command": before_command} if before_command is not None else {}),
                 )
                 job.report = report
                 job.status = "complete"

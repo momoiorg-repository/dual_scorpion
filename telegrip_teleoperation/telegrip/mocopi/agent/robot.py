@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import draccus
 import numpy as np
@@ -14,6 +14,9 @@ import numpy as np
 from lerobot.motors import MotorCalibration, MotorNormMode
 
 from .config import GripperSpec
+
+if TYPE_CHECKING:
+    from ..dataset.real import CommandGuard
 
 SIDES = ("left", "right")
 JOINTS = tuple(f"joint{index}" for index in range(7))
@@ -410,6 +413,7 @@ class RealRobotAdapter:
         report_path: str | Path,
         *,
         stop_event: threading.Event | None = None,
+        before_command: CommandGuard | None = None,
     ) -> dict[str, Any]:
         from ..dataset.real import execute_plan
 
@@ -426,6 +430,7 @@ class RealRobotAdapter:
                 allow_synthetic=False,
                 realtime=True,
                 stop_event=stop_event,
+                before_command=before_command,
             )
 
     def _move_gripper(

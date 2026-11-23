@@ -8,6 +8,7 @@ deletes that grant before issuing a matching motor command.
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 import uuid
@@ -206,8 +207,10 @@ class AuthorizationManager:
 
     def _remove_grant(self, grant_id: str, source: str) -> None:
         if source == "file":
-            if self.grant_file is not None and self.grant_file.exists():
+            try:
                 self.grant_file.unlink()
+            except FileNotFoundError as exc:
+                raise AuthorizationError("operation grant has already been consumed or revoked") from exc
         else:
             self._grants.pop(grant_id, None)
 
@@ -305,8 +308,8 @@ def _grant_from_document(document: Any) -> AuthorizationGrant:
         raise ValueError("grant max_position_delta is invalid")
     if plan_id is not None and not isinstance(plan_id, str):
         raise ValueError("grant plan_id must be a string")
-    if not isinstance(issued, (int, float)) or not isinstance(expires, (int, float)):
-        raise ValueError("grant timestamps must be numbers")
+    if not all(isinstance(timestamp, (int, float)) and math.isfinite(timestamp) for timestamp in (issued, expires)):
+        raise ValueError("grant timestamps must be finite")
     if expires <= issued:
         raise ValueError("grant expiry must be later than issue time")
     if not isinstance(clearance, bool):

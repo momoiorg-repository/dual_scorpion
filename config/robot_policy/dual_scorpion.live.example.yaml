@@ -1,0 +1,17 @@
+# Use the measured robot and three camera IDs from a local HarnessConfig.
+robot:
+  adapter: dual_scorpion
+  config: ../mocopi/agent.local.yaml
+  options:
+    camera_ids:
+      head: head
+      right_wrist: right_wrist
+      left_wrist: left_wrist
+    # Only after local hardware validation of the legacy URDF, calibration and scene.
+    # verified_arm_binding:
+    #   calibration_sha256: ...
+    #   urdf_sha256: {right: ..., left: ...}
+    #   scene_sha256: ...
+
+execution:
+  dry_run: true

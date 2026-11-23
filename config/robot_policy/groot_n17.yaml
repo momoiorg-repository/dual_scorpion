@@ -1,0 +1,67 @@
+# Isaac-GR00T N1.7, in the NVIDIA SDK environment.
+policy:
+  adapter: groot_n17
+  checkpoint: syun88/dual_scorpion_groot_n17_pick_place_cube
+  capabilities:
+    policy_id: groot_n17
+    robot_types: [dual_scorpion]
+    required_images: [head, right_wrist, left_wrist]
+    state_features: &features
+      - right_joint0.pos
+      - right_joint1.pos
+      - right_joint2.pos
+      - right_joint3.pos
+      - right_joint4.pos
+      - right_joint5.pos
+      - right_joint6.pos
+      - right_gripper.pos
+      - left_joint0.pos
+      - left_joint1.pos
+      - left_joint2.pos
+      - left_joint3.pos
+      - left_joint4.pos
+      - left_joint5.pos
+      - left_joint6.pos
+      - left_gripper.pos
+    state_units: &units
+      right_joint0.pos: deg
+      right_joint1.pos: deg
+      right_joint2.pos: deg
+      right_joint3.pos: deg
+      right_joint4.pos: deg
+      right_joint5.pos: deg
+      right_joint6.pos: deg
+      right_gripper.pos: lerobot_0_100
+      left_joint0.pos: deg
+      left_joint1.pos: deg
+      left_joint2.pos: deg
+      left_joint3.pos: deg
+      left_joint4.pos: deg
+      left_joint5.pos: deg
+      left_joint6.pos: deg
+      left_gripper.pos: lerobot_0_100
+    action_features: *features
+    action_units: *units
+    action_horizon: 16
+    action_representation: absolute_joint_position
+    control_fps: 30
+    requires_task: true
+  options:
+    revision: "493497a87a6c1be6e7fff512b326cf21bd7053fd"
+    device: cuda:0
+    embodiment_tag: NEW_EMBODIMENT
+    images:
+      front: head
+      right_wrist: right_wrist
+      left_wrist: left_wrist
+    state_groups: &groups
+      right_arm: [right_joint0.pos, right_joint1.pos, right_joint2.pos, right_joint3.pos, right_joint4.pos, right_joint5.pos, right_joint6.pos]
+      right_gripper: [right_gripper.pos]
+      left_arm: [left_joint0.pos, left_joint1.pos, left_joint2.pos, left_joint3.pos, left_joint4.pos, left_joint5.pos, left_joint6.pos]
+      left_gripper: [left_gripper.pos]
+    action_groups: *groups
+
+inference:
+  transport: local
+  timeout_s: 120
+  max_response_age_s: 120

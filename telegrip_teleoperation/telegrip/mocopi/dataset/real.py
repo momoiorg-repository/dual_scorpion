@@ -3,6 +3,7 @@
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from threading import Event
 
@@ -18,6 +19,7 @@ from .replay import _file_hash, model_fingerprint
 
 SIDES = ("left", "right")
 JOINTS = tuple(f"joint{i}" for i in range(7))
+CommandGuard = Callable[[int, int, dict[str, np.ndarray], dict[str, np.ndarray]], None]
 
 
 def plan_hash(plan):
@@ -269,6 +271,7 @@ def execute_plan(
     max_sim_orientation_error_deg=None,
     realtime=True,
     stop_event: Event | None = None,
+    before_command: CommandGuard | None = None,
 ):
     """Replay a prevalidated plan; retain partial quantitative results on failure."""
     if not (0 < max_start_error_deg <= 2 and 0 < max_tracking_error_deg <= 5):
@@ -317,13 +320,16 @@ def execute_plan(
     with output.open("x", encoding="utf-8") as file:
         try:
             for side in SIDES:
-                getattr(robot, side + "_bus").connect()
+                bus = getattr(robot, side + "_bus")
+                if not bus.is_connected:
+                    bus.connect()
             if not robot.is_calibrated:
                 raise ValueError("Motor calibration does not match the robot; recalibrate before replay")
             for side in SIDES:
                 bus = getattr(robot, side + "_bus")
                 if any(bus.read("Operating_Mode", name, normalize=False) != 0 for name in JOINTS):
                     raise ValueError(f"{side} motors must be in position mode")
+            feedback_ns = time.monotonic_ns()
             current, first = _read_joints(robot), _joint_map(plan["frames"][0])
             for side in SIDES:
                 arm = simulation.arms[side]
@@ -335,13 +341,24 @@ def execute_plan(
                     raise ValueError(
                         f"{side} robot start pose differs from plan by more than {max_start_error_deg:g} degrees"
                     )
+            def guard(index, desired):
+                if stop_event is not None and stop_event.is_set():
+                    raise RuntimeError("Operator stop requested")
+                if before_command is not None:
+                    before_command(index, feedback_ns, current, desired)
+                    if stop_event is not None and stop_event.is_set():
+                        raise RuntimeError("Operator stop requested")
+
             # First set the present position as the goal, then enable only
             # the seven arm joints. The grippers are never read or written.
             hold_start = {side: current[side].copy() for side in SIDES}
-            robot.send_action(_actions(current))
+            guard(0, current)
             active = True
+            robot.send_action(_actions(current))
             for side in SIDES:
+                guard(0, current)
                 getattr(robot, side + "_bus").enable_torque(list(JOINTS))
+            feedback_ns = time.monotonic_ns()
             hold_measured = _read_joints(robot)
             hold_step = {
                 side: float(np.max(np.abs(hold_measured[side] - hold_start[side])))
@@ -357,12 +374,12 @@ def execute_plan(
                     "Robot moved while enabling the initial position hold: "
                     f"{report['initial_hold']}"
                 )
+            current = hold_measured
             report["status"] = "running"
             start_time = time.monotonic()
             for index, frame in enumerate(plan["frames"]):
-                if stop_event is not None and stop_event.is_set():
-                    raise RuntimeError("Operator stop requested")
                 desired = _joint_map(frame)
+                guard(index, desired)
                 limited = {
                     side: np.clip(desired[side], current[side] - limit, current[side] + limit)
                     for side in SIDES
@@ -370,6 +387,7 @@ def execute_plan(
                 sent = robot.send_action(_actions(limited))
                 if realtime:
                     time.sleep(1 / plan["fps"])
+                feedback_ns = time.monotonic_ns()
                 measured = _read_joints(robot)
                 sample = {
                     "frame": index,

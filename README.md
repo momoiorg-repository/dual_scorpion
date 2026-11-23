@@ -71,7 +71,24 @@ preserves existing motor torque state; playback supports two-stage `--initial-mo
 2-degree start, and 5-degree HOLD limits, and never commands the gripper.
 The 14-joint dataset remains a kinematic simulation source, not encoder data.
 
+## Universal robot policy inference
+
+`robot-policy` runs a checkpoint on a local GPU or authenticated gRPC worker
+and validates the returned joint chunk on the robot host. The CLI defaults
+to dry-run. Use the same NPZ observation and prediction format for offline
+exchange with Colab.
+
+```bash
+uv sync --locked
+uv run --no-sync robot-policy run --config config/robot_policy/mock.yaml
+```
+
+Dual Scorpion, π0.5, and Isaac-GR00T N1.7 setup instructions and hardware-free
+tests are in the [Universal Robot Policy guide](docs/robot_policy/README.md).
+
 ## Contents
+
+- [Universal robot policy inference](#universal-robot-policy-inference)
 - [Highlights](#highlights)
 - [Quickstart](#quickstart)
 - [Parts for Dual Scorpion Leader and Follower](#parts-for-dual-scorpion-leader-and-follower)

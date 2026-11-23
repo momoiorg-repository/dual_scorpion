@@ -317,6 +317,7 @@ lerobot-imgtransform-viz="lerobot.scripts.lerobot_imgtransform_viz:main"
 lerobot-edit-dataset="lerobot.scripts.lerobot_edit_dataset:main"
 lerobot-setup-can="lerobot.scripts.lerobot_setup_can:main"
 lerobot-rollout="lerobot.scripts.lerobot_rollout:main"
+robot-policy="lerobot.remote_policy.cli:main"
 
 # ---------------- Tool Configurations ----------------
 [tool.setuptools.package-data]

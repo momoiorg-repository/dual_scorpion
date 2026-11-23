@@ -943,6 +943,7 @@ class PI05Policy(PreTrainedPolicy):
         local_files_only: bool = False,
         revision: str | None = None,
         strict: bool = True,
+        require_weights: bool = False,
         **kwargs,
     ) -> T:
         """Override the from_pretrained method to handle key remapping and display important disclaimer."""
@@ -994,6 +995,8 @@ class PI05Policy(PreTrainedPolicy):
                 original_state_dict = load_file(resolved_file)
                 print("✓ Loaded state dict from model.safetensors")
             except Exception as e:
+                if require_weights:
+                    raise
                 print(f"Could not load state dict from remote files: {e}")
                 print("Returning model without loading pretrained weights")
                 return model
@@ -1043,6 +1046,8 @@ class PI05Policy(PreTrainedPolicy):
                 print("All keys loaded successfully!")
 
         except Exception as e:
+            if require_weights:
+                raise
             print(f"Warning: Could not load state dict: {e}")
 
         return model

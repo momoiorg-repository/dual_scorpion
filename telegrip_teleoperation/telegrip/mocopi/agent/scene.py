@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -134,6 +135,7 @@ class SceneCollisionChecker:
         if not scene.execution_allowed:
             raise ValueError("measured scene geometry is required before collision checking")
         self.p = p
+        self.client = simulation.viz.physics_client
         self.simulation = simulation
         self.scene = scene
         self.body_ids: list[tuple[str, int]] = []
@@ -144,12 +146,14 @@ class SceneCollisionChecker:
                 shape = p.createCollisionShape(
                     p.GEOM_BOX,
                     halfExtents=np.asarray(obstacle.half_size_m, dtype=float),
+                    physicsClientId=self.client,
                 )
             elif obstacle.shape == "cylinder":
                 shape = p.createCollisionShape(
                     p.GEOM_CYLINDER,
                     radius=float(obstacle.radius_m),
                     height=float(obstacle.length_m),
+                    physicsClientId=self.client,
                 )
             else:
                 raise ValueError(f"unsupported obstacle shape {obstacle.shape!r}")
@@ -158,39 +162,38 @@ class SceneCollisionChecker:
                 baseCollisionShapeIndex=shape,
                 basePosition=np.asarray(obstacle.center_m, dtype=float),
                 baseOrientation=np.asarray(obstacle.rotation_xyzw, dtype=float),
+                physicsClientId=self.client,
             )
             self.body_ids.append((obstacle.name, int(body_id)))
 
     def close(self) -> None:
         for _, body_id in reversed(self.body_ids):
-            self.p.removeBody(body_id)
+            self.p.removeBody(body_id, physicsClientId=self.client)
         self.body_ids.clear()
         for proxy in reversed(self.proxy_bodies):
-            self.p.removeBody(proxy["body_id"])
+            self.p.removeBody(proxy["body_id"], physicsClientId=self.client)
         self.proxy_bodies.clear()
 
-    def check_pose(self, joints: dict[str, np.ndarray]) -> dict[str, Any]:
+    def check_pose(self, joints: dict[str, np.ndarray], *, include_self: bool = False) -> dict[str, Any]:
         contacts: list[dict[str, Any]] = []
         margin = self.scene.collision_margin_m
         for proxy in self.proxy_bodies:
             self._update_proxy(proxy, joints)
-            for obstacle_name, obstacle_body_id in self.body_ids:
-                for point in self.p.getClosestPoints(proxy["body_id"], obstacle_body_id, distance=margin):
-                    distance = float(point[8])
-                    if distance >= margin - 1e-9:
-                        continue
-                    contacts.append(
-                        {
-                            "arm": proxy["arm"],
-                            "segment": proxy["segment"],
-                            "obstacle": obstacle_name,
-                            "distance_m": distance,
-                            "penetrating": distance < 0.0,
-                        }
-                    )
+            for name, body_id in self.body_ids:
+                self._append_contacts(contacts, proxy, name, body_id)
+        if include_self:
+            if {proxy["arm"] for proxy in self.proxy_bodies} != {"left", "right"}:
+                raise ValueError("cannot check self-collision without collision geometry for both arms")
+            for first, second in combinations(self.proxy_bodies, 2):
+                if first["arm"] == second["arm"] and abs(first["segment"] - second["segment"]) <= 1:
+                    continue
+                self._append_contacts(
+                    contacts, first, f"{second['arm']}_segment_{second['segment']}", second["body_id"],
+                )
         return {
             "configured": True,
             "checked": True,
+            "self_checked": include_self,
             "margin_m": margin,
             "count": len(contacts),
             "clearance_violation": bool(contacts),
@@ -198,6 +201,20 @@ class SceneCollisionChecker:
             "min_distance_m": min((item["distance_m"] for item in contacts), default=None),
             "contacts": contacts,
         }
+
+    def _append_contacts(self, contacts: list, proxy: dict, name: str, body_id: int) -> None:
+        margin = self.scene.collision_margin_m
+        for point in self.p.getClosestPoints(
+            proxy["body_id"], body_id, distance=margin, physicsClientId=self.client,
+        ):
+            distance = float(point[8])
+            if not np.isfinite(distance):
+                raise ValueError("collision model returned a non-finite separation")
+            if distance < margin - 1e-9:
+                contacts.append({
+                    "arm": proxy["arm"], "segment": proxy["segment"], "obstacle": name,
+                    "distance_m": distance, "penetrating": distance < 0.0,
+                })
 
     def _create_arm_proxies(self) -> None:
         for side in ("left", "right"):
@@ -214,12 +231,14 @@ class SceneCollisionChecker:
                     self.p.GEOM_CAPSULE,
                     radius=self.scene.arm_collision_radius_m,
                     height=length,
+                    physicsClientId=self.client,
                 )
                 body_id = self.p.createMultiBody(
                     baseMass=0,
                     baseCollisionShapeIndex=shape,
                     basePosition=(start + end) / 2.0,
                     baseOrientation=[0.0, 0.0, 0.0, 1.0],
+                    physicsClientId=self.client,
                 )
                 self.proxy_bodies.append(
                     {
@@ -250,6 +269,7 @@ class SceneCollisionChecker:
             proxy["body_id"],
             ((start + end) / 2.0).tolist(),
             quaternion.tolist(),
+            physicsClientId=self.client,
         )
 
 

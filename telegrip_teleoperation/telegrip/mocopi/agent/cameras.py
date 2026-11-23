@@ -125,16 +125,12 @@ class CameraService:
         self._backends.clear()
 
     def _capture_one(self, camera_id: str) -> CameraFrame:
-        backend = self._backend(camera_id)
-        timestamp, image = backend.read()
-        image = np.asarray(image)
-        if image.ndim != 3 or image.shape[2] < 3:
-            raise ValueError("camera backend must return a 3-channel BGR image")
+        timestamp_ns, image = self._read_array(camera_id)
         encoded = _encode_jpeg(image)
         spec = self.specs[camera_id]
         return CameraFrame(
             camera_id=camera_id,
-            timestamp_monotonic_ns=int(timestamp * 1e9),
+            timestamp_monotonic_ns=timestamp_ns,
             width=int(image.shape[1]),
             height=int(image.shape[0]),
             mime_type="image/jpeg",
@@ -144,6 +140,21 @@ class CameraService:
             source="real_camera_observation",
             properties={"device": spec.device, "configured_fps": spec.fps},
         )
+
+    def read_rgb(self, camera_id: str) -> tuple[int, np.ndarray]:
+        """Read an RGB array and its acquisition time without JPEG compression."""
+        try:
+            timestamp_ns, image = self._read_array(camera_id)
+            return timestamp_ns, np.ascontiguousarray(image[:, :, :3][:, :, ::-1])
+        except Exception as exc:
+            raise CameraError(f"camera {camera_id!r} capture failed: {exc}") from exc
+
+    def _read_array(self, camera_id: str) -> tuple[int, np.ndarray]:
+        timestamp, image = self._backend(camera_id).read()
+        image = np.asarray(image)
+        if image.ndim != 3 or image.shape[2] < 3:
+            raise ValueError("camera backend must return a 3-channel BGR image")
+        return int(timestamp * 1e9), image
 
     def _backend(self, camera_id: str) -> Any:
         if camera_id in self._backends:
