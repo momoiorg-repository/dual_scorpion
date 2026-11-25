@@ -1,22 +1,277 @@
-[
-  {
-    "part": "joint6_R",
-    "matched_holes": 8,
-    "max_reference_error_mm": 4.508722123988577e-08
+{
+  "arms": {
+    "placement_offset_mm": {
+      "R": -75,
+      "L": 75
+    },
+    "native_com_max_delta_mm": 1.1188630228279524e-12,
+    "adjusted_body_count": 12,
+    "joint_origin_max_error_mm": 2.902826139902677e-13,
+    "joint_axis_max_vector_error": 1.420261657436048e-14,
+    "display_angle_max_delta_deg": 0.047979568145251596
   },
-  {
-    "part": "joint6_L",
-    "matched_holes": 8,
-    "max_reference_error_mm": 4.5087235943277785e-08
+  "bodies": {
+    "joint1_R": {
+      "native_com_error_mm": 2.168404344971009e-15,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint0_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint0_horn_opposite_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint1_motor_case_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_new_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_holder_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_motor_case_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint1_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_under_arm_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 1.7763568394002505e-14
+    },
+    "joint3_holder_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 1.7763568394002505e-14
+    },
+    "joint2_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_horn_opposite_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_motor_case_R": {
+      "native_com_error_mm": 2.7755575615628914e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint4_R": {
+      "native_com_error_mm": 5.594315114139762e-14,
+      "native_bounds_shift_error_mm": 1.7763568394002505e-14
+    },
+    "joint3_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_horn_opposite_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint4_motor_case_R": {
+      "native_com_error_mm": 2.7755575615628914e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_new_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_holder_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint4_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_motor_case_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 1.2567866747303924e-08
+    },
+    "joint5_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_horn_opposite_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint6_motor_case_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint6_R": {
+      "native_com_error_mm": 9.575673587391975e-13,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint6_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_motor_case_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_R": {
+      "native_com_error_mm": 1.1188630228279524e-12,
+      "native_bounds_shift_error_mm": 3.552713678800501e-14
+    },
+    "joint8_EE_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_horn_drive_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_horn_opposite_R": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint1_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint0_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint0_horn_opposite_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint1_motor_case_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_new_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_holder_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint1_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_motor_case_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_under_arm_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_holder_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint2_horn_opposite_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_motor_case_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint4_L": {
+      "native_com_error_mm": 1.0408340855860843e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint3_horn_opposite_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint4_motor_case_L": {
+      "native_com_error_mm": 3.98609107286759e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_new_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_holder_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint4_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_motor_case_L": {
+      "native_com_error_mm": 1.3877787807814457e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint5_horn_opposite_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint6_motor_case_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint6_L": {
+      "native_com_error_mm": 1.1102230246251565e-13,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint6_horn_drive_L": {
+      "native_com_error_mm": 6.206335383118183e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_motor_case_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_L": {
+      "native_com_error_mm": 8.777083671441753e-14,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint8_EE_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_horn_drive_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    },
+    "joint7_horn_opposite_L": {
+      "native_com_error_mm": 0.0,
+      "native_bounds_shift_error_mm": 0.0
+    }
   },
-  {
-    "part": "joint7_R",
-    "matched_holes": 4,
-    "max_reference_error_mm": 3.37139567589821e-08
-  },
-  {
-    "part": "joint7_L",
-    "matched_holes": 4,
-    "max_reference_error_mm": 3.37139567589821e-08
-  }
-]
+  "corrected_right_arm_bodies": [
+    "joint2_new_R",
+    "joint2_holder_R",
+    "joint3_under_arm_R",
+    "joint3_holder_R",
+    "joint4_R",
+    "joint5_new_R",
+    "joint5_holder_R",
+    "joint6_R",
+    "joint6_R_miss_joint",
+    "joint7_R",
+    "joint7_R_miss",
+    "joint8_EE_R"
+  ]
+}
