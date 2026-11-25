@@ -6,15 +6,15 @@
     <link name="base_link">
       <pose>0 0 0 0 0 0</pose>
       <inertial>
-        <pose>-0.00146477253362 -0.00146295907219 0.140632336412 0 0 0</pose>
-        <mass>11.4118492484</mass>
+        <pose>-0.00117771623477 -0.00146029484333 0.130378077239 0 0 0</pose>
+        <mass>11.0637891353</mass>
         <inertia>
-          <ixx>0.439686923339</ixx>
-          <iyy>0.519622199308</iyy>
-          <izz>0.101655174286</izz>
-          <ixy>-3.66865066006e-06</ixy>
-          <ixz>0.00258247541657</ixz>
-          <iyz>-0.000360683007114</iyz>
+          <ixx>0.401527599786</ixx>
+          <iyy>0.436504415911</iyy>
+          <izz>0.0566803348046</izz>
+          <ixy>-3.39122367397e-06</ixy>
+          <ixz>0.00151470708523</ixz>
+          <iyz>-0.000370593185649</iyz>
         </inertia>
       </inertial>
       <visual name="base_link_visual">
@@ -1020,9 +1020,9 @@
       </collision>
     </link>
     <link name="r_link_1">
-      <pose>0.239907854944 -0.00154764693297 0.371312491593 0 0 0</pose>
+      <pose>0.164907854944 -0.00154764693297 0.371312491593 0 0 0</pose>
       <inertial>
-        <pose>0.00660014057392 5.22775273054e-05 -0.0391968843532 0 0 0</pose>
+        <pose>0.00660014057392 5.22775273055e-05 -0.0391968843532 0 0 0</pose>
         <mass>0.309338798141</mass>
         <inertia>
           <ixx>7.55702197495e-05</ixx>
@@ -1030,7 +1030,7 @@
           <izz>8.49552278876e-05</izz>
           <ixy>-1.04023392429e-07</ixy>
           <ixz>-1.20847613186e-05</ixz>
-          <iyz>-6.1241766285e-08</iyz>
+          <iyz>-6.12417662849e-08</iyz>
         </inertia>
       </inertial>
       <visual name="r_link_1_visual">
@@ -1271,7 +1271,7 @@
       </collision>
     </link>
     <link name="r_link_2">
-      <pose>0.257449544071 -0.00154764693297 0.310907113031 0 0 0</pose>
+      <pose>0.182449544071 -0.00154764693297 0.310907113031 0 0 0</pose>
       <inertial>
         <pose>0.000262124831934 -0.00357815821928 -0.0426370877555 0 0 0</pose>
         <mass>0.318442421543</mass>
@@ -1279,7 +1279,7 @@
           <ixx>0.00010913955038</ixx>
           <iyy>0.00012361585783</iyy>
           <izz>5.49633861528e-05</izz>
-          <ixy>8.21601829492e-08</ixy>
+          <ixy>8.21601829493e-08</ixy>
           <ixz>-2.29783129229e-07</ixz>
           <iyz>-5.36142350589e-07</iyz>
         </inertia>
@@ -1687,7 +1687,7 @@
       </collision>
     </link>
     <link name="r_link_3">
-      <pose>0.275468560657 -0.00487694056989 0.25052048908 0 0 0</pose>
+      <pose>0.200468560657 -0.00487694056989 0.25052048908 0 0 0</pose>
       <inertial>
         <pose>-0.0160452302436 -0.00314108243969 -0.0986573124988 0 0 0</pose>
         <mass>0.401806654917</mass>
@@ -2118,16 +2118,16 @@
       </collision>
     </link>
     <link name="r_link_4">
-      <pose>0.24189226479 -0.00961638607436 0.116752632263 0 0 0</pose>
+      <pose>0.16689226479 -0.00961638607436 0.116752632263 0 0 0</pose>
       <inertial>
-        <pose>0.00609483584225 0.0391378465432 -8.89000310228e-07 0 0 0</pose>
+        <pose>0.00609483584225 0.0391378465432 -8.89000310186e-07 0 0 0</pose>
         <mass>0.309338866623</mass>
         <inertia>
           <ixx>7.57890197837e-05</ixx>
-          <iyy>8.47482893223e-05</iyy>
+          <iyy>8.47482893224e-05</iyy>
           <izz>0.000127037689027</izz>
           <ixy>1.24180884341e-05</ixy>
-          <ixz>3.48340211847e-07</ixz>
+          <ixz>3.48340211846e-07</ixz>
           <iyz>-4.60621500209e-08</iyz>
         </inertia>
       </inertial>
@@ -2369,7 +2369,7 @@
       </collision>
     </link>
     <link name="r_link_5">
-      <pose>0.259109760049 0.0506336142633 0.116602377458 0 0 0</pose>
+      <pose>0.184109760049 0.0506336142633 0.116602377458 0 0 0</pose>
       <inertial>
         <pose>0.000187294095178 0.0436485282233 -0.00320765516773 0 0 0</pose>
         <mass>0.318442529429</mass>
@@ -2377,9 +2377,9 @@
           <ixx>0.00011278849056</ixx>
           <iyy>5.50493861126e-05</iyy>
           <izz>0.000127196222533</izz>
-          <ixy>7.65142675499e-07</ixy>
+          <ixy>7.65142675497e-07</ixy>
           <ixz>3.78186644029e-07</ixz>
-          <iyz>-1.93984213616e-07</iyz>
+          <iyz>-1.93984213617e-07</iyz>
         </inertia>
       </inertial>
       <visual name="r_link_5_visual">
@@ -2785,7 +2785,7 @@
       </collision>
     </link>
     <link name="r_link_6">
-      <pose>0.276898780365 0.112442833826 0.113422132729 0 0 0</pose>
+      <pose>0.201898780365 0.112442833826 0.113422132729 0 0 0</pose>
       <inertial>
         <pose>-0.00870604118767 0.0389798784941 0.000194386297131 0 0 0</pose>
         <mass>0.309338779172</mass>
@@ -2794,8 +2794,8 @@
           <iyy>8.40119023969e-05</iyy>
           <izz>0.000126470292137</izz>
           <ixy>-1.16799358316e-05</ixy>
-          <ixz>4.72758940431e-07</ixz>
-          <iyz>3.08702350063e-08</iyz>
+          <ixz>4.72758940438e-07</ixz>
+          <iyz>3.08702350097e-08</iyz>
         </inertia>
       </inertial>
       <visual name="r_link_6_visual">
@@ -3036,7 +3036,7 @@
       </collision>
     </link>
     <link name="r_link_7">
-      <pose>0.256637417021 0.17232716487 0.113776448683 0 0 0</pose>
+      <pose>0.181637417021 0.17232716487 0.113776448683 0 0 0</pose>
       <inertial>
         <pose>0.00241841066188 0.0253582868883 0.000145507128788 0 0 0</pose>
         <mass>0.335090800747</mass>
@@ -3046,7 +3046,7 @@
           <izz>0.000137734888488</izz>
           <ixy>1.4312040587e-05</ixy>
           <ixz>1.14152839231e-06</ixz>
-          <iyz>-2.47427573661e-07</iyz>
+          <iyz>-2.47427573665e-07</iyz>
         </inertia>
       </inertial>
       <visual name="r_link_7_visual">
@@ -3272,7 +3272,7 @@
       </collision>
     </link>
     <link name="r_link_8">
-      <pose>0.276641513548 0.197019261603 0.131532343589 0 0 0</pose>
+      <pose>0.201641513548 0.197019261603 0.131532343589 0 0 0</pose>
       <inertial>
         <pose>-0.00128000498891 0.0213696619129 -0.0182334523572 0 0 0</pose>
         <mass>0.0360479390996</mass>
@@ -3508,7 +3508,7 @@
       </collision>
     </link>
     <link name="l_link_1">
-      <pose>-0.239907854944 -0.00154764693297 0.371312491593 0 0 0</pose>
+      <pose>-0.164907854944 -0.00154764693297 0.371312491593 0 0 0</pose>
       <inertial>
         <pose>-0.00660012821099 5.22782078872e-05 -0.0391968800027 0 0 0</pose>
         <mass>0.309338878502</mass>
@@ -3518,7 +3518,7 @@
           <izz>8.49552824696e-05</izz>
           <ixy>1.04013951343e-07</ixy>
           <ixz>1.20846422614e-05</ixz>
-          <iyz>-6.12436388077e-08</iyz>
+          <iyz>-6.12436388076e-08</iyz>
         </inertia>
       </inertial>
       <visual name="l_link_1_visual">
@@ -3759,7 +3759,7 @@
       </collision>
     </link>
     <link name="l_link_2">
-      <pose>-0.257449544071 -0.00154764693297 0.310907113031 0 0 0</pose>
+      <pose>-0.182449544071 -0.00154764693297 0.310907113031 0 0 0</pose>
       <inertial>
         <pose>-0.000262125312398 -0.00357815752065 -0.0426370876369 0 0 0</pose>
         <mass>0.3184423944</mass>
@@ -3767,7 +3767,7 @@
           <ixx>0.00010913954298</ixx>
           <iyy>0.000123615842759</iyy>
           <izz>5.49633730227e-05</izz>
-          <ixy>-8.21645190237e-08</ixy>
+          <ixy>-8.21645190238e-08</ixy>
           <ixz>2.29789507231e-07</ixz>
           <iyz>-5.36143825971e-07</iyz>
         </inertia>
@@ -4175,7 +4175,7 @@
       </collision>
     </link>
     <link name="l_link_3">
-      <pose>-0.275468560657 -0.00487694056989 0.25052048908 0 0 0</pose>
+      <pose>-0.200468560657 -0.00487694056989 0.25052048908 0 0 0</pose>
       <inertial>
         <pose>0.016045226142 -0.00314108342507 -0.0986573269758 0 0 0</pose>
         <mass>0.40180657075</mass>
@@ -4184,7 +4184,7 @@
           <iyy>0.000659036545</iyy>
           <izz>9.38322278165e-05</izz>
           <ixy>-2.31063094551e-07</ixy>
-          <ixz>-5.68712160021e-06</ixz>
+          <ixz>-5.68712160022e-06</ixz>
           <iyz>-2.74669875434e-05</iyz>
         </inertia>
       </inertial>
@@ -4606,17 +4606,17 @@
       </collision>
     </link>
     <link name="l_link_4">
-      <pose>-0.24189226479 -0.00961638607436 0.116752632263 0 0 0</pose>
+      <pose>-0.16689226479 -0.00961638607436 0.116752632263 0 0 0</pose>
       <inertial>
-        <pose>-0.00609482794162 0.0391378503575 -8.8881483358e-07 0 0 0</pose>
+        <pose>-0.00609482794162 0.0391378503575 -8.88814833636e-07 0 0 0</pose>
         <mass>0.30933887239</mass>
         <inertia>
           <ixx>7.57889530711e-05</ixx>
           <iyy>8.47483387149e-05</iyy>
           <izz>0.000127037650964</izz>
           <ixy>-1.24180242031e-05</ixy>
-          <ixz>-3.48330985191e-07</ixz>
-          <iyz>-4.60678930472e-08</iyz>
+          <ixz>-3.48330985188e-07</ixz>
+          <iyz>-4.60678930478e-08</iyz>
         </inertia>
       </inertial>
       <visual name="l_link_4_visual">
@@ -4857,7 +4857,7 @@
       </collision>
     </link>
     <link name="l_link_5">
-      <pose>-0.259109760049 0.0506336142633 0.116602377458 0 0 0</pose>
+      <pose>-0.184109760049 0.0506336142633 0.116602377458 0 0 0</pose>
       <inertial>
         <pose>-0.00018729410637 0.0436486036633 -0.00320765444157 0 0 0</pose>
         <mass>0.318442498231</mass>
@@ -4867,7 +4867,7 @@
           <izz>0.000127194463954</izz>
           <ixy>-7.64654042061e-07</ixy>
           <ixz>-3.78190191368e-07</ixz>
-          <iyz>-1.93577274906e-07</iyz>
+          <iyz>-1.93577274905e-07</iyz>
         </inertia>
       </inertial>
       <visual name="l_link_5_visual">
@@ -5273,17 +5273,17 @@
       </collision>
     </link>
     <link name="l_link_6">
-      <pose>-0.276898780365 0.112442833826 0.113422132729 0 0 0</pose>
+      <pose>-0.201898780365 0.112442833826 0.113422132729 0 0 0</pose>
       <inertial>
         <pose>0.00870603036812 0.0389798802711 0.000194385202946 0 0 0</pose>
         <mass>0.30933880955</mass>
         <inertia>
           <ixx>7.59666796647e-05</ixx>
-          <iyy>8.40119126135e-05</iyy>
+          <iyy>8.40119126134e-05</iyy>
           <izz>0.000126470231034</izz>
           <ixy>1.16798464679e-05</ixy>
-          <ixz>-4.72765501931e-07</ixz>
-          <iyz>3.08680085928e-08</iyz>
+          <ixz>-4.72765501932e-07</ixz>
+          <iyz>3.08680085936e-08</iyz>
         </inertia>
       </inertial>
       <visual name="l_link_6_visual">
@@ -5524,7 +5524,7 @@
       </collision>
     </link>
     <link name="l_link_7">
-      <pose>-0.256637417021 0.17232716487 0.113776448683 0 0 0</pose>
+      <pose>-0.181637417021 0.17232716487 0.113776448683 0 0 0</pose>
       <inertial>
         <pose>-0.00241841022276 0.0253582869665 0.000145506456763 0 0 0</pose>
         <mass>0.335090793441</mass>
@@ -5760,7 +5760,7 @@
       </collision>
     </link>
     <link name="l_link_8">
-      <pose>-0.276641513548 0.197019261603 0.131532343589 0 0 0</pose>
+      <pose>-0.201641513548 0.197019261603 0.131532343589 0 0 0</pose>
       <inertial>
         <pose>0.00128000495986 0.0213696612456 -0.0182334523841 0 0 0</pose>
         <mass>0.0360479400407</mass>
@@ -6004,7 +6004,7 @@
       <child>r_link_1</child>
       <pose relative_to="r_link_1">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.999961923064 1.38777878078e-16 0.00872653549837</xyz>
+        <xyz expressed_in="__model__">-0.999961923064 1.32169450199e-16 0.00872653549836</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6026,7 +6026,7 @@
       <child>r_link_2</child>
       <pose relative_to="r_link_2">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.00872653549848 -1.51962042634e-16 -0.999961923064</xyz>
+        <xyz expressed_in="__model__">-0.00872653549848 -2.27963866515e-16 -0.999961923064</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6048,7 +6048,7 @@
       <child>r_link_3</child>
       <pose relative_to="r_link_3">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">0.999961923064 -1.92542579126e-16 0.00872653549837</xyz>
+        <xyz expressed_in="__model__">0.999961923064 -2.27963866515e-16 0.00872653549838</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6070,7 +6070,7 @@
       <child>r_link_4</child>
       <pose relative_to="r_link_4">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.999961923064 3.15002595961e-16 0.00872653549837</xyz>
+        <xyz expressed_in="__model__">-0.999961923064 5.28677800797e-16 0.00872653549837</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6092,7 +6092,7 @@
       <child>r_link_5</child>
       <pose relative_to="r_link_5">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-1.09327578933e-13 1 6.79656908448e-16</xyz>
+        <xyz expressed_in="__model__">-1.18423827378e-13 1 0</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6114,7 +6114,7 @@
       <child>r_link_6</child>
       <pose relative_to="r_link_6">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">0.999847415341 -1.73656827661e-05 -0.0174684210575</xyz>
+        <xyz expressed_in="__model__">0.999847415341 -1.73656827615e-05 -0.0174684210575</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6136,7 +6136,7 @@
       <child>r_link_7</child>
       <pose relative_to="r_link_7">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.0174150226804 0.999848300699 0.000304259384802</xyz>
+        <xyz expressed_in="__model__">-0.0174150226804 0.999848300699 0.000304259384805</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6158,7 +6158,7 @@
       <child>r_link_8</child>
       <pose relative_to="r_link_8">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">0.00872653549837 5.23821176237e-17 0.999961923064</xyz>
+        <xyz expressed_in="__model__">0.00872653549838 0 0.999961923064</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6180,7 +6180,7 @@
       <child>l_link_1</child>
       <pose relative_to="l_link_1">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.999961923064 -7.0082562291e-17 -0.00872653549837</xyz>
+        <xyz expressed_in="__model__">-0.999961923064 -1.13981933258e-16 -0.00872653549838</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6202,7 +6202,7 @@
       <child>l_link_2</child>
       <pose relative_to="l_link_2">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.00872653549848 1.51962042634e-16 0.999961923064</xyz>
+        <xyz expressed_in="__model__">-0.00872653549848 1.32169450199e-16 0.999961923064</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6224,7 +6224,7 @@
       <child>l_link_3</child>
       <pose relative_to="l_link_3">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">0.999961923064 1.92542579126e-16 -0.00872653549837</xyz>
+        <xyz expressed_in="__model__">0.999961923064 2.64338900398e-16 -0.00872653549838</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6246,7 +6246,7 @@
       <child>l_link_4</child>
       <pose relative_to="l_link_4">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.999961923064 -3.15002595961e-16 -0.00872653549837</xyz>
+        <xyz expressed_in="__model__">-0.999961923064 -4.55927733031e-16 -0.00872653549837</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6268,7 +6268,7 @@
       <child>l_link_5</child>
       <pose relative_to="l_link_5">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-1.09327578933e-13 -1 -6.79656908448e-16</xyz>
+        <xyz expressed_in="__model__">-1.18423827378e-13 -1 0</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6312,7 +6312,7 @@
       <child>l_link_7</child>
       <pose relative_to="l_link_7">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">-0.0174150226804 -0.999848300699 -0.000304259384802</xyz>
+        <xyz expressed_in="__model__">-0.0174150226804 -0.999848300699 -0.000304259384801</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
@@ -6334,7 +6334,7 @@
       <child>l_link_8</child>
       <pose relative_to="l_link_8">0 0 0 0 0 0</pose>
       <axis>
-        <xyz expressed_in="__model__">0.00872653549837 -5.23821176237e-17 -0.999961923064</xyz>
+        <xyz expressed_in="__model__">0.00872653549838 0 -0.999961923064</xyz>
         <limit>
           <effort>1</effort>
           <velocity>2</velocity>
