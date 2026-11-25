@@ -40,6 +40,8 @@ commands.
 
 - The model consists of a fixed `base_link`, right-arm links `r_link_1` to
   `r_link_8`, and left-arm links `l_link_1` to `l_link_8`.
+- The upper crossbar is 300 mm long. The shoulder joint centers are at
+  X = ±164.908 mm, 329.816 mm apart.
 - Mesh coordinates and model units are in meters.
 - `neutral` sets all joint coordinates to zero. Captured-pose data is provided
   for comparison and is not a calibrated home position.
