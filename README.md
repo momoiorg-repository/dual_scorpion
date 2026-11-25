@@ -86,10 +86,9 @@ In Japan, these frame parts were purchased at a local home center, but they are 
 For the current setup, the approximate dimensions are:
 
 - Body/frame rod height: about 60 cm
-- Setup width: about 30–45 cm
-- Recommended width: 45 cm
 
-These dimensions are still approximate and can be adjusted depending on the build.
+You can choose the upper crossbar length to suit your preferred shoulder spacing.
+The included URDF uses a **300 mm (30 cm)** upper crossbar, which is the recommended length.
 
 ### Notes
 
