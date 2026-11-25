@@ -8,8 +8,8 @@
     },
     {
       "body": "body",
-      "source_triangles": 2274,
-      "triangles": 2274,
+      "source_triangles": 2196,
+      "triangles": 2196,
       "source": "Fusion STL ExportManager High; no additional visual simplification"
     },
     {
@@ -423,5 +423,5 @@
   ],
   "collision_method": "CoACD compound convex decomposition for each bracket; convex hulls for enclosed motor parts; left and right are generated independently",
   "collision_parts": 370,
-  "seconds": 183.68936610221863
+  "seconds": 224.70416498184204
 }
