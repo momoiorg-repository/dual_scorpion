@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+project(scorpion_description)
+find_package(ament_cmake REQUIRED)
+install(DIRECTORY meshes launch DESTINATION share/${PROJECT_NAME})
+install(FILES scorpion_ros.urdf scorpion.urdf scorpion.srdf collision_config.json initial_state.json DESTINATION share/${PROJECT_NAME})
+ament_package()

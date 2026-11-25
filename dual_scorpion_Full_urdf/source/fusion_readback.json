@@ -1,0 +1,10 @@
+{
+  "document": "scorpion v13",
+  "version": 13,
+  "modified": false,
+  "file_id": "urn:adsk.wipprod:dm.lineage:PEVI5bvCTtWMlcWnoctxng",
+  "healthy_as_built_joints": 16,
+  "native_body_stl_files": 70,
+  "crossbar_mm": 300,
+  "shoulder_distance_mm": 329.8157098881637
+}

@@ -1,0 +1,44 @@
+{
+  "source": "scorpion v13",
+  "links": 17,
+  "joints": 16,
+  "crossbar_cad_mm": 300,
+  "crossbar_stl_mm": 300.0,
+  "shoulder_distance_mm": 329.8157098881637,
+  "checks": {
+    "urdf_resolved_mesh_counts": {
+      "urdf/scorpion.urdf": 387,
+      "urdf/scorpion_ros.urdf": 387,
+      "genesis/scorpion.urdf": 387
+    },
+    "sdf_resolved_mesh_count": 387,
+    "usd_layers": [
+      "scorpion.usda",
+      "scorpion.usd",
+      "scorpion_current_pose.usda"
+    ],
+    "mujoco_kinematics": {
+      "compiled": true,
+      "joints": 16,
+      "kinematic_poses": {
+        "neutral": {
+          "max_link_origin_error_m": 2.300937218535637e-13,
+          "max_rotation_matrix_error": 0.0,
+          "contacts_over_0_01_mm": []
+        },
+        "fusion_current": {
+          "max_link_origin_error_m": 2.300937218535637e-13,
+          "max_rotation_matrix_error": 1.0824674490095276e-13,
+          "contacts_over_0_01_mm": []
+        }
+      },
+      "dynamics_steps": 0
+    }
+  },
+  "runtime_not_tested": [
+    "Genesis",
+    "Isaac Sim",
+    "Gazebo Sim"
+  ],
+  "hardware_tested": false
+}

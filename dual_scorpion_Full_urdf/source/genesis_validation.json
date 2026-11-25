@@ -1,0 +1,8 @@
+{
+  "engine": "Genesis",
+  "source": "scorpion v13",
+  "runtime_tested": false,
+  "urdf_and_mesh_references_validated": true,
+  "links": 17,
+  "joints": 16
+}
