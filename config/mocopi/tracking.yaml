@@ -65,9 +65,10 @@ robot:
   # Replaying human motion starts from the neutral model pose instead of the
   # table-clearance home posture.
   retarget_start_pose: neutral
-  # Native full CAD model. Joint 7 on each side is the gripper and remains fixed.
+  # Full CAD model with the 300 mm crossbar. FK and IK take the shoulder positions from this MJCF.
+  # Joint 7 on each side is the gripper and remains fixed.
   mujoco_full_model: ../../dual_scorpion_Full_urdf/mujoco/scorpion.xml
-  # CAD visuals/meshes from the full assembly; FK/IK use the corrected per-arm trees below.
+  # Optional assembly visuals for the legacy per-arm backend.
   visual_urdf: ../../DS_URDF_IK/assembly_1/urdf/assembly_1.urdf
   # Relative to THIS yaml file, not the shell working directory.
   urdf:

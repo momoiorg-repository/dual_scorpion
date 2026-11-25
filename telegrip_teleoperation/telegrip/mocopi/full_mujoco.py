@@ -193,11 +193,18 @@ class FullModelIK:
                     residual = [position - target_position]
                     jac = [jp]
                     if use_orientation:
-                        residual.append(
-                            self.orientation_weight
-                            * Rotation.from_matrix(rotation @ desired_rotation.T).as_rotvec()
+                        rotation_error = Rotation.from_matrix(rotation @ desired_rotation.T).as_rotvec()
+                        x, y, z = rotation_error
+                        skew = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+                        angle = np.linalg.norm(rotation_error)
+                        half_angle = angle / 2
+                        quadratic = (
+                            1.0 / 12.0 if angle < 1e-4 else (1.0 - half_angle / np.tan(half_angle)) / angle**2
                         )
-                        jac.append(self.orientation_weight * jr)
+                        # Differentiate the rotation logarithm in world coordinates.
+                        rotation_jacobian = (np.eye(3) - 0.5 * skew + quadratic * (skew @ skew)) @ jr
+                        residual.append(self.orientation_weight * rotation_error)
+                        jac.append(self.orientation_weight * rotation_jacobian)
                     # Favor a nearby solution in the redundant arm.
                     residual.append(0.002 * (values - initial))
                     jac.append(0.002 * np.eye(7))
