@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import math
 import time
 from pathlib import Path
@@ -184,9 +185,16 @@ class DualScorpionAdapter:
                 # RealRobotAdapter.connect opens the buses and checks their IDs. It does not call
                 # DualScorpionFollower.connect, which configures the motors or can run calibration.
                 hardware.connect()
+            # Capture independent cameras concurrently to reduce timestamp skew.
             images, captured_at = {}, {}
-            for name, camera_id in self._camera_ids.items():
-                captured_at[name], images[name] = harness.cameras.read_rgb(camera_id)
+            with ThreadPoolExecutor(max_workers=len(self._camera_ids)) as pool:
+                futures = {
+                    name: pool.submit(harness.cameras.read_rgb, camera_id)
+                    for name, camera_id in self._camera_ids.items()
+                }
+                for name, future in futures.items():
+                    captured_at[name], images[name] = future.result()
+
             reading = hardware.read()
             observation = RobotObservation(
                 hardware.robot_id,
