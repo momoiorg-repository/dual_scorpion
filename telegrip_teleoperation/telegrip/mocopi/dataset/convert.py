@@ -42,6 +42,7 @@ def convert_sessions(
     """
     import cv2
 
+    from lerobot.configs.video import RGBEncoderConfig
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     if not inputs or not repo_id.strip():
@@ -112,7 +113,7 @@ def convert_sessions(
         root=root,
         robot_type="human_mocopi",
         use_videos=True,
-        vcodec="h264",
+        rgb_encoder=RGBEncoderConfig(vcodec="h264"),
         image_writer_threads=2,
     )
     manifest = {

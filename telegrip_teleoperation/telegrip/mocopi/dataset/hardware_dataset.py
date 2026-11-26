@@ -3766,6 +3766,7 @@ def export_ft_dataset(
     gripper entries (16-dim follower format) and aliasing the camera key without
     mutating the source dataset or claiming physical gripper capture.
     """
+    from lerobot.configs.video import RGBEncoderConfig
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     source_root = Path(dataset_path).resolve()
@@ -3891,7 +3892,7 @@ def export_ft_dataset(
         root=output_root,
         robot_type="dual_scorpion_follower",
         use_videos=True,
-        vcodec="h264",
+        rgb_encoder=RGBEncoderConfig(vcodec="h264"),
         image_writer_threads=2,
     )
     exported_episodes = []
