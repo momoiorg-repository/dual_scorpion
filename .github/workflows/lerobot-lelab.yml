@@ -1,0 +1,149 @@
+name: LeRobot and LeLab
+
+on:
+  push:
+    branches: [feat/lerobot-upgrade-lelab]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      python: ${{ steps.paths.outputs.python }}
+      frontend: ${{ steps.paths.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          python=false
+          frontend=false
+          if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            python=true
+            frontend=true
+          else
+            git diff --name-only --no-renames -z "$BASE" "$HEAD_SHA" > "$RUNNER_TEMP/changed-paths"
+            while IFS= read -r -d '' file; do
+              case "$file" in
+                src/*|pyproject.toml|uv.lock|.github/workflows/*|.gitattributes|lelab/pyproject.toml|lelab/setup.py)
+                  python=true
+                  frontend=true
+                  ;;
+                lelab/frontend/*)
+                  frontend=true
+                  ;;
+                lelab/lelab/*|lelab/tests/*|tests/*|telegrip_teleoperation/*|config/*|dual_scorpion_Full_urdf/*|setup.py|MANIFEST.in)
+                  python=true
+                  ;;
+              esac
+            done < "$RUNNER_TEMP/changed-paths"
+          fi
+          {
+            echo "python=$python"
+            echo "frontend=$frontend"
+          } >> "$GITHUB_OUTPUT"
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      HF_HUB_OFFLINE: "1"
+      LEROBOT_TEST_DEVICE: cpu
+      MUJOCO_GL: egl
+      OMP_NUM_THREADS: "2"
+      PYNPUT_BACKEND: dummy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch browser meshes
+        run: git lfs pull --include="dual_scorpion_Full_urdf/urdf/meshes/visual/*.stl"
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg libegl1 libgl1 libglib2.0-0t64
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: "0.12.23"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Sync the workspace with CPU wheels
+        run: >-
+          uv sync --locked --all-packages --extra cpu --extra mocopi --extra test
+          --extra grpcio-dep --extra pi --extra lelab-test
+      - name: Verify Python dependencies
+        run: uv pip check
+      - name: Test LeRobot and Scorpion
+        run: >-
+          uv run --no-sync pytest -q --timeout=120
+          tests/datasets/test_dataset_metadata.py
+          tests/datasets/test_dataset_writer.py
+          tests/motors/test_feetech.py
+          tests/processor/test_normalize_processor.py
+          tests/robots/test_dual_scorpion_follower.py
+          tests/teleoperators/test_dual_scorpion_leader.py
+          tests/teleoperators/test_mocopi*.py
+          tests/teleoperators/test_agent_harness.py
+          tests/remote_policy
+          tests/scripts/test_dual_scorpion_cli_registration.py
+      - name: Test LeLab and the shared LeRobot CLI
+        working-directory: lelab
+        run: uv run --no-sync pytest -q --timeout=120 tests
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: lelab/frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.4"
+          cache: npm
+          cache-dependency-path: lelab/frontend/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit
+      - run: npm exec -- tsc --noEmit -p tsconfig.app.json
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  integration-checks:
+    name: Integration checks
+    if: always()
+    needs: [changes, python, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          PYTHON_RESULT: ${{ needs.python.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+        shell: bash
+        run: |
+          [[ "$CHANGES" == success ]]
+          [[ "$PYTHON_RESULT" =~ ^(success|skipped)$ ]]
+          [[ "$FRONTEND_RESULT" =~ ^(success|skipped)$ ]]
