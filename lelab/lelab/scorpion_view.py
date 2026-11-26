@@ -11,8 +11,20 @@ def supports_verified_view_mapping() -> bool:
     return (mocopi / "dataset/hardware_dataset.py").is_file()
 
 
+def list_view_mappings() -> list[str]:
+    """Return available Scorpion hardware mapping YAML filenames."""
+    mapping_dir = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware"
+    if not mapping_dir.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in mapping_dir.iterdir()
+        if path.is_file() and path.suffix in {".yaml", ".yml"}
+    )
+
+
 def read_view_mapping(filename, robot):
-    """Load a verified Full CAD mapping and optional measured gripper endpoints."""
+    """Load a verified or partial Full CAD mapping and optional measured gripper endpoints."""
     if not filename or not supports_verified_view_mapping():
         return {}
     if Path(filename).name != filename or Path(filename).suffix not in {".yaml", ".yml"}:
@@ -20,7 +32,11 @@ def read_view_mapping(filename, robot):
 
     import yaml
     from telegrip.mocopi.dataset.fingerprint import file_sha256
-    from telegrip.mocopi.dataset.hardware_dataset import validate_mapping_for_robot
+    from telegrip.mocopi.dataset.hardware_dataset import (
+        calibration_sha256,
+        validate_mapping_document,
+        validate_mapping_for_robot,
+    )
 
     path = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware" / filename
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -28,7 +44,16 @@ def read_view_mapping(filename, robot):
         SCORPION_MODEL_DIR / "mujoco/scorpion.xml"
     ):
         raise ValueError("Mapping MuJoCo model hash differs from the selected model or is missing")
-    validate_mapping_for_robot(document, robot)
+    if document.get("verified") is True:
+        validate_mapping_for_robot(document, robot)
+    else:
+        validate_mapping_document(document, require_verified=False, allow_calibration_assumed=True)
+        if document.get("robot_id") != robot.id:
+            raise ValueError(
+                f"Mapping robot_id {document.get('robot_id')!r} does not match robot {robot.id!r}"
+            )
+        if document.get("calibration_sha256") != calibration_sha256(robot):
+            raise ValueError("Mapping calibration hash differs from the current robot calibration")
     return document
 
 
@@ -40,6 +65,8 @@ def scorpion_joint_frame(positions, mapping):
             continue
         arm = mapping["sides"][side]
         for i, (sign, offset) in enumerate(zip(arm["sign"], arm["offset_deg"], strict=True)):
+            if sign not in (-1, 1) or type(offset) not in (int, float) or not math.isfinite(offset):
+                continue
             value = positions.get(f"{side}_joint{i}.pos")
             if value is not None and math.isfinite(value):
                 angles[f"joint{i}_{suffix}"] = math.radians((value - offset) / sign)

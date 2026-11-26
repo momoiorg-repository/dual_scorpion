@@ -75,7 +75,15 @@ from .rollout import (
     handle_start_inference,
     handle_stop_inference,
 )
-from .scorpion_view import SCORPION_MODEL_DIR, supports_verified_view_mapping
+from .scorpion_mapping import (
+    MappingSaveRequest,
+    MappingStartRequest,
+    read_mapping_positions,
+    save_mapping_from_wizard,
+    start_mapping_session,
+    stop_mapping_session,
+)
+from .scorpion_view import SCORPION_MODEL_DIR, list_view_mappings, supports_verified_view_mapping
 
 # Import our custom teleoperation functionality
 from .teleoperate import (
@@ -538,6 +546,32 @@ def dataset_scorpion_joints(repo_id: str, episode_index: int, robot_name: str | 
         return {"frames": recorded_joint_frames(repo_id, episode_index, robot_name)}
     except (ValueError, DatasetNotFoundError, EpisodeNotFoundError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/scorpion-view-mappings")
+def scorpion_view_mappings():
+    """List available Scorpion hardware mapping YAML files."""
+    return {"mappings": list_view_mappings()}
+
+
+@app.post("/scorpion-mapping/start")
+def scorpion_mapping_start(request: MappingStartRequest):
+    return start_mapping_session(request)
+
+
+@app.get("/scorpion-mapping/positions")
+def scorpion_mapping_positions():
+    return read_mapping_positions()
+
+
+@app.post("/scorpion-mapping/stop")
+def scorpion_mapping_stop():
+    return stop_mapping_session()
+
+
+@app.post("/scorpion-mapping/save")
+def scorpion_mapping_save(request: MappingSaveRequest):
+    return save_mapping_from_wizard(request)
 
 
 @app.get("/dataset-thumbnails")
@@ -1507,6 +1541,7 @@ async def shutdown_event():
     handle_stop_teleoperation()
     handle_stop_replay()
     handle_stop_inference()
+    stop_mapping_session()
     calibration_manager.stop_calibration_process()
 
     if manager:

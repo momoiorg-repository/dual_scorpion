@@ -61,7 +61,7 @@ def handle_start_replay(request: ReplayRequest, websocket_manager=None) -> dict[
     then send the episode's actions at the recording's rate in the background."""
     global replay_active, replay_thread, replay_error
 
-    from . import record as _record, rollout as _rollout, teleoperate as _teleoperate
+    from . import record as _record, rollout as _rollout, scorpion_mapping as _mapping, teleoperate as _teleoperate
     from .calibrate import calibration_manager
 
     with follower_lock:
@@ -75,6 +75,8 @@ def handle_start_replay(request: ReplayRequest, websocket_manager=None) -> dict[
             return {"success": False, "message": "Teleoperation is currently active. Stop it first."}
         if _rollout.inference_active:
             return {"success": False, "message": "Inference is currently active. Stop it first."}
+        if _mapping.mapping_active:
+            return {"success": False, "message": "Mapping session is currently active. Stop it first."}
         replay_active = True
         replay_error = None
         _stop.clear()

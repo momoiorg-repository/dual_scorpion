@@ -257,6 +257,9 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
             return {"success": False, "message": "Inference is currently active. Stop it first."}
         if _replay.replay_active:
             return {"success": False, "message": "Replay is currently active. Stop it first."}
+        from . import scorpion_mapping as _mapping
+        if _mapping.mapping_active:
+            return {"success": False, "message": "Mapping session is currently active. Stop it first."}
         recording_active = True
         recording_thread = None
         recording_events = None

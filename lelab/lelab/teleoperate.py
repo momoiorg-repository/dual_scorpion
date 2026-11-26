@@ -119,7 +119,7 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
     global teleoperation_active, teleoperation_thread, current_robot, current_teleop, latest_joint_frame
     global teleoperation_starting
 
-    from . import record as _record, replay as _replay, rollout as _rollout
+    from . import record as _record, replay as _replay, rollout as _rollout, scorpion_mapping as _mapping
     from .calibrate import calibration_manager
 
     with follower_lock:
@@ -133,6 +133,8 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
             return {"success": False, "message": "Inference is currently active. Stop it first."}
         if _replay.replay_active:
             return {"success": False, "message": "Replay is currently active. Stop it first."}
+        if _mapping.mapping_active:
+            return {"success": False, "message": "Mapping session is currently active. Stop it first."}
         teleoperation_active = True
         teleoperation_starting = True
 

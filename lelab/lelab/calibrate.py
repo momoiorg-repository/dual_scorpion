@@ -161,13 +161,14 @@ class CalibrationManager:
 
     def start_calibration(self, request: CalibrationRequest) -> dict[str, Any]:
         """Start calibration while holding the same mutex as motor operations."""
-        from . import record, replay, rollout, teleoperate
+        from . import record, replay, rollout, scorpion_mapping, teleoperate
 
         with follower_lock:
             if (
                 record.recording_active
                 or replay.replay_active
                 or rollout.inference_active
+                or scorpion_mapping.mapping_active
                 or teleoperate.teleoperation_busy()
             ):
                 return {"success": False, "message": "Stop the current robot operation before calibrating."}

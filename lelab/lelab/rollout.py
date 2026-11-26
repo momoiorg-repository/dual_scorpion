@@ -324,6 +324,13 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
                 "status_code": 409,
                 "message": "Replay is currently active. Stop it first.",
             }
+        from . import scorpion_mapping as _mapping
+        if _mapping.mapping_active:
+            return {
+                "success": False,
+                "status_code": 409,
+                "message": "Mapping session is currently active. Stop it first.",
+            }
         if inference_active:
             return {
                 "success": False,

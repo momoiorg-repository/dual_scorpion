@@ -44,6 +44,7 @@ import { isMotorRangeComplete } from "@/lib/calibrationTargets";
 import CameraConfiguration from "@/components/recording/CameraConfiguration";
 import { CameraConfig, loadCameraConfigs, cameraConfigurationError } from "@/lib/cameraConfig";
 import { filterSelectableSerialPorts } from "@/lib/serialPorts";
+import { ScorpionMappingWizardModal } from "@/components/calibration/ScorpionMappingWizardModal";
 
 import { type RobotModel, type RobotRecord, scorpionPortFields } from "@/hooks/useRobots";
 
@@ -91,6 +92,8 @@ const Calibration = () => {
   const [port, setPort] = useState<string>("");
   const [robot, setRobot] = useState<RobotRecord | null>(null);
   const [detectedPorts, setDetectedPorts] = useState<string[]>([]);
+  const [availableMappings, setAvailableMappings] = useState<string[]>([]);
+  const [showMappingWizard, setShowMappingWizard] = useState(false);
   const selectablePorts = useMemo(
     () => filterSelectableSerialPorts(detectedPorts),
     [detectedPorts]
@@ -130,10 +133,24 @@ const Calibration = () => {
     }
   }, [baseUrl, fetchWithHeaders, toast]);
 
+  const refreshViewMappings = useCallback(async () => {
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/scorpion-view-mappings`);
+      if (!response.ok) return;
+      const data = await response.json();
+      setAvailableMappings(Array.isArray(data.mappings) ? data.mappings : []);
+    } catch {
+      /* optional endpoint */
+    }
+  }, [baseUrl, fetchWithHeaders]);
+
   useEffect(() => {
     if (!dualScorpion) return;
     void scanSerialPorts(true);
-  }, [dualScorpion, scanSerialPorts]);
+    if (robot?.verified_urdf_mapping_available) {
+      void refreshViewMappings();
+    }
+  }, [dualScorpion, robot?.verified_urdf_mapping_available, scanSerialPorts, refreshViewMappings]);
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
   // Off by default so merely opening the calibration page never grabs a camera.
   // The user explicitly starts a scan, which is when cameras are turned on,
@@ -817,17 +834,57 @@ const Calibration = () => {
                     })}
                   </div>
                   {robot.verified_urdf_mapping_available && (
-                    <>
-                      <Label htmlFor="scorpion-view-mapping">Verified URDF mapping (optional)</Label>
-                      <Input
-                        id="scorpion-view-mapping"
-                        placeholder="Mapping YAML filename"
-                        value={robot.view_mapping ?? ""}
-                        onChange={(event) => setRobot({ ...robot, view_mapping: event.target.value })}
-                        onBlur={(event) => updateRobot({ view_mapping: event.target.value.trim() })}
-                        className="border-slate-600 bg-slate-700 text-white"
-                      />
-                    </>
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="scorpion-view-mapping">Verified URDF mapping (optional)</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            calibrationStatus.calibration_active ||
+                            !robot.follower_left_port ||
+                            !robot.follower_right_port ||
+                            !robot.follower_config
+                          }
+                          onClick={() => setShowMappingWizard(true)}
+                          className="h-7 border-sky-700 bg-sky-950/50 text-xs text-sky-300 hover:bg-sky-900/60 hover:text-sky-200"
+                        >
+                          3D Mapping Wizard (CAD知識不要)
+                        </Button>
+                      </div>
+                      <Select
+                        value={robot.view_mapping ? robot.view_mapping : "__none__"}
+                        onValueChange={(value) => {
+                          const next = value === "__none__" ? "" : value;
+                          setRobot((prev) => (prev ? { ...prev, view_mapping: next } : prev));
+                          void updateRobot({ view_mapping: next });
+                        }}
+                        disabled={calibrationStatus.calibration_active}
+                      >
+                        <SelectTrigger
+                          id="scorpion-view-mapping"
+                          className="border-slate-600 bg-slate-700 text-white"
+                        >
+                          <SelectValue placeholder="None (Visual Preview)" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                          <SelectItem value="__none__" className="hover:bg-slate-700">
+                            None (Visual Preview)
+                          </SelectItem>
+                          {Array.from(
+                            new Set([
+                              ...availableMappings,
+                              ...(robot.view_mapping ? [robot.view_mapping] : []),
+                            ])
+                          ).map((file) => (
+                            <SelectItem key={file} value={file} className="font-mono text-xs hover:bg-slate-700">
+                              {file}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -1260,6 +1317,19 @@ const Calibration = () => {
         skipLegacySave={Boolean(detectionTargetField)}
         onPortDetected={handlePortDetected}
       />
+
+      {dualScorpion && robot && (
+        <ScorpionMappingWizardModal
+          open={showMappingWizard}
+          onOpenChange={setShowMappingWizard}
+          robot={robot}
+          onSaved={(filename) => {
+            setRobot((prev) => (prev ? { ...prev, view_mapping: filename } : prev));
+            void refreshViewMappings();
+            void fetchRobot();
+          }}
+        />
+      )}
     </div>
   );
 };
