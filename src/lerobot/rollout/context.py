@@ -68,6 +68,7 @@ from lerobot.processor import (
 )
 from lerobot.remote_inference import RemoteClient, RemoteInferenceEngine
 from lerobot.robots import Robot, make_robot_from_config
+from lerobot.robots.dual_scorpion_follower import DualScorpionFollowerConfig
 from lerobot.robots.sim_robot import SimRobot
 from lerobot.robots.utils import check_control_rate
 from lerobot.teleoperators import Teleoperator, make_teleoperator_from_config
@@ -498,6 +499,7 @@ def build_rollout_context(
     policy_config = cfg.policy
     if policy_config is None:
         raise ValueError("--policy.path is required for rollout")
+    guarded_scorpion = isinstance(cfg.robot, DualScorpionFollowerConfig) and cfg.robot.require_calibrated
     logger.info("Loading policy from '%s'...", policy_config.pretrained_path)
     # Policy constructors and custom processors must use the resolved rollout device too.
     policy_config.device = cfg.device
@@ -577,6 +579,17 @@ def build_rollout_context(
         action_features_hw = {
             k: v for k, v in robot.action_features.items() if keep_all or k.endswith((".pos", ".vel"))
         }
+        if guarded_scorpion:
+            expected_shape = (len(action_features_hw),)
+            action = policy_config.action_feature
+            state = policy_config.robot_state_feature
+            if action is None or action.shape != expected_shape or (state and state.shape != expected_shape):
+                raise ValueError(f"Dual Scorpion checkpoint state and action must match {expected_shape}.")
+            if checkpoint_order and (
+                len(checkpoint_order) != len(action_features_hw)
+                or set(checkpoint_order) != action_features_hw.keys()
+            ):
+                raise ValueError("Dual Scorpion checkpoint joint names do not match the follower.")
         action_features_hw = _align_to_checkpoint_order(action_features_hw, checkpoint_order, what="action")
 
         dataset_features = _aggregate_rollout_features(
@@ -603,7 +616,7 @@ def build_rollout_context(
             }
             policy_subset = expected_visuals.issubset(provided_visuals)
             hw_subset = provided_visuals.issubset(expected_visuals)
-            if not (policy_subset or hw_subset):
+            if not policy_subset and (guarded_scorpion or not hw_subset):
                 raise ValueError(
                     f"Visual feature mismatch between policy and robot hardware.\n"
                     f"Policy expects: {expected_visuals}\n"
@@ -667,6 +680,8 @@ def build_rollout_context(
         _attach_planner(cfg, inference_strategy, robot_wrapper, preprocessor, policy_config)
 
         # Keep hardware closed while loading resources that may block robot control threads.
+        if guarded_scorpion and shutdown_event.is_set():
+            raise InterruptedError("Dual Scorpion rollout stopped before connecting hardware.")
         hardware = _connect_rollout_hardware(robot_wrapper, teleop)
 
         logger.info("Rollout context assembled successfully")

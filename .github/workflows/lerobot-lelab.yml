@@ -115,6 +115,8 @@ jobs:
           tests/teleoperators/test_agent_harness.py
           tests/remote_policy
           tests/scripts/test_dual_scorpion_cli_registration.py
+          tests/test_rollout.py
+          tests/test_rollout_action_ordering.py
       - name: Test LeLab and the shared LeRobot CLI
         working-directory: lelab
         run: uv run --no-sync pytest -q --timeout=120 tests

@@ -137,6 +137,7 @@ def test_rollout_argv_parses(monkeypatch, tmp_path, robot_model) -> None:
         assert cfg.robot.require_calibrated
         assert cfg.robot.max_relative_target == 0.5
         assert cfg.fps == 30
+        assert not cfg.return_to_initial_position
     else:
         assert cfg.robot.port == "/dev/ttyUSB0"
     assert cfg.robot.id == "robot_a"

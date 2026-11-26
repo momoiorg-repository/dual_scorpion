@@ -358,6 +358,7 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
                 "--robot.require_calibrated=true",
                 f"--robot.max_relative_target={config.max_relative_target}",
                 f"--fps={MAX_SCORPION_FPS}",
+                "--return_to_initial_position=false",
             ]
         else:
             follower_id = setup_follower_calibration_file(request.follower_config)
@@ -462,13 +463,15 @@ def handle_stop_inference() -> dict[str, Any]:
             proc.wait()
     except Exception as exc:
         logger.exception("Stop inference: %s", exc)
+        return {"success": False, "status_code": 500, "message": f"Failed to stop inference: {exc}"}
 
     with _state_lock:
-        inference_active = False
-        _inference_proc = None
-        _inference_started_at = None
-        _inference_rollout_started_at = None
-        _inference_meta = {}
+        if _inference_proc is proc:
+            inference_active = False
+            _inference_proc = None
+            _inference_started_at = None
+            _inference_rollout_started_at = None
+            _inference_meta = {}
     return {"success": True, "message": "Inference stopped"}
 
 

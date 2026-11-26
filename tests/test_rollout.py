@@ -362,6 +362,63 @@ def test_local_setup_failure_releases_hardware_and_dataset(monkeypatch, tmp_path
     dataset.finalize.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    ("failure", "error", "message"),
+    [
+        ("shape", ValueError, "state and action"),
+        ("joints", ValueError, "joint names"),
+        ("camera", ValueError, "Visual feature mismatch"),
+        ("stop", InterruptedError, "stopped before connecting"),
+    ],
+)
+def test_scorpion_rollout_refuses_to_connect_on_invalid_setup(
+    monkeypatch, tmp_path, failure, error, message
+):
+    import lerobot.rollout.context as rollout_context
+    from lerobot.configs.types import FeatureType, PolicyFeature
+    from lerobot.policies.act.configuration_act import ACTConfig
+    from lerobot.processor import PolicyProcessorPipeline
+    from lerobot.robots.dual_scorpion_follower import DualScorpionFollowerConfig
+    from lerobot.rollout import RolloutConfig
+
+    policy = ACTConfig(
+        device="cpu",
+        pretrained_path=tmp_path,
+        output_features={"action": PolicyFeature(FeatureType.ACTION, (6 if failure == "shape" else 16,))},
+    )
+    if failure == "joints":
+        policy.action_feature_names = ["arm_joint.pos"]
+    if failure == "camera":
+        policy.input_features = {"observation.images.missing": PolicyFeature(FeatureType.VISUAL, (3, 64, 64))}
+    cfg = RolloutConfig(
+        robot=DualScorpionFollowerConfig(
+            id="mock",
+            left_arm_port="/dev/mock-left",
+            right_arm_port="/dev/mock-right",
+            calibration_dir=tmp_path,
+            require_calibrated=True,
+        ),
+        policy=policy,
+        device="cpu",
+    )
+    stop = threading.Event()
+    if failure == "stop":
+        stop.set()
+    connect = MagicMock(side_effect=AssertionError("Invalid setup must leave the buses closed"))
+    monkeypatch.setattr(rollout_context, "_connect_rollout_hardware", connect)
+    monkeypatch.setattr(rollout_context, "_load_pretrained_policy", lambda _: torch.nn.Linear(16, 16))
+    monkeypatch.setattr(
+        rollout_context,
+        "make_pre_post_processors",
+        lambda **_: (PolicyProcessorPipeline([]), PolicyProcessorPipeline([])),
+    )
+    monkeypatch.setattr(rollout_context, "create_inference_engine", MagicMock())
+
+    with pytest.raises(error, match=message):
+        rollout_context.build_rollout_context(cfg, stop)
+    connect.assert_not_called()
+
+
 def test_load_pretrained_policy_passes_revision(monkeypatch):
     import lerobot.rollout.context as rollout_context
 

@@ -305,6 +305,23 @@ def test_stop_gives_setup_longer_to_exit(monkeypatch, rollout_started_at, grace)
     assert waits == [getattr(rollout, grace)]
 
 
+def test_stop_does_not_release_follower_when_process_cannot_be_stopped(monkeypatch) -> None:
+    from unittest.mock import Mock
+
+    from lelab import rollout
+
+    proc = Mock()
+    proc.terminate.side_effect = OSError("unable to signal the rollout process")
+    monkeypatch.setattr(rollout, "inference_active", True)
+    monkeypatch.setattr(rollout, "_inference_proc", proc)
+
+    result = rollout.handle_stop_inference()
+
+    assert result["status_code"] == 500
+    assert rollout.inference_active
+    assert rollout._inference_proc is proc
+
+
 def test_classify_outcome_ok_warns_and_fails() -> None:
     from lelab.rollout import _classify_outcome
 
