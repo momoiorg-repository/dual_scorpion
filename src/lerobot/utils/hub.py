@@ -14,13 +14,95 @@
 
 import builtins
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any, TypeVar
 
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, download_bucket_files
 from huggingface_hub.utils import validate_hf_hub_args
 
+from .constants import CHECKPOINTS_DIR
+
 T = TypeVar("T", bound="HubMixin")
+
+
+def ensure_bucket_file(
+    bucket_id: str,
+    remote_path: str,
+    local_path: str | Path,
+    *,
+    token: str | bool | None = None,
+) -> Path:
+    """Return the cached copy of a bucket file, downloading it first if it's missing.
+
+    The download is renamed into place once complete, so a failed download leaves no partial file. A cached
+    file is never refreshed; delete it to download a newer version.
+
+    Args:
+        bucket_id (`str`):
+            Bucket ID, e.g. `lerobot/robot-urdfs`.
+        remote_path (`str`):
+            Path of the file in the bucket.
+        local_path (`str` or `Path`):
+            Where the file is cached.
+        token (`str` or `bool`, *optional*):
+            Hub token. `False` downloads anonymously.
+
+    Returns:
+        `Path`: Path of the cached file.
+    """
+    path = Path(local_path)
+    if path.is_file():
+        return path
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(dir=path.parent, suffix=".tmp", delete=False) as temporary:
+        temporary_path = Path(temporary.name)
+    try:
+        download_bucket_files(
+            bucket_id,
+            [(remote_path, temporary_path)],
+            raise_on_missing_files=True,
+            token=token,
+        )
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    return path
+
+
+# Sharded-training resume artifacts (torch DCP shard dirs + shard files). Published model repos
+# carry safetensors only, so publishing uploads exclude these — checkpoint pushes (which exist
+# for resume, not distribution) deliberately do not.
+def find_latest_hub_checkpoint(
+    repo_id: str,
+    *,
+    token: str | bool | None = None,
+    revision: str | None = None,
+) -> str | None:
+    """Repo-relative path of the most recent checkpoint in a training repo.
+
+    Training runs push checkpoints to ``checkpoints/<step>/`` (see
+    ``push_checkpoint_to_hub``). This lists those step dirs and returns
+    ``checkpoints/<highest-step>``, or ``None`` if the repo has no checkpoints.
+
+    Args:
+        repo_id (str): The Hub model repo to inspect.
+        token (str | bool | None): Hub authentication token. Defaults to None (the token
+            cached by `hf auth login`).
+        revision (str | None): Repo revision to list. Defaults to None (the default branch).
+
+    Returns:
+        str | None: The repo-relative path `checkpoints/<highest-step>`, or None if the repo
+            has no checkpoints.
+    """
+    files = HfApi().list_repo_files(repo_id=repo_id, repo_type="model", revision=revision, token=token)
+    prefix = f"{CHECKPOINTS_DIR}/"
+    steps = {
+        name for f in files if f.startswith(prefix) and (name := f[len(prefix) :].split("/", 1)[0]).isdigit()
+    }
+    if not steps:
+        return None
+    return f"{CHECKPOINTS_DIR}/{max(steps, key=int)}"
 
 
 class HubMixin:
@@ -112,11 +194,13 @@ class HubMixin:
             force_download (`bool`, *optional*, defaults to `False`):
                 Whether to force (re-)downloading the files from the Hub, overriding the existing cache.
             proxies (`Dict[str, str]`, *optional*):
-                A dictionary of proxy servers to use by protocol or endpoint, e.g., `{'http': 'foo.bar:3128',
-                'http://hostname': 'foo.bar:4012'}`. The proxies are used on every request.
+                Kept for backward compatibility and ignored. Configure proxies with the
+                `HTTP_PROXY` and `HTTPS_PROXY` environment variables instead.
+            resume_download (`bool`, *optional*):
+                Kept for backward compatibility and ignored. Downloads always resume when possible.
             token (`str` or `bool`, *optional*):
                 The token to use as HTTP bearer authorization for remote files. By default, it will use the token
-                cached when running `huggingface-cli login`.
+                cached when running `hf auth login`.
             cache_dir (`str`, `Path`, *optional*):
                 Path to the folder where cached files are stored.
             local_files_only (`bool`, *optional*, defaults to `False`):
@@ -140,13 +224,17 @@ class HubMixin:
         ignore_patterns: list[str] | str | None = None,
         delete_patterns: list[str] | str | None = None,
         card_kwargs: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> str | None:
         """
         Upload model checkpoint to the Hub.
 
         Use `allow_patterns` and `ignore_patterns` to precisely filter which files should be pushed to the hub. Use
         `delete_patterns` to delete existing remote files in the same commit. See [`upload_folder`] reference for more
         details.
+
+        Distributed contract: call on EVERY rank. `save_pretrained` runs on all ranks — for
+        sharded objects it can contain a collective gather (rank-gating it would deadlock) —
+        while repo creation and the upload happen on the main process only.
 
         Args:
             repo_id (`str`):
@@ -158,7 +246,7 @@ class HubMixin:
                 If `None` (default), the repo will be public unless the organization's default is private.
             token (`str`, *optional*):
                 The token to use as HTTP bearer authorization for remote files. By default, it will use the token
-                cached when running `huggingface-cli login`.
+                cached when running `hf auth login`.
             branch (`str`, *optional*):
                 The git branch on which to push the model. This defaults to `"main"`.
             create_pr (`boolean`, *optional*):
@@ -173,11 +261,17 @@ class HubMixin:
                 Additional arguments passed to the card template to customize the card.
 
         Returns:
-            The url of the commit of your object in the given repository.
+            `str` or `None`: The url of the commit of your object in the given repository, or
+            `None` on non-main ranks of a distributed run (only the main process uploads).
         """
-        api = HfApi(token=token)
-        repo_id = api.create_repo(repo_id=repo_id, private=private, exist_ok=True).repo_id
+        # Lazy import: hub code must not import the distributed package at module load
+        # (configs -> hub is on the import path of lerobot.distributed itself).
+        from lerobot.distributed.utils import is_main_process
 
+        # Distributed contract: `save_pretrained` runs on EVERY rank — for sharded policies it
+        # contains a collective gather (rank-gating it would deadlock) and it writes into this
+        # rank's private tmpdir only on the main process. Repo creation and upload are then
+        # main-process-only.
         if commit_message is None:
             if "Policy" in self.__class__.__name__:
                 commit_message = "Upload policy"
@@ -186,10 +280,13 @@ class HubMixin:
             else:
                 commit_message = f"Upload {self.__class__.__name__}"
 
-        # Push the files to the repo in a single commit
         with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             saved_path = Path(tmp) / repo_id
             self.save_pretrained(saved_path, card_kwargs=card_kwargs)
+            if not is_main_process():
+                return None
+            api = HfApi(token=token)
+            repo_id = api.create_repo(repo_id=repo_id, private=private, exist_ok=True).repo_id
             return api.upload_folder(
                 repo_id=repo_id,
                 repo_type="model",

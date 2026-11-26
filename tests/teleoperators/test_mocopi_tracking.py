@@ -2,6 +2,7 @@
 
 import struct
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
@@ -456,20 +457,38 @@ def test_existing_dual_ik_both_arms_move_and_hold():
         sim.close()
 
 
-def test_mujoco_urdf_frames_match_existing_fk_for_both_arms():
+@pytest.mark.parametrize("assembly_visuals", [False, True], ids=["skeleton", "assembly"])
+def test_mujoco_urdf_frames_match_existing_fk_for_both_arms(tmp_path, assembly_visuals):
     pytest.importorskip("mujoco")
     pytest.importorskip("pybullet")
-    from telegrip.mocopi.mujoco_sim import MujocoSimulation
+    from telegrip.mocopi.mujoco_sim import ASSEMBLY_LINKS, MujocoSimulation
 
     cfg = load_config(CONFIG)
+    visual_path = tmp_path / "assembly.urdf"
+    if assembly_visuals:
+        # The optional legacy CAD export is local. Give each donor a small mesh to exercise the same import.
+        mesh = "v 0 0 0\nv 0.02 0 0\nv 0 0.02 0\nv 0 0 0.02\nf 1 3 2\nf 1 2 4\nf 2 3 4\nf 1 4 3\n"
+        donors = sorted(set(ASSEMBLY_LINKS["left"].values()) | set(ASSEMBLY_LINKS["right"].values()))
+        assembly = ET.Element("robot", name="test_assembly")
+        for name in donors:
+            mesh_path = tmp_path / f"{name}.obj"
+            mesh_path.write_text(mesh)
+            link = ET.SubElement(assembly, "link", name=name)
+            geometry = ET.SubElement(ET.SubElement(link, "visual"), "geometry")
+            ET.SubElement(geometry, "mesh", filename=mesh_path.name)
+        ET.ElementTree(assembly).write(visual_path, encoding="utf-8")
+    cfg["robot"]["visual_urdf"] = str(visual_path)
     sources = {side: Path(path).read_bytes() for side, path in cfg["robot"]["urdf"].items()}
-    source_visuals = Path(cfg["robot"]["visual_urdf"]).read_bytes()
+    source_visuals = visual_path.read_bytes() if assembly_visuals else None
     sim = MujocoSimulation(cfg["robot"], gui=False)
     try:
         assert sim.model.nq == 16 and sim.model.nmocap == 4
-        # 17 CAD meshes: shared stand plus eight links per arm. No capsules.
-        assert sim.model.nmesh == 17
-        assert sim.model.ngeom == 20
+        if assembly_visuals:
+            assert sim.model.nmesh == 17  # shared stand plus eight links per arm
+            assert sim.model.ngeom == 20
+        else:
+            assert sim.model.nmesh == 0
+            assert sim.model.ngeom > 3  # floor, two target markers and the arm skeletons
         for fraction in (0.0, 0.25, 0.75):
             for arm in sim.arms.values():
                 arm.last_valid_target[:] = arm.lower + fraction * (arm.upper - arm.lower)
@@ -488,7 +507,10 @@ def test_mujoco_urdf_frames_match_existing_fk_for_both_arms():
         sim.close()
     for side, path in cfg["robot"]["urdf"].items():
         assert Path(path).read_bytes() == sources[side]
-    assert Path(cfg["robot"]["visual_urdf"]).read_bytes() == source_visuals
+    if assembly_visuals:
+        assert visual_path.read_bytes() == source_visuals
+    else:
+        assert not visual_path.exists()
 
 
 def test_mujoco_both_arms_move_and_hold_on_tracking_loss_and_invalid_ik():

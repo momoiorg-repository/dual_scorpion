@@ -107,6 +107,30 @@ def add_orientation_axes(body, name, mujoco, length, alpha):
             )
 
 
+def add_missing_link_visuals(scene, tree, side, mujoco):
+    """Show a kinematic skeleton when the selected URDF lacks visual geometry."""
+    links = {link.attrib["name"]: link for link in tree.findall("link")}
+    for joint in tree.findall("joint"):
+        parent = joint.find("parent").attrib["link"]
+        child = joint.find("child").attrib["link"]
+        if parent == "base_link" or links[parent].find("visual") is not None:
+            continue
+        origin = joint.find("origin")
+        xyz = np.fromstring(origin.get("xyz", "0 0 0"), sep=" ") if origin is not None else np.zeros(3)
+        if xyz.shape != (3,) or np.linalg.norm(xyz) < 1e-6:
+            continue
+        scene.body(f"{side}/{parent}").add_geom(
+            name=f"{side}/fallback_{parent}_{child}",
+            type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+            fromto=[0, 0, 0, *xyz],
+            size=[0.012, 0, 0],
+            rgba=[*COLORS[side][:3], 0.75],
+            mass=0,
+            contype=0,
+            conaffinity=0,
+        )
+
+
 def build_model(urdfs, mujoco, visual_urdf=None):
     """Import both original URDF trees, preserving axes, limits and mount offsets."""
     scene = mujoco.MjSpec.from_string(
@@ -120,8 +144,10 @@ def build_model(urdfs, mujoco, visual_urdf=None):
     for side in ("left", "right"):
         path = Path(urdfs[side]).resolve()
         tree = ET.parse(path).getroot()
-        if visual_urdf:
+        if visual_urdf and Path(visual_urdf).is_file():
             add_assembly_visuals(tree, side, visual_urdf)
+        elif visual_urdf:
+            LOG.warning("Assembly visual URDF not found: %s; using link skeletons", visual_urdf)
         extension = tree.find("mujoco")
         if extension is None:
             extension = ET.SubElement(tree, "mujoco")
@@ -142,6 +168,7 @@ def build_model(urdfs, mujoco, visual_urdf=None):
             mesh.set("filename", str(mesh_path(mesh.attrib["filename"], path)))
         arm = mujoco.MjSpec.from_string(ET.tostring(tree, encoding="unicode"))
         scene.attach(arm, frame=scene.worldbody.add_frame(), prefix=f"{side}/")
+        add_missing_link_visuals(scene, tree, side, mujoco)
         tcp = scene.body(f"{side}/tcp_link")
         add_orientation_axes(tcp, f"{side}/actual_axis", mujoco, 0.07, 1)
         elbow_link = tree.find("joint[@name='joint4']/child").attrib["link"]

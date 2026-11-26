@@ -1,0 +1,440 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ChevronsUpDown,
+  Database,
+  Disc,
+  ExternalLink,
+  Loader2,
+  Merge,
+  SquareArrowOutUpRight,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import DeleteDatasetDialog from "@/components/dataset/DeleteDatasetDialog";
+import EpisodeList from "@/components/dataset/EpisodeList";
+import EpisodeTaskDialog from "@/components/dataset/EpisodeTaskDialog";
+import EpisodeViewer from "@/components/dataset/EpisodeViewer";
+import MergeDatasetsDialog from "@/components/dataset/MergeDatasetsDialog";
+import MoveEpisodesDialog from "@/components/dataset/MoveEpisodesDialog";
+import DatasetPicker from "@/components/landing/DatasetPicker";
+import RecordingModal from "@/components/landing/RecordingModal";
+import { useApi } from "@/contexts/ApiContext";
+import { useDatasets } from "@/hooks/useDatasets";
+import { useEpisodeDetail, useEpisodes } from "@/hooks/useEpisodes";
+import { useRecording } from "@/hooks/useRecording";
+import { useRobots } from "@/hooks/useRobots";
+import { useToast } from "@/hooks/use-toast";
+import { formatDuration } from "@/lib/datasetApi";
+import { openHubViewer } from "@/lib/hubViewer";
+import { DatasetItem, MoveDestination, mergeLocalDatasets, getEpisodeTaskStatus, moveEpisodes, setEpisodeTask } from "@/lib/replayApi";
+
+// The robot_type LeRobot stores for the SO-101 follower.
+const FOLLOWER_ROBOT_TYPE = "so_follower";
+
+const Stat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <span className="flex items-baseline gap-1.5">
+    <span className="text-[10px] uppercase tracking-wider text-gray-600">{label}</span>
+    <span className="font-medium tabular-nums text-gray-200">{value}</span>
+  </span>
+);
+
+/**
+ * Browse the episodes of a dataset in the local LeRobot cache.
+ *
+ * Local datasets only: the visualize_dataset Space renders from a Hub repo
+ * path, so a dataset you just recorded can't be opened there until it has been
+ * uploaded. This reads the files on disk instead.
+ */
+const EditDataset = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const { datasets, loading: datasetsLoading, refresh } = useDatasets();
+  const { baseUrl, fetchWithHeaders } = useApi();
+  const { toast } = useToast();
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+  // A Hub-only dataset has no videos on disk to decode.
+  const localDatasets = useMemo(
+    () => datasets.filter((d) => d.source === "local" || d.source === "both"),
+    [datasets],
+  );
+
+  const repoId = searchParams.get("dataset");
+  const episodeParam = searchParams.get("episode");
+  const episodeIndex = episodeParam === null ? null : Number(episodeParam);
+  const selectedSource = datasets.find((d) => d.repo_id === repoId)?.source;
+  const selectedIsLocal = selectedSource === "local" || selectedSource === "both";
+
+  const { data, loading, error, refresh: refreshEpisodes, applyTask } = useEpisodes(repoId);
+  const {
+    detail,
+    loading: detailLoading,
+    error: detailError,
+  } = useEpisodeDetail(repoId, episodeIndex);
+
+  const { selectedRecord } = useRobots();
+  const recording = useRecording(selectedRecord);
+  // LeRobot only appends episodes recorded with the same robot at the same fps,
+  // and LeLab records with the SO-101 follower.
+  const appendTarget =
+    repoId && data?.success && data.fps && data.robot_type === FOLLOWER_ROBOT_TYPE
+      ? {
+          repoId,
+          numEpisodes: data.total_episodes,
+          fps: data.fps,
+          imageFeatures: data.image_features,
+        }
+      : null;
+  const lastTask = data?.episodes.at(-1)?.tasks[0] ?? "";
+
+  // The URL owns which dataset/episode is open, so a reload or a pasted link
+  // lands back in the same place. `api` is carried through rather than dropped:
+  // setSearchParams replaces the whole query, and losing the backend override on
+  // the first click would strand anyone driving a non-default backend (or the
+  // hosted Space) the moment they picked an episode.
+  const withApi = (params: Record<string, string>) => {
+    const api = searchParams.get("api");
+    return api ? { ...params, api } : params;
+  };
+  const setDataset = (next: string) => setSearchParams(withApi({ dataset: next }));
+  // A Hub-only dataset has no videos on disk to browse, so it opens in the Hub viewer.
+  const handlePickExisting = (item: DatasetItem) => {
+    if (item.source === "hub") openHubViewer(item.repo_id, item.private);
+    else setDataset(item.repo_id);
+  };
+  const handleMerge = async (sourceRepoIds: string[], outputName: string) => {
+    const result = await mergeLocalDatasets(baseUrl, fetchWithHeaders, sourceRepoIds, outputName);
+    refresh();
+    setDataset(result.repo_id);
+    toast({ title: "Datasets merged", description: `${result.num_episodes} episodes are ready to browse.` });
+  };
+  const handleMove = async (episodeIndices: number[], destination: MoveDestination) => {
+    if (!repoId) return;
+    const result = await moveEpisodes(baseUrl, fetchWithHeaders, repoId, episodeIndices, destination);
+    refresh();
+    // The episodes left behind are renumbered, so reopen the dataset from its first one.
+    setSearchParams(withApi({ dataset: repoId }));
+    refreshEpisodes();
+    toast({
+      title: "Episodes moved",
+      description: `${result.moved_episodes} moved to ${result.repo_id}, ${result.remaining_episodes} left in ${repoId}.`,
+    });
+  };
+  // The dataset whose queued task edits are still being written; polled until the backend reports it idle.
+  const [savingRepo, setSavingRepo] = useState<string | null>(null);
+  const handleSaveTask = (task: string, targetEpisode: number | null) => {
+    if (!repoId) return;
+    const edited = repoId;
+    applyTask(task, targetEpisode);
+    setEpisodeTask(baseUrl, fetchWithHeaders, edited, task, targetEpisode).then(
+      () => setSavingRepo(edited),
+      (e) => {
+        refreshEpisodes();
+        toast({
+          title: "Task not saved",
+          description: e instanceof Error ? e.message : "Could not save the task.",
+          variant: "destructive",
+        });
+      },
+    );
+  };
+  useEffect(() => {
+    if (!savingRepo) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const status = await getEpisodeTaskStatus(baseUrl, fetchWithHeaders, savingRepo);
+        if (status.pending) return;
+        setSavingRepo(null);
+        if (status.local_error) {
+          refreshEpisodes();
+          toast({ title: "Task not saved", description: status.local_error, variant: "destructive" });
+        } else if (status.hub_error) {
+          toast({
+            title: "Task saved locally only",
+            description: `The Hub copy was not updated: ${status.hub_error}.`,
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Tasks saved",
+            description: status.hub_updated ? "The Hub copy is updated too." : undefined,
+          });
+        }
+      } catch (e) {
+        setSavingRepo(null);
+        toast({
+          title: "Could not check the task edits",
+          description: e instanceof Error ? e.message : undefined,
+          variant: "destructive",
+        });
+      }
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [savingRepo, baseUrl, fetchWithHeaders, refreshEpisodes, toast]);
+  const setEpisode = (next: number) => {
+    if (!repoId) return;
+    setSearchParams(withApi({ dataset: repoId, episode: String(next) }));
+  };
+
+  // Land on the first episode rather than an empty right-hand pane.
+  useEffect(() => {
+    if (repoId && data?.success && episodeParam === null && data.episodes.length > 0) {
+      setSearchParams(
+        withApi({ dataset: repoId, episode: String(data.episodes[0].episode_index) }),
+        { replace: true },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoId, data, episodeParam, setSearchParams]);
+
+  return (
+    <div className="min-h-screen bg-black p-6 pb-24 text-white">
+      <div className="mx-auto max-w-[1400px]">
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/")}
+            className="h-8 gap-1.5 px-2 text-gray-400 hover:bg-gray-900 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <Database className="h-5 w-5 text-orange-500" />
+            Browse dataset
+          </h1>
+
+          <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+            <div className="w-full sm:w-[380px]">
+              <DatasetPicker
+                datasets={datasets}
+                loading={datasetsLoading}
+                onPickExisting={handlePickExisting}
+                onOpenCustom={(id) => openHubViewer(id, true)}
+                onCreateNew={recording.openForNew}
+              >
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  className="h-9 w-full justify-between border-gray-800 bg-gray-950 text-sm text-white hover:bg-gray-900"
+                >
+                  <span className="truncate">
+                    {repoId ?? (datasetsLoading ? "Loading datasets…" : "Select or create a dataset…")}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </DatasetPicker>
+            </div>
+            {repoId && selectedIsLocal && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMergeOpen(true)}
+                className="h-9 gap-1.5 border-gray-800 bg-gray-950 text-xs text-gray-300 hover:bg-gray-900"
+              >
+                <Merge className="h-3.5 w-3.5" />
+                Merge
+              </Button>
+            )}
+            {repoId && selectedIsLocal && data?.success && data.total_episodes > 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMoveOpen(true)}
+                className="h-9 gap-1.5 border-gray-800 bg-gray-950 text-xs text-gray-300 hover:bg-gray-900"
+              >
+                <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+                Move episodes
+              </Button>
+            )}
+            {repoId && selectedSource === "both" && (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 border-gray-800 bg-gray-950 text-xs text-gray-300 hover:bg-gray-900"
+              >
+                <a
+                  href={`https://huggingface.co/datasets/${repoId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  View on the Hub
+                </a>
+              </Button>
+            )}
+            {repoId && selectedSource !== "both" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigate("/upload", {
+                    state: {
+                      datasetInfo: {
+                        dataset_repo_id: repoId,
+                        source: selectedSource ?? "local",
+                      },
+                    },
+                  })
+                }
+                className="h-9 gap-1.5 border-gray-800 bg-gray-950 text-xs text-gray-300 hover:bg-gray-900"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Upload
+              </Button>
+            )}
+            {repoId && selectedIsLocal && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setDeleteOpen(true)}
+                aria-label="Delete dataset from disk"
+                className="h-9 w-9 border-red-500/40 bg-gray-950 text-red-400 hover:border-red-400 hover:bg-red-500/10 hover:text-red-300"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {appendTarget && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => recording.openToAppend(appendTarget, lastTask)}
+                className="h-9 gap-1.5 border-gray-800 bg-gray-950 text-xs text-gray-300 hover:bg-gray-900"
+              >
+                <Disc className="h-3.5 w-3.5 text-red-500" />
+                Record more
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {!repoId && (
+          <div className="rounded-lg border border-gray-800 bg-gray-950 p-10 text-center">
+            <Database className="mx-auto mb-3 h-8 w-8 text-gray-700" />
+            <p className="text-sm text-gray-400">Select a dataset to browse its episodes.</p>
+            {!datasetsLoading && localDatasets.length === 0 && (
+              <p className="mt-2 text-xs text-gray-600">
+                No datasets in the local LeRobot cache. Record one, or download it from the
+                Hub first.
+              </p>
+            )}
+          </div>
+        )}
+
+        {repoId && loading && (
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-gray-800 bg-gray-950 p-10 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Reading dataset…
+          </div>
+        )}
+
+        {repoId && error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-900/50 bg-red-950/30 p-4">
+            <AlertCircle className="mt-0.5 h-4 w-4 flex-none text-red-400" />
+            <div>
+              <p className="text-sm font-medium text-red-300">Could not read this dataset</p>
+              <p className="mt-0.5 text-xs text-red-400/80">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {repoId && data?.success && (
+          <>
+            <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-gray-800 bg-gray-950 px-4 py-2.5 text-xs">
+              <Stat label="Episodes" value={String(data.total_episodes)} />
+              <Stat label="Frames" value={data.total_frames?.toLocaleString() ?? "—"} />
+              <Stat label="FPS" value={String(data.fps ?? "—")} />
+              <Stat label="Robot" value={data.robot_type ?? "—"} />
+              <Stat label="Cameras" value={Object.keys(data.image_features).join(", ") || "—"} />
+              {detail && <Stat label="This episode" value={formatDuration(detail.duration_s)} />}
+              {savingRepo === repoId && <span className="text-gray-500">Saving tasks…</span>}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
+              <EpisodeList
+                episodes={data.episodes}
+                selected={episodeIndex}
+                onSelect={setEpisode}
+                onEditTask={selectedIsLocal ? () => setTaskOpen(true) : undefined}
+              />
+
+              <div>
+                {detailLoading && !detail && (
+                  <div className="flex h-64 items-center justify-center gap-2 rounded-lg border border-gray-800 bg-gray-950 text-sm text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading episode…
+                  </div>
+                )}
+                {detailError && (
+                  <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-4 text-xs text-red-400">
+                    {detailError}
+                  </div>
+                )}
+                {detail && (
+                  <EpisodeViewer repoId={repoId} detail={detail} onNavigate={setEpisode} />
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {repoId && selectedIsLocal && (
+        <MergeDatasetsDialog
+          datasets={datasets}
+          selectedRepoId={repoId}
+          open={mergeOpen}
+          onOpenChange={setMergeOpen}
+          onMerge={handleMerge}
+        />
+      )}
+
+      {repoId && selectedIsLocal && data?.success && (
+        <MoveEpisodesDialog
+          datasets={localDatasets}
+          repoId={repoId}
+          totalEpisodes={data.total_episodes}
+          currentEpisode={episodeIndex}
+          open={moveOpen}
+          onOpenChange={setMoveOpen}
+          onMove={handleMove}
+        />
+      )}
+
+      {repoId && selectedIsLocal && data?.success && episodeIndex !== null && (
+        <EpisodeTaskDialog
+          repoId={repoId}
+          episodeIndex={episodeIndex}
+          currentTask={data.episodes.find((ep) => ep.episode_index === episodeIndex)?.tasks[0] ?? ""}
+          totalEpisodes={data.total_episodes}
+          open={taskOpen}
+          onOpenChange={setTaskOpen}
+          onSave={handleSaveTask}
+        />
+      )}
+
+      {repoId && selectedIsLocal && (
+        <DeleteDatasetDialog
+          repoId={repoId}
+          onHub={selectedSource === "both"}
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          onDeleted={() => navigate("/")}
+        />
+      )}
+
+      <RecordingModal {...recording.modalProps} />
+    </div>
+  );
+};
+
+export default EditDataset;
