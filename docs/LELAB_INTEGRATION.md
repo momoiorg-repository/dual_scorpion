@@ -49,7 +49,17 @@ mkdir -p "$cache_dir/local"
 cp -aT --no-clobber outputs/mocopi/datasets/episode-001-ft-motor16 "$cache_dir/local/mocopi-motor16"
 ```
 
-このコピー例は Linux 用です。`meta/info.json`、Parquet と動画が存在する場合は動画も含めてセットで扱います。旧 v2.1 は [公式の移行ガイド](https://huggingface.co/docs/lerobot/porting_datasets_v3) を参照して新しい出力へ変換します。
+このコピー例は Linux 用です。`meta/info.json`、Parquet と動画が存在する場合は動画も含めてセットで扱います。旧 v2.1 は変換用の作業ディレクトリにコピーし、Hub への送信を無効にして変換します。`legacy_source` を元データセットの実際のパスに置き換えてください。[公式の移行ガイド](https://huggingface.co/docs/lerobot/porting_datasets_v3)
+
+```bash
+legacy_source="$cache_dir/owner/old-dataset"
+migration_dir="$(mktemp -d)"
+cp -aT "$legacy_source" "$migration_dir/dataset" && \
+  HF_HUB_OFFLINE=1 uv run --no-sync python -m lerobot.scripts.convert_dataset_v21_to_v30 \
+    --repo-id=local/converted-v30 --root="$migration_dir/dataset" --push-to-hub=false
+```
+
+`$migration_dir/dataset/meta/info.json` の `codebase_version` が `v3.0` であることと、エピソード数・フレーム数を確認します。変換したディレクトリを `$cache_dir/local/` 配下の新しい名前にコピーすると Dataset Viewer から開けます。
 
 Full CAD の14次元データはモデル内の関節角を記録します。旧モデルのデータを300 mm モデルで実機再生する前に、[Mocopi ガイド](../MOCOPI_DATASET_GUIDE.md#full-cadの14関節データを実機で再生する) に沿って元の記録から別の出力先へ軌道を生成し、モデルと較正に対応する実測マッピングを作成します。モデルハッシュの照合はこの移行中も有効です。
 
