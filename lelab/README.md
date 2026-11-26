@@ -20,6 +20,9 @@
 
 ## Quick Start
 
+This vendored copy uses the [Dual Scorpion workspace installation](../README.md#lelab).
+The LeLab Space installer below applies to the standalone upstream distribution.
+
 Grab the one-liner from the [LeLab Space](https://huggingface.co/spaces/lerobot/LeLab) — it installs and runs LeLab + LeRobot in a single command.
 
 A page will automatically open in your browser and you are ready to go.

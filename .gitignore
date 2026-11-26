@@ -213,3 +213,4 @@ head-map*.msg
 /DS_URDF_IK/build/
 /DS_URDF_IK/install/
 /DS_URDF_IK/log/
+.venv-lelab/
