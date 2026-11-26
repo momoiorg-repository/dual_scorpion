@@ -967,9 +967,7 @@ def test_real_plan_preflight_and_fake_follower_never_command_gripper(tmp_path):
 
 
 def test_real_adapter_constructs_existing_driver_with_only_seven_motors(tmp_path):
-    pytest.importorskip("scservo_sdk")
-    pytest.importorskip("serial")
-    pytest.importorskip("deepdiff")
+    pytest.importorskip("rustypot")
     from telegrip.mocopi.dataset.real import JOINTS, arm_only_follower
 
     calibration = {}

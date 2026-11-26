@@ -104,7 +104,7 @@ jobs:
           PY
       - name: Test LeRobot and Scorpion
         run: >-
-          uv run --no-sync pytest -q --timeout=120
+          uv run --no-sync pytest -q -rs --timeout=120
           tests/datasets/test_dataset_metadata.py
           tests/datasets/test_dataset_writer.py
           tests/motors/test_feetech.py
@@ -117,9 +117,11 @@ jobs:
           tests/scripts/test_dual_scorpion_cli_registration.py
           tests/test_rollout.py
           tests/test_rollout_action_ordering.py
+          tests/policies/pi0_pi05/test_pi05_vision_inference.py
+          tests/policies/pi0_pi05/test_pi05_training_time_rtc.py
       - name: Test LeLab and the shared LeRobot CLI
         working-directory: lelab
-        run: uv run --no-sync pytest -q --timeout=120 tests
+        run: uv run --no-sync pytest -o addopts="" -q -rs --timeout=120 tests
 
   frontend:
     needs: changes
