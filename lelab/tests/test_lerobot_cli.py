@@ -75,7 +75,8 @@ def test_training_argv_parses(monkeypatch, policy_type, runner) -> None:
     assert cfg.trackio.space_id == "me/lelab-trackio"
 
 
-def test_rollout_argv_parses(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("robot_model", ["so101", "dual_scorpion"])
+def test_rollout_argv_parses(monkeypatch, tmp_path, robot_model) -> None:
     import lerobot.scripts.lerobot_rollout as lerobot_rollout
     from lelab import rollout
     from lelab.rollout import InferenceRequest
@@ -99,11 +100,15 @@ def test_rollout_argv_parses(monkeypatch, tmp_path) -> None:
         raise OSError("stop before spawning")
 
     monkeypatch.setattr(rollout, "inference_active", False)
+    monkeypatch.setenv("HF_LEROBOT_HOME", str(tmp_path))
     monkeypatch.setattr(rollout, "setup_follower_calibration_file", lambda name: "robot_a")
     monkeypatch.setattr(rollout.subprocess, "Popen", capture)
     rollout.handle_start_inference(
         InferenceRequest(
+            robot_model=robot_model,
             follower_port="/dev/ttyUSB0",
+            follower_left_port="/dev/ttyUSB2",
+            follower_right_port="/dev/ttyUSB3",
             follower_config="robot_a",
             policy_ref=str(checkpoint),
             task="step 1: grab the cube",
@@ -126,7 +131,14 @@ def test_rollout_argv_parses(monkeypatch, tmp_path) -> None:
         lerobot_rollout.main()
 
     (cfg,) = parsed
-    assert cfg.robot.port == "/dev/ttyUSB0"
+    if robot_model == "dual_scorpion":
+        assert cfg.robot.left_arm_port == "/dev/ttyUSB2"
+        assert cfg.robot.right_arm_port == "/dev/ttyUSB3"
+        assert cfg.robot.require_calibrated
+        assert cfg.robot.max_relative_target == 0.5
+        assert cfg.fps == 30
+    else:
+        assert cfg.robot.port == "/dev/ttyUSB0"
     assert cfg.robot.id == "robot_a"
     assert cfg.task == "step 1: grab the cube"
     assert set(cfg.robot.cameras) == {"front"}

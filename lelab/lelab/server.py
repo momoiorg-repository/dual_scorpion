@@ -200,9 +200,7 @@ app.add_middleware(
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
-# Get the path to the lerobot root directory (3 levels up from this script)
-LEROBOT_PATH = str(Path(__file__).parent.parent.parent.parent)
-logger.info(f"LeRobot path: {LEROBOT_PATH}")
+logger.info("LeRobot workspace: %s", SCORPION_MODEL_DIR.parent)
 
 
 class ConnectionManager:

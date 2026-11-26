@@ -41,6 +41,8 @@ lelab = "lelab.scripts.lelab:main"
 lerobot = { workspace = true }
 
 [tool.setuptools]
+# A path-based editable install resolves lelab even from the workspace root.
+package-dir = {"" = "."}
 # Ship only the package-data below: the frontend sources are build inputs, not runtime files.
 include-package-data = false
 
