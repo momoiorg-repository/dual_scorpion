@@ -22,11 +22,13 @@ import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation
 
+from ..agent.scene import SceneGeometry
 from ..full_mujoco import SUFFIX, FullMujocoSimulation, full_model_path
 from ..geometry import pose
 from .evaluate import _summary
 from .fingerprint import dataset_fingerprint, file_sha256
-from .real import JOINTS, SIDES, _actions, _read_joints, arm_only_follower
+from .real import GRIPPER, JOINTS, SIDES, _actions, _read_joints, arm_and_gripper_follower, arm_only_follower
+from .replay_geometry import ReplayGeometry, measured_scene_ready
 
 JOINT_SIDES = ("right", "left")
 MAPPING_SCHEMA = "dual_scorpion.mocopi.hardware_joint_mapping.v1"
@@ -43,10 +45,17 @@ METHOD_PER_JOINT_MULTI_ANGLE = "per_joint_multi_angle_fit"
 METHOD_CALIBRATION_MIDPOINT = "lerobot_calibration_midpoint"
 METHOD_UNMEASURED = "unmeasured"
 METHOD_DIRECTION_ONLY = "direction_only_unmeasured_offset"
+CALIBRATION_ASSUMED = "calibration_assumed"
+PHYSICALLY_VERIFIED = "physically_verified"
+MEASURED_MAPPING_METHODS = {
+    METHOD_MULTI_POSE,
+    METHOD_REFERENCE_DIRECTION,
+    METHOD_PER_JOINT_REFERENCE,
+    METHOD_PER_JOINT_UNIDIRECTIONAL,
+    METHOD_PER_JOINT_MULTI_ANGLE,
+}
 
-# Default Dual Scorpion motor-to-Full-CAD joint signs when calibration drive_mode == 0.
-# Derived from the Dual Scorpion CAD assembly (fusion_manifest.json / Telegrip URDFs)
-# and verified against follower encoder directions on dual_scorpion_follower_2026_1026.
+# Assembly-based sign assumptions for drive_mode == 0.
 DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0 = {
     "right": (-1, 1, -1, 1, 1, -1, -1),
     "left": (1, -1, 1, -1, -1, 1, -1),
@@ -279,6 +288,63 @@ def _record_evidence(record):
     return verification_evidence if verification_evidence is not None else evidence
 
 
+def _assumed_joint(record):
+    return bool(record and _record_method(record) == METHOD_CALIBRATION_MIDPOINT)
+
+
+def _physically_verified_joint(record):
+    if not record or record.get("verification_status") == CALIBRATION_ASSUMED:
+        return False
+    method = _record_method(record)
+    if (
+        method not in MEASURED_MAPPING_METHODS
+        or record.get("verified") is not True
+        or record.get("sign_verified") is False
+        or record.get("offset_verified") is False
+        or record.get("failures")
+    ):
+        return False
+    model, motor = record.get("model_angles_deg"), record.get("motor_angles_deg")
+    if (
+        not isinstance(model, (tuple, list))
+        or not isinstance(motor, (tuple, list))
+        or not model
+        or len(model) != len(motor)
+        or not all(_is_finite_number(value) for value in (*model, *motor))
+    ):
+        return False
+    if len(model) > 1:
+        return max(model) > min(model)
+    return any(
+        _is_finite_number(delta) and delta != 0
+        for delta in (record.get("positive_delta_deg"), record.get("negative_delta_deg"))
+    )
+
+
+def mapping_verification_status(document):
+    records = [
+        (mapping_joint_records(document, side) or {}).get(joint) for side in JOINT_SIDES for joint in JOINTS
+    ]
+    if document.get("verified") is True and all(map(_physically_verified_joint, records)):
+        return PHYSICALLY_VERIFIED
+    if any(map(_assumed_joint, records)) and all(
+        _assumed_joint(record) or _physically_verified_joint(record) for record in records
+    ):
+        return CALIBRATION_ASSUMED
+    return "partial"
+
+
+def _mark_assumption(record):
+    return {
+        **record,
+        "verification_status": CALIBRATION_ASSUMED,
+        "verified": False,
+        "sign_verified": False,
+        "offset_verified": False,
+        "scale_verified": False,
+    }
+
+
 def _is_valid_sign_value(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value in (-1, 1, -1.0, 1.0)
 
@@ -287,7 +353,7 @@ def _is_finite_number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and bool(np.isfinite(float(value)))
 
 
-def validate_mapping_document(document, *, require_verified=True):
+def validate_mapping_document(document, *, require_verified=True, allow_calibration_assumed=False):
     if document.get("schema") != MAPPING_SCHEMA:
         raise ValueError("Unsupported hardware joint mapping schema")
     if document.get("model_kind") != "full_mujoco":
@@ -295,7 +361,7 @@ def validate_mapping_document(document, *, require_verified=True):
     doc_verified = document.get("verified")
     if not isinstance(doc_verified, bool):
         raise ValueError("Hardware joint mapping must contain a boolean verified flag")
-    if require_verified and doc_verified is not True:
+    if require_verified and not doc_verified and not allow_calibration_assumed:
         raise ValueError("Hardware joint mapping is not verified; run verify-dataset-mapping first")
     sides = document.get("sides")
     if not isinstance(sides, dict) or set(sides) != set(JOINT_SIDES):
@@ -318,10 +384,12 @@ def validate_mapping_document(document, *, require_verified=True):
                 raise ValueError(f"{side}_{JOINTS[index]} mapping offset must be finite degrees or null")
             if strict_all and (sign_val is None or offset_val is None):
                 raise ValueError(
-                    f"{side}_{JOINTS[index]} mapping is incomplete (sign/offset cannot be null when verified)"
+                    f"{side}_{JOINTS[index]} mapping is not verified (sign or offset is missing)"
                 )
         limits = side_doc.get("joint_limits_deg")
         if limits is not None:
+            if not isinstance(limits, dict):
+                raise ValueError(f"{side} mapping joint limits must be a mapping")
             lower = np.asarray(limits.get("min"), dtype=float)
             upper = np.asarray(limits.get("max"), dtype=float)
             if (
@@ -396,11 +464,22 @@ def validate_mapping_document(document, *, require_verified=True):
                     "re-run verify-dataset-mapping so every joint is checked"
                 )
             for joint in JOINTS:
-                if records[joint].get("verified") is not True:
-                    raise ValueError(
-                        f"Hardware joint mapping has an unverified joint: {side}_{joint}; "
-                        "motor commands are refused"
-                    )
+                record = records[joint]
+                if _assumed_joint(record) and (allow_calibration_assumed or not require_verified):
+                    if not record.get("failures"):
+                        continue
+                elif _physically_verified_joint(record):
+                    continue
+                raise ValueError(
+                    f"Hardware joint mapping has an unverified joint: {side}_{joint}; "
+                    "mapping is not verified for motion"
+                )
+    if (
+        require_verified
+        and not doc_verified
+        and (not allow_calibration_assumed or mapping_verification_status(document) != CALIBRATION_ASSUMED)
+    ):
+        raise ValueError("Hardware joint mapping is not verified; run verify-dataset-mapping first")
     return document
 
 
@@ -430,6 +509,68 @@ def calibration_sha256(robot):
     if not path.is_file():
         raise ValueError(f"Calibration file not found for robot {robot.id}: {path}")
     return file_sha256(path)
+
+
+def _calibration_signature(calibration):
+    return {
+        name: [
+            calibration[name].id,
+            calibration[name].homing_offset,
+            calibration[name].range_min,
+            calibration[name].range_max,
+        ]
+        for name in JOINTS
+        if name in calibration
+    }
+
+
+def _connect_checked_buses(robot, results, *, sides=SIDES):
+    """Identify each bus by its live register signature before any write."""
+    buses = {side: getattr(robot, side + "_bus") for side in SIDES}
+    devices = {side: str(Path(buses[side].port).resolve()) for side in sides}
+    if len(set(devices.values())) != len(devices):
+        raise ValueError("Left and right ports resolve to the same serial device")
+    expected = {side: _calibration_signature(bus.calibration) for side, bus in buses.items()}
+    for side in sides:
+        bus = buses[side]
+        results[side] = {"port": str(bus.port), "resolved_device": devices[side]}
+        bus.connect()
+        live = _calibration_signature(bus.read_calibration())
+        matches = [label for label, signature in expected.items() if signature == live]
+        results[side].update(
+            calibration_registers=live,
+            register_order=["motor_id", "homing_offset", "range_min", "range_max"],
+            matching_sides=matches,
+            calibration_matches_out_of_7={
+                label: sum(name in live and live[name] == signature[name] for name in JOINTS)
+                for label, signature in expected.items()
+            },
+        )
+    for side in sides:
+        matches = results[side]["matching_sides"]
+        if matches != [side]:
+            if len(matches) == 1:
+                raise ValueError(
+                    f"{side} port matches the {matches[0]} arm calibration; check left/right wiring"
+                )
+            raise ValueError(
+                f"{side} port has no unique matching calibration signature; verify the USB wiring and "
+                "read the saved calibration before deciding whether to recalibrate"
+            )
+
+
+def _read_bus_state(robot, results):
+    for side in SIDES:
+        bus = getattr(robot, side + "_bus")
+        results[side].update(
+            operating_mode=bus.sync_read("Operating_Mode", normalize=False),
+            torque_enable=bus.sync_read("Torque_Enable", normalize=False),
+        )
+    return all(
+        row["operating_mode"].get(joint) == 0 and row["torque_enable"].get(joint) in (0, 1)
+        for row in results.values()
+        for joint in JOINTS
+    )
 
 
 def calibration_joint_limits(robot, side, joint):
@@ -508,8 +649,8 @@ def motor_pose_limit_violations(motor_joints_by_side, document, robot, *, pose_l
     return violations
 
 
-def validate_mapping_for_robot(document, robot, *, model_sha256=None):
-    validate_mapping_document(document)
+def validate_mapping_for_robot(document, robot, *, model_sha256=None, allow_calibration_assumed=False):
+    validate_mapping_document(document, allow_calibration_assumed=allow_calibration_assumed)
     if document.get("robot_id") != robot.id:
         raise ValueError(
             f"Mapping robot_id {document.get('robot_id')!r} does not match --robot-id {robot.id!r}"
@@ -545,10 +686,12 @@ def validate_mapping_for_robot(document, robot, *, model_sha256=None):
                     f"expected {expected_model_joint!r}"
                 )
             motor_ids[f"{side}_{joint}"] = int(motor.id)
+    verification_status = mapping_verification_status(document)
     return {
         "robot_id": robot.id,
         "calibration_sha256": current_hash,
-        "verified_at": document.get("created_at"),
+        "verification_status": verification_status,
+        "verified_at": document.get("created_at") if verification_status == PHYSICALLY_VERIFIED else None,
         "verification": document.get("verification"),
         "motor_ids": motor_ids,
     }
@@ -556,7 +699,7 @@ def validate_mapping_for_robot(document, robot, *, model_sha256=None):
 
 def validate_mapped_episode(episode, document, robot, *, max_source_step_deg=None):
     document = document.get("document", document)
-    validate_mapping_document(document)
+    validate_mapping_document(document, allow_calibration_assumed=True)
     source_step = 0.0
     mapped_step = 0.0
     margins = {
@@ -818,6 +961,8 @@ def inspect_joint_mapping(episode, document, robot, config, *, current=None):
                 raise ValueError(f"MuJoCo model has no joint {model_name}")
             model_info = model_table[model_name]
             record = records[joint] if records else None
+            if _assumed_joint(record):
+                record = _mark_assumption(record)
             raw_sign = (
                 record["sign"]
                 if record and record.get("sign") is not None
@@ -837,7 +982,7 @@ def inspect_joint_mapping(episode, document, robot, config, *, current=None):
                 model_at_calibration_zero = float((calibration["zero_motor_deg"] - offset) / sign)
                 calibration_model_min = float((calibration["min_motor_deg"] - offset) / sign)
                 calibration_model_max = float((calibration["max_motor_deg"] - offset) / sign)
-            verified = bool(record and record.get("verified") is True)
+            verified = _physically_verified_joint(record)
             sign_verified = bool(
                 record.get("sign_verified")
                 if record and "sign_verified" in record
@@ -854,8 +999,10 @@ def inspect_joint_mapping(episode, document, robot, config, *, current=None):
             else:
                 unverified.append(f"{side}_{joint}")
             status = (
-                "verified"
+                PHYSICALLY_VERIFIED
                 if verified
+                else CALIBRATION_ASSUMED
+                if _assumed_joint(record)
                 else "partial_sign_only"
                 if sign_verified and not offset_verified
                 else "failed"
@@ -1041,12 +1188,10 @@ def inspect_dataset_mapping(
         validate_mapping_document(document, require_verified=False)
 
     current = None
+    ports = {}
     if check_start:
         try:
-            for side in SIDES:
-                getattr(robot, side + "_bus").connect()
-            if not robot.is_calibrated:
-                raise ValueError("Motor calibration does not match the robot; recalibrate before inspection")
+            _connect_checked_buses(robot, ports)
             current = _read_joints(robot)
         finally:
             for side in SIDES:
@@ -1061,7 +1206,8 @@ def inspect_dataset_mapping(
         "dataset": str(episode.root),
         "episode": episode.episode,
         "mapping": str(mapping_path) if mapping_path else None,
-        "mapping_verified": bool(document and document.get("verified") is True),
+        "mapping_verified": inspection["all_joints_verified"],
+        "usb_ports": ports,
         "inspection": inspection,
         "pose_context": (
             build_pose_context(episode, document, robot, config, current=current)
@@ -1553,11 +1699,11 @@ def _build_mapping_document(
             signs.append(int(rec_sign) if _is_valid_sign_value(rec_sign) else None)
             offsets.append(float(rec_offset) if _is_finite_number(rec_offset) else None)
             failures.extend(record.get("failures", []))
-            if record.get("verified") is True:
+            if _physically_verified_joint(record):
                 verified_joints.append(f"{side}_{joint}")
             else:
                 unverified_joints.append(f"{side}_{joint}")
-                if not record.get("failures"):
+                if not _assumed_joint(record) and not record.get("failures"):
                     failures.append(f"{side}_{joint}: joint verification is not complete")
         sides[side] = {
             "sign": signs,
@@ -1594,6 +1740,7 @@ def _build_mapping_document(
             "failures": failures,
         }
     )
+    document["verification_status"] = mapping_verification_status(document)
     return document
 
 
@@ -1773,7 +1920,7 @@ def _read_joints_for_sides(robot, sides):
     return result
 
 
-def _load_existing_records(existing_mapping, robot, config):
+def _load_existing_mapping(existing_mapping, robot, config):
     if existing_mapping is None:
         return None
     if isinstance(existing_mapping, (str, Path)):
@@ -1793,7 +1940,7 @@ def _load_existing_records(existing_mapping, robot, config):
         model_path, _ = model_joint_table(config)
         if doc.get("mujoco_model_sha256") != file_sha256(model_path):
             raise ValueError("Existing mapping MuJoCo model hash differs from selected model")
-    return {side: dict(mapping_joint_records(doc, side) or {}) for side in JOINT_SIDES}
+    return doc
 
 
 def _evaluate_single_joint_measurement(
@@ -2016,10 +2163,11 @@ def verify_joint_mapping_from_measurements(
                 for joint, val in side_entries.items():
                     joints_map[f"{side}_{joint}"] = val
 
-    existing_records = _load_existing_records(existing_mapping, robot, config)
+    existing = _load_existing_mapping(existing_mapping, robot, config)
     records_by_side = {side: {} for side in JOINT_SIDES}
     for side in JOINT_SIDES:
         bus = getattr(robot, side + "_bus")
+        existing_records = (mapping_joint_records(existing, side) or {}) if existing is not None else {}
         for joint_index, joint in enumerate(JOINTS):
             key = f"{side}_{joint}"
             if key in joints_map:
@@ -2035,8 +2183,10 @@ def verify_joint_mapping_from_measurements(
                     min_model_range_deg=min_model_range_deg,
                     max_slope_error=max_slope_error,
                 )
-            elif existing_records is not None and joint in existing_records[side]:
-                record = dict(existing_records[side][joint])
+            elif joint in existing_records:
+                record = dict(existing_records[joint])
+                if _assumed_joint(record):
+                    record = _mark_assumption(record)
             else:
                 model_name, model_axis, parent_link, child_link = _model_evidence(config, side, joint_index)
                 cal = calibration_joint_limits(robot, side, joint)
@@ -2095,6 +2245,13 @@ def verify_joint_mapping_from_measurements(
         method=METHOD_PER_JOINT_REFERENCE,
         verification=verification,
     )
+    if existing is not None:
+        for side in JOINT_SIDES:
+            for key in ("joint_limits_deg", "joint_limits_evidence"):
+                if key in existing["sides"][side]:
+                    document["sides"][side][key] = existing["sides"][side][key]
+    verification["verification_status"] = document["verification_status"]
+    verification["unverified_joints"] = document["unverified_joints"]
     return document, verification
 
 
@@ -2121,10 +2278,7 @@ def verify_dataset_mapping(
         raise FileExistsError(f"Mapping output already exists: {output}")
     measured = []
     try:
-        for side in SIDES:
-            getattr(robot, side + "_bus").connect()
-        if not robot.is_calibrated:
-            raise ValueError("Motor calibration does not match the robot; recalibrate before verification")
+        _connect_checked_buses(robot, {})
         _confirm_torque_disable(JOINT_SIDES)
         for side in SIDES:
             getattr(robot, side + "_bus").disable_torque(list(JOINTS))
@@ -2174,13 +2328,7 @@ def build_calibration_mapping(
     report=None,
     overwrite=False,
 ):
-    """Build a verified Full-CAD joint mapping directly from LeRobot calibration without manual posing.
-
-    Uses the follower's existing ``lerobot-calibrate`` midpoint (``offset_deg = 0.0``)
-    and the Dual Scorpion CAD/URDF motor-axis signs (respecting per-motor ``drive_mode``),
-    so users who have already run ``lerobot-calibrate`` do not need to manually
-    measure CAD angles or pose 14 joints by hand.
-    """
+    """Build an assumed preview mapping from LeRobot zero and assembly sign conventions."""
     if output is not None and Path(output).exists() and not overwrite:
         raise FileExistsError(f"Mapping output already exists: {output}")
     records_by_side = {side: {} for side in JOINT_SIDES}
@@ -2213,7 +2361,6 @@ def build_calibration_mapping(
                         f"exceeds calibrated motor limits "
                         f"[{calibration['min_motor_deg']:+.2f}, {calibration['max_motor_deg']:+.2f}] deg"
                     )
-            verified = not failures
             evidence = {
                 "calibration_midpoint_raw": calibration["midpoint_raw"],
                 "drive_mode": calibration["drive_mode"],
@@ -2232,24 +2379,25 @@ def build_calibration_mapping(
                 "child_link": child_link,
                 "method": METHOD_CALIBRATION_MIDPOINT,
                 "verification_method": METHOD_CALIBRATION_MIDPOINT,
-                "verified": verified,
-                "sign_verified": True,
-                "offset_verified": verified,
+                "verification_status": CALIBRATION_ASSUMED,
+                "verified": False,
+                "sign_verified": False,
+                "offset_verified": False,
                 "model_axis": model_axis,
                 "calibration": calibration,
-                "model_angles_deg": [0.0],
-                "motor_angles_deg": [0.0],
-                "model_range_deg": 0.0,
+                "model_angles_deg": [],
+                "motor_angles_deg": [],
+                "model_range_deg": None,
                 "slope": float(sign),
                 "sign": int(sign),
                 "motor_direction": "same_as_model" if sign == 1 else "opposite_to_model",
                 "offset_deg": offset_deg,
-                "rms_deg": 0.0,
-                "max_residual_deg": 0.0,
+                "rms_deg": None,
+                "max_residual_deg": None,
                 "positive_delta_deg": None,
                 "negative_delta_deg": None,
                 "scale_basis": "direct_drive_1_to_1",
-                "scale_verified": True,
+                "scale_verified": False,
                 "evidence": evidence,
                 "verification_evidence": dict(evidence),
                 "failures": failures,
@@ -2263,18 +2411,19 @@ def build_calibration_mapping(
                     "model_joint": model_name,
                     "sign": int(sign),
                     "offset_deg": offset_deg,
-                    "sign_verified": True,
-                    "offset_verified": verified,
-                    "scale_verified": True,
+                    "sign_verified": False,
+                    "offset_verified": False,
+                    "scale_verified": False,
                     "verification_method": METHOD_CALIBRATION_MIDPOINT,
-                    "verified": verified,
+                    "verification_status": CALIBRATION_ASSUMED,
+                    "verified": False,
                     "failures": failures,
                 }
             )
     all_failures = [failure for item in per_joint for failure in item["failures"]]
     verification = {
         "schema": MAPPING_VERIFICATION_SCHEMA,
-        "status": "failed" if all_failures else "ok",
+        "status": "failed" if all_failures else CALIBRATION_ASSUMED,
         "dataset": str(episode.root) if episode is not None else None,
         "dataset_sha256": episode.dataset_sha256 if episode is not None else None,
         "manifest_sha256": episode.manifest_sha256 if episode is not None else None,
@@ -2296,7 +2445,7 @@ def build_calibration_mapping(
     )
     if report is not None:
         _write_json(report, verification)
-    if not document["verified"]:
+    if all_failures:
         raise ValueError("Calibration mapping validation failed: " + "; ".join(all_failures))
     if output is not None:
         write_mapping(output, document, overwrite=overwrite)
@@ -2356,15 +2505,12 @@ def verify_dataset_mapping_jointwise(
     selected = _resolve_arm_joint_selectors(joints=joints, arm=arm)
     active_sides = tuple(side for side in JOINT_SIDES if any(s == side for s, _ in selected))
     # Validate any existing partial mapping up front before touching motor connections or torque.
-    _load_existing_records(existing_mapping, robot, config)
+    _load_existing_mapping(existing_mapping, robot, config)
     measured_entries = {}
     _, model_table = model_joint_table(config)
 
     try:
-        for side in active_sides:
-            getattr(robot, side + "_bus").connect()
-        if not all(getattr(robot, side + "_bus").is_calibrated for side in active_sides):
-            raise ValueError("Motor calibration does not match the robot; recalibrate before verification")
+        _connect_checked_buses(robot, {}, sides=active_sides)
         _confirm_torque_disable(active_sides)
         for side in active_sides:
             getattr(robot, side + "_bus").disable_torque(list(JOINTS))
@@ -2551,7 +2697,177 @@ def _segment_plan(previous, following, *, fps, max_step_deg, max_speed_deg_s, co
         max_delta / (max_step_deg * control_hz) if max_delta > 0 else 0.0,
     )
     steps = max(1, int(np.ceil(duration * control_hz)), int(np.ceil(max_delta / max_step_deg)))
-    return delta, duration, steps
+    return steps
+
+
+def _episode_segments(episode, document, *, max_step_deg, max_speed_deg_s, control_hz):
+    mapped = [
+        {side: map_joints(document, side, frame.joints[side]) for side in SIDES} for frame in episode.frames
+    ]
+    return [
+        (
+            previous,
+            target,
+            max(
+                _segment_plan(
+                    previous[side],
+                    target[side],
+                    fps=episode.fps,
+                    max_step_deg=max_step_deg,
+                    max_speed_deg_s=max_speed_deg_s,
+                    control_hz=control_hz,
+                )
+                for side in SIDES
+            ),
+        )
+        for previous, target in zip(mapped[:-1], mapped[1:], strict=True)
+    ]
+
+
+def _interpolate(start, target, alpha):
+    return {side: start[side] + alpha * (target[side] - start[side]) for side in SIDES}
+
+
+def _model_pose(document, motor_joints):
+    return {side: unmap_joints(document, side, motor_joints[side]) for side in SIDES}
+
+
+def _max_joint_delta(first, second):
+    return max(float(np.max(np.abs(first[side] - second[side]))) for side in SIDES)
+
+
+MAX_FEEDBACK_AGE_S = 0.5
+
+
+def _read_replay_feedback(robot, scene=None):
+    started = time.monotonic()
+    current = _read_joints(robot)
+    if scene is not None and scene.replay_gripper_poses is not None:
+        for side, reference in scene.replay_gripper_poses.items():
+            bus = getattr(robot, side + "_bus")
+            count = bus.read("Present_Position", GRIPPER, normalize=False)
+            if (
+                not _is_finite_number(count)
+                or not 0 <= count <= 4095
+                or abs(count - reference.encoder_count) > 1
+            ):
+                raise RuntimeError(f"{side} gripper differs from its measured fixed pose: HOLD")
+    if time.monotonic() - started > MAX_FEEDBACK_AGE_S:
+        raise RuntimeError("Encoder feedback took more than 0.5 s: HOLD")
+    return current, started
+
+
+def _verify_initial_hold(robot, current):
+    for side in SIDES:
+        bus = getattr(robot, side + "_bus")
+        goals = bus.sync_read("Goal_Position", list(JOINTS))
+        for index, joint in enumerate(JOINTS):
+            cal = calibration_joint_limits(robot, side, joint)
+            encoder_tick_deg = 360 / (cal["resolution"] - 1)
+            if not _is_finite_number(goals.get(joint)) or (
+                abs(float(goals[joint]) - current[side][index]) > encoder_tick_deg + 1e-6
+            ):
+                raise RuntimeError(f"{side}_{joint} initial hold goal readback differs from the encoder")
+
+
+def _validate_replay_limits(start_error, tracking_error, speed, hz, position_error, orientation_error):
+    for name, value, upper in (
+        ("max_start_error_deg", start_error, 2),
+        ("max_tracking_error_deg", tracking_error, 5),
+        ("max_joint_speed_deg_s", speed, 15),
+        ("control_hz", hz, 30),
+        ("max_sim_error_m", position_error, 0.10),
+    ):
+        if not 0 < value <= upper:
+            raise ValueError(f"{name} must be in (0, {upper:g}]")
+    if orientation_error is not None and not 0 < orientation_error <= 180:
+        raise ValueError("max_sim_orientation_error_deg must be in (0, 180]")
+
+
+def _start_pose_report(context, transition, document, robot, tolerance):
+    current = context["robot_current_pose"]
+    target = context["dataset_initial_pose"]
+    counts = {}
+    for side in SIDES:
+        counts[side] = {}
+        for index, joint in enumerate(JOINTS):
+            cal = calibration_joint_limits(robot, side, joint)
+            direction = -1 if cal["drive_mode"] else 1
+            factor = direction * (cal["resolution"] - 1) / 360
+            midpoint = cal["midpoint_raw"]
+            counts[side][joint] = {
+                "present_position_count": round(current[side]["motor_deg"][index] * factor + midpoint),
+                "expected_goal_position_count": int(
+                    direction * target[side]["mapped_motor_deg"][index] * (cal["resolution"] - 1) / 360
+                    + midpoint
+                ),
+            }
+    errors = context["start_error_deg"]
+    return {
+        "max_error_deg": errors["max"],
+        "per_joint_deg": errors["per_joint"],
+        "tolerance_deg": tolerance,
+        "within_tolerance": errors["max"] <= tolerance,
+        "modeled_collision": transition["samples"][0]["collision"],
+        "limit_violations": motor_pose_limit_violations(
+            {side: current[side]["motor_deg"] for side in SIDES}, document, robot, pose_label="current"
+        ),
+        "encoder_counts": counts,
+    }
+
+
+def _motion_prerequisites(document, robot, scene):
+    blockers = []
+    if mapping_verification_status(document) != PHYSICALLY_VERIFIED:
+        blockers.append("Physically measured sign and zero offset are required for all 14 joints")
+    for side in SIDES:
+        limits = document["sides"][side].get("joint_limits_deg")
+        evidence = document["sides"][side].get("joint_limits_evidence")
+        if limits is None or not isinstance(evidence, str) or not evidence.strip():
+            blockers.append(
+                f"{side}: measured physical joint/wrist/cable limits and their evidence are required"
+            )
+            continue
+        lower_limits = np.asarray(limits["min"], dtype=float)
+        upper_limits = np.asarray(limits["max"], dtype=float)
+        for joint, lower, upper in zip(JOINTS, lower_limits, upper_limits, strict=True):
+            cal = calibration_joint_limits(robot, side, joint)
+            if lower < cal["min_motor_deg"] or upper > cal["max_motor_deg"]:
+                blockers.append(f"{side}_{joint}: physical replay limits must fit inside the calibration")
+    if not measured_scene_ready(scene):
+        blockers.append("A measured scene with a table box and 0.45 m support stick is required")
+    if scene is None or scene.replay_gripper_poses is None:
+        blockers.append("Measured fixed gripper poses are required for the Full-CAD link clearance check")
+    return blockers
+
+
+def _check_episode_geometry(episode, segments, document, geometry):
+    violations = []
+    min_table_clearance = None
+    samples_checked = 0
+
+    def check(frame, step, model):
+        nonlocal samples_checked, min_table_clearance
+        result = geometry.check_pose(model)
+        samples_checked += 1
+        clearance = result["table_clearance_m"]
+        if clearance is not None:
+            min_table_clearance = (
+                clearance if min_table_clearance is None else min(min_table_clearance, clearance)
+            )
+        if result["collision"]["count"] or result["clearance_violations"] or result["model_limit_violations"]:
+            violations.append({"frame": frame, "substep": step, **result})
+
+    check(0, 0, episode.frames[0].joints)
+    for frame, (previous, target, steps) in enumerate(segments, 1):
+        for step in range(1, steps + 1):
+            check(frame, step, _model_pose(document, _interpolate(previous, target, step / steps)))
+    return {
+        "samples_checked": samples_checked,
+        "modeled_safe": not violations,
+        "minimum_table_clearance_m": min_table_clearance,
+        "violations": violations,
+    }
 
 
 def _target_pose_for_frame(simulation, frame, side):
@@ -2560,20 +2876,6 @@ def _target_pose_for_frame(simulation, frame, side):
         return target
     position, quaternion = simulation.arms[side].solver.fk_solver.compute(np.r_[frame.joints[side], 0.0])
     return np.r_[position, quaternion]
-
-
-def _collision_at_model_joints(simulation, joints):
-    """Evaluate the model at arbitrary joints without moving the viewer state."""
-    saved = simulation.data.qpos.copy()
-    try:
-        for side in JOINT_SIDES:
-            simulation.data.qpos[simulation.qpos_indices[side][:7]] = np.deg2rad(joints[side])
-            simulation.data.qpos[simulation.qpos_indices[side][7]] = 0
-        simulation.mujoco.mj_forward(simulation.model, simulation.data)
-        return simulation.collision_report()
-    finally:
-        simulation.data.qpos[:] = saved
-        simulation.mujoco.mj_forward(simulation.model, simulation.data)
 
 
 def _normalize_initial_move_strategy(strategy):
@@ -2586,13 +2888,12 @@ def _normalize_initial_move_strategy(strategy):
 def _build_transition_stages(current, mapped_first, *, strategy):
     if strategy == "linear":
         return [("linear", current, mapped_first)]
-    # Lift wrist/elbow pitch (joint5, joint3) toward dataset start first so low resting wrists
-    # clear any table surface before shoulder yaw/roll sweep sideways.
-    lift_indices = (5, 3)
+    # Moving distal pitch first can raise or lower the hands; FK evaluates the result.
+    pitch_indices = (5, 3)
     lifted_mid = {}
     for side in JOINT_SIDES:
         mid = np.asarray(current[side], dtype=float).copy()
-        for idx in lift_indices:
+        for idx in pitch_indices:
             mid[idx] = float(mapped_first[side][idx])
         lifted_mid[side] = mid
     stage1_delta = max(float(np.max(np.abs(lifted_mid[s] - current[s]))) for s in JOINT_SIDES)
@@ -2600,7 +2901,7 @@ def _build_transition_stages(current, mapped_first, *, strategy):
     if stage1_delta <= 1e-6 or stage2_delta <= 1e-6:
         return [("linear", current, mapped_first)]
     return [
-        ("lift_distal_pitch", current, lifted_mid),
+        ("align_joint3_and_joint5", current, lifted_mid),
         ("align_remaining_joints", lifted_mid, mapped_first),
     ]
 
@@ -2615,7 +2916,7 @@ def _evaluate_transition_stages(
     max_step_deg,
     max_speed_deg_s,
     control_hz,
-    simulation,
+    geometry,
     chosen_strategy,
 ):
     scale = max(float(max_step_deg), 1e-9)
@@ -2625,6 +2926,8 @@ def _evaluate_transition_stages(
 
     stages = []
     collision_frames = []
+    clearance_violation_steps = []
+    samples = []
     max_penetration_m = 0.0
     body_pairs = {}
     total_steps = 0
@@ -2644,22 +2947,33 @@ def _evaluate_transition_stages(
         max_command_step_deg = max(max_command_step_deg, step_size)
         max_command_speed_deg_s = max(max_command_speed_deg_s, speed_val)
 
-        start_model = {s: unmap_joints(document, s, stage_start[s]) for s in JOINT_SIDES}
-        target_model = {s: unmap_joints(document, s, stage_target[s]) for s in JOINT_SIDES}
         start_step_idx = 0 if not stages else 1
-        for step in range(start_step_idx, steps + 1):
-            alpha = step / steps
-            model_joints = {
-                s: start_model[s] + alpha * (target_model[s] - start_model[s]) for s in JOINT_SIDES
-            }
-            collision = (
-                _collision_at_model_joints(simulation, model_joints) if simulation is not None else None
-            )
-            if collision is not None and collision["count"]:
-                collision_frames.append(total_steps + step)
-                max_penetration_m = max(max_penetration_m, collision["max_penetration_m"])
-                for pair, count in collision["body_pairs"].items():
-                    body_pairs[pair] = body_pairs.get(pair, 0) + count
+        if geometry is not None:
+            for step in range(start_step_idx, steps + 1):
+                command = _interpolate(stage_start, stage_target, step / steps)
+                model = _model_pose(document, command)
+                check = geometry.check_pose(model, include_heights=True)
+                step_number = total_steps + step
+                collision = check["collision"]
+                if collision["count"]:
+                    collision_frames.append(step_number)
+                    max_penetration_m = max(max_penetration_m, collision["max_penetration_m"])
+                    for pair, count in collision["body_pairs"].items():
+                        body_pairs[pair] = body_pairs.get(pair, 0) + count
+                if check["clearance_violations"]:
+                    clearance_violation_steps.append(step_number)
+                limit_violations.extend(
+                    {"step": step_number, **item} for item in check["model_limit_violations"]
+                )
+                samples.append(
+                    {
+                        "step": step_number,
+                        "stage": stage_name,
+                        "target_motor_deg": {side: command[side].tolist() for side in SIDES},
+                        "full_cad_deg": {side: model[side].tolist() for side in SIDES},
+                        **check,
+                    }
+                )
 
         stages.append(
             {
@@ -2680,11 +2994,22 @@ def _evaluate_transition_stages(
         max_command_step_deg <= float(max_step_deg) + 1e-6
         and max_command_speed_deg_s <= float(max_speed_deg_s) + 1e-6
     )
+    modeled_safe = (
+        geometry is not None
+        and not limit_violations
+        and not collision_frames
+        and not clearance_violation_steps
+        and speed_and_step_within_limits
+    )
+    scene = geometry.scene if geometry is not None else None
+    blockers = _motion_prerequisites(document, robot, scene)
     return {
         "required": total_direct_delta > 0,
         "strategy": chosen_strategy,
         "stages": stages,
-        "safe": not limit_violations and not collision_frames and speed_and_step_within_limits,
+        "safe": modeled_safe and not blockers,
+        "modeled_safe": modeled_safe,
+        "blockers": blockers,
         "delta_deg": total_direct_delta,
         "steps": total_steps,
         "estimated_duration_s": total_steps / float(control_hz),
@@ -2695,15 +3020,16 @@ def _evaluate_transition_stages(
         "speed_and_step_within_limits": speed_and_step_within_limits,
         "control_hz": float(control_hz),
         "limit_violations": limit_violations,
-        "collision_checked": simulation is not None,
+        "collision_checked": geometry is not None,
         "collision_frames": collision_frames,
+        "clearance_violation_steps": clearance_violation_steps,
+        "samples": samples,
         "max_penetration_m": max_penetration_m,
         "body_pairs": body_pairs,
         "scope": (
             f"Joint-space {chosen_strategy} transition from the measured current pose to the mapped "
-            "dataset first frame. Modeled floor/self/obstacle collisions, speed/step bounds, "
-            "calibration range, and configured joint limits are checked; unmodeled external "
-            "obstacles and physical joint hard stops are not verified."
+            "dataset first frame. FK, arm mesh heights, floor/self/inter-arm contacts and joint "
+            "limits are sampled at each setpoint. Table clearance requires a measured scene."
         ),
     }
 
@@ -2718,16 +3044,18 @@ def evaluate_initial_transition(
     max_speed_deg_s,
     control_hz,
     simulation=None,
+    geometry=None,
     strategy="auto",
 ):
     """Evaluate a joint-space move from the current pose to the dataset start.
 
-    Supports ``linear``, ``lift-first`` (lifts wrist/elbow pitch first to clear desk
-    surfaces before sweeping shoulders), and ``auto`` (uses linear when collision-free,
-    falling back to lift-first when linear encounters a modeled collision).
+    ``lift-first`` aligns joint3 and joint5 first. ``auto`` checks the straight path
+    before trying the staged path.
     """
     normalized_strategy = _normalize_initial_move_strategy(strategy)
     document = document.get("document", document) if isinstance(document, dict) else document
+    if geometry is None and simulation is not None:
+        geometry = ReplayGeometry(simulation)
     first_model = {side: episode.frames[0].joints[side] for side in JOINT_SIDES}
     mapped_first = {side: map_joints(document, side, first_model[side]) for side in JOINT_SIDES}
 
@@ -2742,7 +3070,7 @@ def evaluate_initial_transition(
             max_step_deg=max_step_deg,
             max_speed_deg_s=max_speed_deg_s,
             control_hz=control_hz,
-            simulation=simulation,
+            geometry=geometry,
             chosen_strategy="lift_first" if len(specs) > 1 else "linear",
         )
 
@@ -2755,10 +3083,10 @@ def evaluate_initial_transition(
         max_step_deg=max_step_deg,
         max_speed_deg_s=max_speed_deg_s,
         control_hz=control_hz,
-        simulation=simulation,
+        geometry=geometry,
         chosen_strategy="linear",
     )
-    if normalized_strategy == "auto" and linear_eval["collision_frames"] and linear_eval["required"]:
+    if normalized_strategy == "auto" and not linear_eval["modeled_safe"] and linear_eval["required"]:
         lift_specs = _build_transition_stages(current, mapped_first, strategy="lift_first")
         if len(lift_specs) > 1:
             lift_eval = _evaluate_transition_stages(
@@ -2770,10 +3098,10 @@ def evaluate_initial_transition(
                 max_step_deg=max_step_deg,
                 max_speed_deg_s=max_speed_deg_s,
                 control_hz=control_hz,
-                simulation=simulation,
+                geometry=geometry,
                 chosen_strategy="lift_first",
             )
-            if lift_eval["safe"]:
+            if lift_eval["modeled_safe"]:
                 lift_eval["fallback_from_linear_collisions"] = linear_eval["collision_frames"][:10]
                 return lift_eval
     return linear_eval
@@ -2794,34 +3122,32 @@ def execute_joint_episode(
     max_sim_orientation_error_deg=None,
     allow_initial_move=False,
     initial_move_strategy="auto",
+    scene=None,
     realtime=True,
 ):
     """Send a verified joint trajectory with interpolation and existing safety gates."""
-    if not 0 < max_start_error_deg <= 2:
-        raise ValueError("max_start_error_deg must be in (0, 2]")
-    if not 0 < max_tracking_error_deg <= 5:
-        raise ValueError("max_tracking_error_deg must be in (0, 5]")
-    if not 0 < max_joint_speed_deg_s <= 15:
-        raise ValueError("max_joint_speed_deg_s must be in (0, 15]")
-    if not 0 < control_hz <= 30:
-        raise ValueError("control_hz must be in (0, 30]")
-    if not 0 < max_sim_error_m <= 0.10:
-        raise ValueError("max_sim_error_m must be in (0, 0.10]")
+    _validate_replay_limits(
+        max_start_error_deg,
+        max_tracking_error_deg,
+        max_joint_speed_deg_s,
+        control_hz,
+        max_sim_error_m,
+        max_sim_orientation_error_deg,
+    )
     mapping_path = document.get("path") if isinstance(document, dict) else None
     raw_document = document.get("document", document) if isinstance(document, dict) else document
     document = raw_document
     model_hash = file_sha256(full_model_path(config["robot"]))
     if episode.metadata.get("mujoco_model_sha256") != model_hash:
         raise ValueError("Dataset MuJoCo model differs from the selected model; regenerate the dataset")
-    mapping_info = validate_mapping_for_robot(document, robot, model_sha256=model_hash)
+    mapping_info = validate_mapping_for_robot(
+        document, robot, model_sha256=model_hash, allow_calibration_assumed=True
+    )
     step_limit = robot.config.max_relative_target
     if not robot.config.use_degrees or not isinstance(step_limit, (int, float)) or not 0 < step_limit <= 0.5:
         raise ValueError("Follower must use calibrated degrees and a per-step limit at most 0.5 deg")
     validation = validate_mapped_episode(episode, document, robot)
     inspection = inspect_joint_mapping(episode, document, robot, config)
-    simulation = FullMujocoSimulation(
-        config["robot"], gui=False, obstacles=episode.metadata.get("obstacles", [])
-    )
     output = Path(report_path)
     if output.exists():
         raise FileExistsError(f"Report already exists: {output}")
@@ -2837,13 +3163,15 @@ def execute_joint_episode(
         "robot_id": robot.id,
         "calibration_sha256": calibration_sha256(robot),
         "mapping": mapping_path,
-        "mapping_verified_at": document.get("created_at"),
+        "mapping_verified_at": mapping_info["verified_at"],
         "mapping_robot_check": mapping_info,
         "mujoco_model_sha256": model_hash,
         "dataset_original_hardware_replay_allowed": episode.metadata.get("hardware_replay_allowed"),
         "gripper_commanded": False,
         "simulation_only_source": True,
         "joint_inspection": inspection,
+        "scene": scene.to_dict() if scene is not None else None,
+        "usb_ports": {},
         "pose_context": None,
         "pose_context_after_initial_transition": None,
         "initial_transition": None,
@@ -2859,147 +3187,153 @@ def execute_joint_episode(
             "max_sim_orientation_error_deg": max_sim_orientation_error_deg,
             "preview_step_limit_deg": validation["preview_step_limit_deg"],
             "allow_initial_move": bool(allow_initial_move),
+            "max_feedback_age_s": MAX_FEEDBACK_AGE_S,
         },
         "validation": validation,
     }
     failure = None
     current = None
     start_time = None
-    next_tick = None
+    last_command_at = None
+    geometry = None
+    writes_started = False
     control_steps = 0
     max_observed_speed = 0.0
     tcp_warning_frames = []
     tcp_orientation_warning_frames = []
+
+    def check_feedback_pose(joints):
+        if motor_pose_limit_violations(joints, document, robot):
+            raise RuntimeError("Encoder feedback exceeds calibrated or physical joint limits: HOLD")
+        observed = geometry.check_pose(_model_pose(document, joints))
+        if (
+            observed["collision"]["count"]
+            or observed["model_limit_violations"]
+            or observed["clearance_violations"]
+        ):
+            raise RuntimeError("Encoder feedback violates modeled limits or clearance: HOLD")
+
+    def send_checked_target(target, label):
+        nonlocal control_steps, last_command_at, current, sample_at, max_observed_speed, previous_sent
+        if realtime:
+            time.sleep(max(0.0, last_command_at + 1.0 / control_hz - time.monotonic()))
+        if time.monotonic() - sample_at > MAX_FEEDBACK_AGE_S:
+            current, sample_at = _read_replay_feedback(robot, scene)
+            check_feedback_pose(current)
+        if time.monotonic() - sample_at > MAX_FEEDBACK_AGE_S:
+            raise RuntimeError(f"Encoder feedback is stale at {label}: HOLD")
+        if _max_joint_delta(target, current) > step_limit + 1e-6:
+            raise RuntimeError(
+                f"Robot fell behind at {label}; target exceeds the encoder-relative step: HOLD"
+            )
+        last_command_at = time.monotonic()
+        sent = robot.send_action(_actions(target))
+        control_steps += 1
+        sent_motor = {
+            side: np.array([sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float) for side in SIDES
+        }
+        current, sample_at = _read_replay_feedback(robot, scene)
+        speed = _max_joint_delta(sent_motor, previous_sent) * control_hz
+        max_observed_speed = max(max_observed_speed, speed)
+        previous_sent = sent_motor
+        if not np.isfinite(speed) or _max_joint_delta(sent_motor, target) > 1e-6:
+            raise RuntimeError(f"Follower changed the validated setpoint at {label}: HOLD")
+        if _max_joint_delta(current, target) > max_tracking_error_deg:
+            raise RuntimeError(
+                f"Robot fell behind at {label}; encoder tracking error exceeds tolerance: HOLD"
+            )
+        check_feedback_pose(current)
+        return sent_motor
+
     try:
-        for side in SIDES:
-            getattr(robot, side + "_bus").connect()
-        if not robot.is_calibrated:
-            raise ValueError("Motor calibration does not match the robot; recalibrate before replay")
-        for side in SIDES:
-            bus = getattr(robot, side + "_bus")
-            if any(bus.read("Operating_Mode", name, normalize=False) != 0 for name in JOINTS):
-                raise ValueError(f"{side} motors must be in position mode")
-        current = _read_joints(robot)
-        first = {side: map_joints(document, side, episode.frames[0].joints[side]) for side in SIDES}
-        start_errors = {
-            side: {
-                joint: float(abs(current[side][index] - first[side][index]))
-                for index, joint in enumerate(JOINTS)
-            }
+        blockers = _motion_prerequisites(document, robot, scene)
+        if blockers:
+            raise ValueError("Replay prerequisites: " + ", ".join(blockers))
+        geometry = ReplayGeometry.build(config["robot"], episode.metadata.get("obstacles", []), scene)
+        simulation = geometry.simulation
+        _connect_checked_buses(robot, report["usb_ports"])
+        if not _read_bus_state(robot, report["usb_ports"]):
+            raise ValueError("Both arms must report position mode and valid torque readback")
+        current, sample_at = _read_replay_feedback(robot, scene)
+        report["pose_context"] = build_pose_context(episode, document, robot, config, current=current)
+        transition = evaluate_initial_transition(
+            current,
+            episode,
+            document,
+            robot,
+            max_step_deg=step_limit,
+            max_speed_deg_s=max_joint_speed_deg_s,
+            control_hz=control_hz,
+            geometry=geometry,
+            strategy=initial_move_strategy,
+        )
+        transition["applied"] = False
+        report["initial_transition"] = transition
+        report["start_pose"] = _start_pose_report(
+            report["pose_context"], transition, document, robot, max_start_error_deg
+        )
+        if not transition["safe"]:
+            raise ValueError(
+                "Initial transition to the dataset start is not safe: "
+                f"limit_violations={len(transition['limit_violations'])}, "
+                f"modeled_collision_frames={transition['collision_frames'][:10]}, "
+                f"clearance_violation_steps={transition['clearance_violation_steps'][:10]}"
+            )
+        if not report["start_pose"]["within_tolerance"] and not allow_initial_move:
+            start_max = report["start_pose"]["max_error_deg"]
+            raise ValueError(
+                f"Robot start pose differs from the dataset start by {start_max:.2f} deg "
+                f"(limit {max_start_error_deg:g}); review the read-only report before using --allow-initial-move"
+            )
+        segments = _episode_segments(
+            episode,
+            document,
+            max_step_deg=step_limit,
+            max_speed_deg_s=max_joint_speed_deg_s,
+            control_hz=control_hz,
+        )
+        report["trajectory_geometry"] = _check_episode_geometry(episode, segments, document, geometry)
+        if not report["trajectory_geometry"]["modeled_safe"]:
+            raise ValueError(
+                "Interpolated dataset trajectory violates modeled collision, clearance, or joint limits"
+            )
+        live, sample_at = _read_replay_feedback(robot, scene)
+        if _max_joint_delta(live, current) > 1e-6:
+            raise RuntimeError(
+                "Start encoders changed during preflight; repeat --check-start from the new pose"
+            )
+        writes_started = True
+        initial_sent = robot.send_action(_actions(current))
+        initial_sent_motor = {
+            side: np.array([initial_sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
             for side in SIDES
         }
-        start_max = max(value for side in SIDES for value in start_errors[side].values())
-        report["pose_context"] = build_pose_context(episode, document, robot, config, current=current)
-        report["start_pose"] = {
-            "max_error_deg": start_max,
-            "per_joint_deg": start_errors,
-            "tolerance_deg": max_start_error_deg,
-        }
-        current_model = {side: unmap_joints(document, side, current[side]) for side in SIDES}
-        start_collision = _collision_at_model_joints(simulation, current_model)
-        current_limit_violations = motor_pose_limit_violations(current, document, robot, pose_label="current")
-        report["start_pose"]["modeled_collision"] = start_collision
-        report["start_pose"]["limit_violations"] = current_limit_violations
-        if start_collision["count"]:
-            raise ValueError(
-                "Robot current pose has a modeled self/floor collision "
-                f"(count={start_collision['count']}, "
-                f"max_penetration_m={start_collision['max_penetration_m']:.4f}); "
-                "move the robot away before replay"
-            )
-        if current_limit_violations:
-            raise ValueError(
-                "Robot current pose exceeds calibrated or configured joint limits "
-                f"(violations={len(current_limit_violations)}): {current_limit_violations[0]}"
-            )
-        transition = {
-            "required": start_max > max_start_error_deg,
-            "applied": False,
-            "reason": None if start_max <= max_start_error_deg else "start pose differs",
-        }
-        report["initial_transition"] = transition
-        if start_max > max_start_error_deg and not allow_initial_move:
-            worst = sorted(
-                ((value, side, joint) for side in SIDES for joint, value in start_errors[side].items()),
-                reverse=True,
-            )[:5]
-            details = ", ".join(f"{side}_{joint}={value:.2f}" for value, side, joint in worst)
-            raise ValueError(
-                f"Robot start pose differs from the mapped dataset first frame by up to "
-                f"{start_max:.2f} deg (limit {max_start_error_deg:g}; {details}). "
-                "Move the robot manually under support or review the dry-run and use "
-                "--allow-initial-move explicitly."
-            )
-        if start_max > max_start_error_deg:
-            transition = evaluate_initial_transition(
-                current,
-                episode,
-                document,
-                robot,
-                max_step_deg=step_limit,
-                max_speed_deg_s=max_joint_speed_deg_s,
-                control_hz=control_hz,
-                simulation=simulation,
-                strategy=initial_move_strategy,
-            )
-            transition["applied"] = False
-            report["initial_transition"] = transition
-            if not transition.get("collision_checked") or not transition["safe"]:
-                raise ValueError(
-                    "Initial transition to the dataset start is not safe: "
-                    f"limit_violations={len(transition['limit_violations'])}, "
-                    f"modeled_collision_frames={transition['collision_frames'][:10]}; "
-                    "move the robot manually under support"
-                )
-        initial_sent = robot.send_action(_actions(current))
+        if _max_joint_delta(initial_sent_motor, current) > 1e-6:
+            raise RuntimeError("Follower changed the initial hold target: HOLD")
+        _verify_initial_hold(robot, current)
+        report["initial_hold_verified"] = True
+        live, sample_at = _read_replay_feedback(robot, scene)
+        if _max_joint_delta(live, current) > step_limit:
+            raise RuntimeError("Unexpected movement before enabling torque: HOLD")
         for side in SIDES:
-            getattr(robot, side + "_bus").enable_torque(list(JOINTS))
+            disabled = [joint for joint in JOINTS if not report["usb_ports"][side]["torque_enable"][joint]]
+            if disabled:
+                getattr(robot, side + "_bus").enable_torque(disabled)
+        live, sample_at = _read_replay_feedback(robot, scene)
+        if _max_joint_delta(live, current) > step_limit:
+            raise RuntimeError("Unexpected movement while establishing initial hold: HOLD")
+        current = live
+        check_feedback_pose(current)
         report["status"] = "running"
         start_time = time.monotonic()
-        next_tick = start_time
-        previous_sent = {side: current[side].copy() for side in SIDES}
+        last_command_at = start_time
+        previous_sent = initial_sent_motor
         if transition["required"]:
             total_steps = transition["steps"]
-            stages = transition.get("stages") or [
-                {
-                    "name": "linear",
-                    "target_motor_deg": {s: first[s].tolist() for s in SIDES},
-                    "steps": total_steps,
-                }
-            ]
-            for stage in stages:
-                stage_start = {side: current[side].copy() for side in SIDES}
-                stage_target = {
-                    side: np.asarray(stage["target_motor_deg"][side], dtype=float) for side in SIDES
-                }
-                stage_steps = int(stage["steps"])
-                for substep in range(1, stage_steps + 1):
-                    alpha = substep / stage_steps
-                    transition_target = {
-                        side: stage_start[side] + alpha * (stage_target[side] - stage_start[side])
-                        for side in SIDES
-                    }
-                    sent = robot.send_action(_actions(transition_target))
-                    control_steps += 1
-                    measured = _read_joints(robot)
-                    sent_motor = {
-                        side: np.array([sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
-                        for side in SIDES
-                    }
-                    for side in SIDES:
-                        error = float(np.max(np.abs(transition_target[side] - measured[side])))
-                        if error > max_tracking_error_deg:
-                            raise RuntimeError(
-                                f"Robot fell behind the initial transition ({side}, {error:.2f} deg): HOLD"
-                            )
-                        speed = float(np.max(np.abs(sent_motor[side] - previous_sent[side]))) * control_hz
-                        max_observed_speed = max(max_observed_speed, speed)
-                        previous_sent[side] = sent_motor[side].copy()
-                    current = measured
-                    initial_sent = sent
-                    if realtime:
-                        next_tick += 1.0 / control_hz
-                        time.sleep(max(0.0, next_tick - time.monotonic()))
+            for sample in transition["samples"][1:]:
+                target = {side: np.asarray(sample["target_motor_deg"][side]) for side in SIDES}
+                initial_sent_motor = send_checked_target(target, f"initial transition step {sample['step']}")
+            first = {side: map_joints(document, side, episode.frames[0].joints[side]) for side in SIDES}
             final_errors = {
                 side: {
                     joint: float(abs(current[side][index] - first[side][index]))
@@ -3029,10 +3363,6 @@ def execute_joint_episode(
             else None
         )
         initial_frame = episode.frames[0]
-        initial_sent_motor = {
-            side: np.array([initial_sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
-            for side in SIDES
-        }
         initial_measured_model = {side: unmap_joints(document, side, current[side]) for side in SIDES}
         initial_sample = {
             "plan_frame": initial_frame.plan_frame,
@@ -3047,9 +3377,7 @@ def execute_joint_episode(
         }
         for side in SIDES:
             target_pose = _target_pose_for_frame(simulation, initial_frame, side)
-            position, quaternion = simulation.arms[side].solver.fk_solver.compute(
-                np.r_[initial_measured_model[side], 0.0]
-            )
+            position, quaternion = geometry.tcp_pose(side)
             target = pose(target_pose[:3], target_pose[3:])
             actual = pose(position, quaternion)
             tcp_position_error = float(np.linalg.norm(position - target[:3, 3]))
@@ -3077,52 +3405,13 @@ def execute_joint_episode(
                 "target_pose_source": "dataset",
             }
         report["frames"].append(initial_sample)
-        for index in range(len(episode.frames) - 1):
-            first_frame, following = episode.frames[index], episode.frames[index + 1]
-            previous_motor = {side: map_joints(document, side, first_frame.joints[side]) for side in SIDES}
-            target_motor = {side: map_joints(document, side, following.joints[side]) for side in SIDES}
-            durations, step_counts = [], []
-            for side in SIDES:
-                _, duration, steps = _segment_plan(
-                    previous_motor[side],
-                    target_motor[side],
-                    fps=episode.fps,
-                    max_step_deg=step_limit,
-                    max_speed_deg_s=max_joint_speed_deg_s,
-                    control_hz=control_hz,
-                )
-                durations.append(duration)
-                step_counts.append(steps)
-            steps = max(step_counts)
-            duration = max(durations)
+        for index, (previous_motor, target_motor, steps) in enumerate(segments):
+            following = episode.frames[index + 1]
             segment_duration = steps / control_hz
             for substep in range(1, steps + 1):
-                alpha = substep / steps
-                commanded = {
-                    side: previous_motor[side] + alpha * (target_motor[side] - previous_motor[side])
-                    for side in SIDES
-                }
-                sent = robot.send_action(_actions(commanded))
-                control_steps += 1
-                measured = _read_joints(robot)
-                sent_motor = {
-                    side: np.array([sent[f"{side}_{name}.pos"] for name in JOINTS], dtype=float)
-                    for side in SIDES
-                }
-                for side in SIDES:
-                    error = float(np.max(np.abs(commanded[side] - measured[side])))
-                    if error > max_tracking_error_deg:
-                        raise RuntimeError(
-                            f"Robot fell behind the mapped dataset at frame {index} "
-                            f"({side}, {error:.2f} deg): HOLD"
-                        )
-                    speed = float(np.max(np.abs(sent_motor[side] - previous_sent[side]))) * control_hz
-                    max_observed_speed = max(max_observed_speed, speed)
-                    previous_sent[side] = sent_motor[side].copy()
-                current = measured
-                if realtime:
-                    next_tick += 1.0 / control_hz
-                    time.sleep(max(0.0, next_tick - time.monotonic()))
+                commanded = _interpolate(previous_motor, target_motor, substep / steps)
+                sent_motor = send_checked_target(commanded, f"dataset frame {index + 1}, substep {substep}")
+            measured = current
             measured_model = {side: unmap_joints(document, side, measured[side]) for side in SIDES}
             sample = {
                 "plan_frame": following.plan_frame,
@@ -3137,9 +3426,7 @@ def execute_joint_episode(
             }
             for side in SIDES:
                 target_pose = _target_pose_for_frame(simulation, following, side)
-                position, quaternion = simulation.arms[side].solver.fk_solver.compute(
-                    np.r_[measured_model[side], 0.0]
-                )
+                position, quaternion = geometry.tcp_pose(side)
                 target = pose(target_pose[:3], target_pose[3:])
                 actual = pose(position, quaternion)
                 tcp_position_error = float(np.linalg.norm(position - target[:3, 3]))
@@ -3169,15 +3456,17 @@ def execute_joint_episode(
                     ),
                 }
             report["frames"].append(sample)
-            current = measured
         report["status"] = "complete"
     except BaseException as exc:
         failure = exc
         report["status"], report["failure"] = "aborted", str(exc) or type(exc).__name__
     finally:
-        if robot.is_connected and current is not None:
+        if writes_started and robot.is_connected:
             try:
-                robot.send_action(_actions(current))
+                hold, _ = _read_replay_feedback(robot)
+                if motor_pose_limit_violations(hold, None, robot):
+                    raise RuntimeError("No calibrated encoder pose for HOLD")
+                robot.send_action(_actions(hold))
                 report["hold_sent"] = True
             except Exception as exc:
                 report["hold_error"] = str(exc)
@@ -3224,10 +3513,9 @@ def execute_joint_episode(
             for side in SIDES
         }
         output.parent.mkdir(parents=True, exist_ok=True)
-        if output.exists():
-            output.unlink()
-        with suppress(Exception):
-            simulation.close()
+        if geometry is not None:
+            with suppress(Exception):
+                geometry.simulation.close()
         _write_json(output, report)
     if failure:
         raise RuntimeError(
@@ -3257,14 +3545,32 @@ def replay_joint_dataset(
     check_start=False,
     allow_initial_move=False,
     initial_move_strategy="auto",
+    scene_geometry=None,
 ):
+    _validate_replay_limits(
+        max_start_error_deg,
+        max_tracking_error_deg,
+        max_joint_speed_deg_s,
+        control_hz,
+        max_sim_error_m,
+        max_sim_orientation_error_deg,
+    )
+    scene = SceneGeometry.from_file(scene_geometry) if scene_geometry is not None else None
+    if report is not None and Path(report).exists():
+        raise FileExistsError(f"Report already exists: {report}")
     episode = load_joint_episode(dataset_path, episode_index)
     model_hash = file_sha256(full_model_path(config["robot"]))
     if episode.metadata.get("mujoco_model_sha256") != model_hash:
         raise ValueError("Dataset MuJoCo model differs from the selected model; regenerate the dataset")
     if not robot_id:
         raise ValueError("--robot-id is required to load the follower calibration")
-    robot = arm_only_follower(
+    measured_scene = scene if measured_scene_ready(scene) else None
+    follower = (
+        arm_and_gripper_follower
+        if measured_scene is not None and measured_scene.replay_gripper_poses is not None
+        else arm_only_follower
+    )
+    robot = follower(
         left_port or "/dev/not-used-left",
         right_port or "/dev/not-used-right",
         robot_id,
@@ -3276,93 +3582,120 @@ def replay_joint_dataset(
     else:
         cal_doc, _ = build_calibration_mapping(robot, config=config, episode=episode)
         mapping = {"path": None, "document": cal_doc}
-    mapping_info = validate_mapping_for_robot(mapping["document"], robot, model_sha256=model_hash)
+    document = mapping["document"]
+    mapping_info = validate_mapping_for_robot(
+        document, robot, model_sha256=model_hash, allow_calibration_assumed=True
+    )
     validation = validate_mapped_episode(episode, mapping["document"], robot)
     inspection = inspect_joint_mapping(episode, mapping["document"], robot, config)
     if not execute:
         result = {
             "schema": REPLAY_SCHEMA,
             "mode": "validation_only",
+            "checked_at": _now(),
             "dataset": str(episode.root),
+            "dataset_sha256": episode.dataset_sha256,
+            "dataset_manifest_sha256": episode.manifest_sha256,
+            "mujoco_model_sha256": model_hash,
+            "mapping_sha256": file_sha256(mapping_path) if mapping_path is not None else None,
             "episode": episode.episode,
             "frames": len(episode.frames),
             "mapping": mapping_info,
+            "scene": scene.to_dict() if scene is not None else None,
+            "usb_ports": {},
             "joint_inspection": inspection,
-            "pose_context": build_pose_context(episode, mapping["document"], robot, config),
+            "pose_context": build_pose_context(episode, document, robot, config),
             "initial_transition": None,
             "gripper_commanded": False,
             "simulation_only_source": True,
             "validation": validation,
             "unverified": {
                 "joints": inspection["unverified_joints"],
-                "model_joint_limits": "full-CAD MJCF limits are unmeasured; preview only",
-                "external_obstacles": "not modeled unless --obstacles was used when the dataset was built",
-                "physical_tcp_accuracy": "not measured; FK from motor encoders only",
-                "mapping_scale": (
-                    "multi-pose mappings fit the slope; joint-wise mappings use the "
-                    "direct-drive 1:1 scale and mark scale_verified=false"
-                ),
+                "model_joint_limits": "Full CAD preview bounds; physical limits require measured evidence",
+                "external_obstacles": "Physical clearance requires a measured scene",
+                "physical_tcp_accuracy": "Estimated using Full-CAD FK and encoder readings",
             },
         }
-        if not check_start:
-            return result
-        if not left_port or not right_port:
-            raise ValueError("--check-start requires --left-port and --right-port")
-        step_limit = robot.config.max_relative_target
-        if (
-            not robot.config.use_degrees
-            or not isinstance(step_limit, (int, float))
-            or not 0 < step_limit <= 0.5
-        ):
-            raise ValueError(
-                "Follower must use calibrated degrees and a scalar per-step limit at most 0.5 deg"
-            )
-        current = None
-        simulation = None
+        blockers = _motion_prerequisites(document, robot, scene)
+        result["preflight"] = {"ready": False, "ready_with_initial_move": False, "blockers": blockers}
+        geometry = None
         try:
-            for side in SIDES:
-                getattr(robot, side + "_bus").connect()
-            if not robot.is_calibrated:
-                raise ValueError("Motor calibration does not match the robot; recalibrate before replay")
-            current = _read_joints(robot)
-            result["pose_context"] = build_pose_context(
-                episode, mapping["document"], robot, config, current=current
-            )
-            simulation = FullMujocoSimulation(
-                config["robot"], gui=False, obstacles=episode.metadata.get("obstacles", [])
-            )
+            if not check_start:
+                blockers.append("Current pose and trajectory geometry require --check-start")
+                return result
+            if not left_port or not right_port:
+                raise ValueError("--check-start requires --left-port and --right-port")
+            step_limit = robot.config.max_relative_target
+            if (
+                not robot.config.use_degrees
+                or not isinstance(step_limit, (int, float))
+                or not 0 < step_limit <= 0.5
+            ):
+                raise ValueError(
+                    "Follower must use calibrated degrees and a scalar per-step limit at most 0.5 deg"
+                )
+            _connect_checked_buses(robot, result["usb_ports"])
+            if not _read_bus_state(robot, result["usb_ports"]):
+                blockers.append("Both arms must report position mode and valid torque readback")
+            current, _ = _read_replay_feedback(robot, measured_scene)
+            result["pose_context"] = build_pose_context(episode, document, robot, config, current=current)
+            geometry = ReplayGeometry.build(config["robot"], episode.metadata.get("obstacles", []), scene)
             transition = evaluate_initial_transition(
                 current,
                 episode,
-                mapping["document"],
+                document,
                 robot,
                 max_step_deg=step_limit,
                 max_speed_deg_s=max_joint_speed_deg_s,
                 control_hz=control_hz,
-                simulation=simulation,
+                geometry=geometry,
                 strategy=initial_move_strategy,
             )
             result["initial_transition"] = transition
-            current_model = {side: unmap_joints(mapping["document"], side, current[side]) for side in SIDES}
-            result["start_pose"] = {
-                "max_error_deg": result["pose_context"]["start_error_deg"]["max"],
-                "per_joint_deg": result["pose_context"]["start_error_deg"]["per_joint"],
-                "tolerance_deg": max_start_error_deg,
-                "within_tolerance": result["pose_context"]["start_error_deg"]["max"] <= max_start_error_deg,
-                "modeled_collision": _collision_at_model_joints(simulation, current_model),
-                "limit_violations": motor_pose_limit_violations(
-                    current, mapping["document"], robot, pose_label="current"
-                ),
-            }
+            start = _start_pose_report(
+                result["pose_context"], transition, document, robot, max_start_error_deg
+            )
+            result["start_pose"] = start
+            if not transition["modeled_safe"]:
+                blockers.append(
+                    "Initial transition violates modeled collision, clearance, speed or joint bounds"
+                )
+            segments = _episode_segments(
+                episode,
+                document,
+                max_step_deg=step_limit,
+                max_speed_deg_s=max_joint_speed_deg_s,
+                control_hz=control_hz,
+            )
+            trajectory = _check_episode_geometry(episode, segments, document, geometry)
+            result["trajectory_geometry"] = trajectory
+            if not trajectory["modeled_safe"]:
+                blockers.append("Interpolated dataset violates modeled collision, clearance or joint bounds")
+            live, _ = _read_replay_feedback(robot, measured_scene)
+            if _max_joint_delta(current, live) > 1e-6:
+                blockers.append(
+                    "Start encoders changed during preflight; repeat --check-start from the new pose"
+                )
+            result["preflight"]["ready_with_initial_move"] = not blockers
+            if not start["within_tolerance"]:
+                blockers.append(
+                    f"Initial pose differs from the dataset start by {start['max_error_deg']:.2f} deg"
+                )
+            result["preflight"]["ready"] = not blockers
             return result
+        except (ValueError, OSError, RuntimeError) as exc:
+            blockers.append(str(exc))
+            raise
         finally:
-            if simulation is not None:
-                simulation.close()
+            if geometry is not None:
+                geometry.simulation.close()
             for side in SIDES:
                 bus = getattr(robot, side + "_bus")
                 if bus.is_connected:
                     with suppress(Exception):
                         bus.disconnect(disable_torque=False)
+            if report is not None:
+                _write_json(report, result)
     if not left_port or not right_port or not report:
         raise ValueError("--execute requires --left-port, --right-port and --report")
     before = episode.dataset_sha256
@@ -3380,6 +3713,7 @@ def replay_joint_dataset(
         max_sim_orientation_error_deg=max_sim_orientation_error_deg,
         allow_initial_move=allow_initial_move,
         initial_move_strategy=initial_move_strategy,
+        scene=scene,
     )
     if dataset_fingerprint(episode.root, "mocopi_joint_dataset.json") != before:
         raise ValueError("Source joint dataset changed during hardware replay")
@@ -3485,7 +3819,12 @@ def export_ft_dataset(
             calibration_dir,
         )
         document, _ = build_calibration_mapping(robot, config=config)
-    mapping_info = validate_mapping_for_robot(document, robot, model_sha256=model_hash)
+    mapping_info = validate_mapping_for_robot(
+        document,
+        robot,
+        model_sha256=model_hash,
+        allow_calibration_assumed=allow_without_replay_report and replay_report is None,
+    )
 
     replay_report_info = None
     if replay_report is not None:
@@ -3608,6 +3947,7 @@ def export_ft_dataset(
         "mujoco_model_sha256": model_hash,
         "mapping_path": str(Path(mapping_path).resolve()) if mapping_path is not None else None,
         "mapping_verification_method": document.get("verification_method"),
+        "mapping_verification_status": mapping_info["verification_status"],
         "hardware_replay_verified": replay_report_info is not None,
         "hardware_replay_report": replay_report_info,
         "fps": int(source.fps),
@@ -3620,11 +3960,11 @@ def export_ft_dataset(
         "gripper_value_deg": float(gripper_value_deg) if include_gripper else None,
         "camera_mapping": {"source_key": src_cam_key, "exported_key": image_key},
         "state_semantics": (
-            "Full-CAD model joints mapped via verified q_motor = sign * q_model + offset_deg into "
+            "Full-CAD model joints mapped via q_motor = sign * q_model + offset_deg into "
             "the follower calibrated degree space; synthesized constant gripper if include_gripper=True."
         ),
         "action_semantics": (
-            "Next-frame Full-CAD model target mapped via verified q_motor = sign * q_model + offset_deg "
+            "Next-frame Full-CAD model target mapped via q_motor = sign * q_model + offset_deg "
             "into follower calibrated motor degrees."
         ),
         "episodes": exported_episodes,

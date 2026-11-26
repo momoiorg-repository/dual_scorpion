@@ -588,10 +588,27 @@ MuJoCoの画面録画や新しいGUIは追加していません。必要な映�
 | Real Robot Current Pose | 今のエンコーダー読み取り |
 | Dataset Initial Pose | データセット先頭フレームのモデル関節角 |
 
-Dual Scorpion実機のホーム姿勢はMuJoCoのゼロ姿勢と一致しません。これは故障では
-ありません。マッピングは`motor = sign × model + offset`のままで、`offset`が
-「較正ゼロに対応するモデル角」を表します。実機をMuJoCoのゼロ姿勢へ無理に移動させる
-必要はありません。現在姿勢をoffsetの確定値として扱うことも禁止です。
+マッピングは `motor_deg = sign × model_deg + offset_deg` です。`offset_deg` は Full CAD の
+モデル角 0° に対応する実機モーター角です。逆に、較正ゼロに対応するモデル角は
+`-offset_deg / sign` です。Feetech の角度換算には較正範囲の中点、エンコーダー分解能、
+`drive_mode` を使います。
+
+Full CAD MJCF とレガシーの腕別 URDF ではロボット座標系、関節フレーム、関節軸および
+TCP が異なります。例えば右 `joint3` の局所軸は MJCF でほぼ −X、URDF で +X です。
+Full CAD のヒンジは `limited="false"` です。較正の半範囲やレガシー URDF の範囲から、
+この実機の機械端・手首・配線に対する安全範囲は確定できません。
+
+左右の USB を確認し、以下の例を実際の `/dev/serial/by-id/` パスに置き換えてください。
+このパスは USB 挿抜後の `ttyACM` 番号に依存しません。
+
+```bash
+ls -l /dev/serial/by-id/
+export RIGHT_FOLLOWER_PORT=/dev/serial/by-id/your-right-follower
+export LEFT_FOLLOWER_PORT=/dev/serial/by-id/your-left-follower
+```
+
+`--check-start` は両バスの ID・オフセット・範囲を較正 JSON の両側と照合し、
+同一ポート、逆接続、左右を一意に識別できない場合を検出します。
 
 #### 1. 関節ごとの情報を読む（モーターを動かさず・トルク状態を変えない）
 
@@ -616,8 +633,8 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
   --episode 0 \
   --robot-id dual_scorpion_follower_2026_1026 \
-  --right-port /dev/ttyACM0 \
-  --left-port /dev/ttyACM1 \
+  --right-port "$RIGHT_FOLLOWER_PORT" \
+  --left-port "$LEFT_FOLLOWER_PORT" \
   --check-start \
   --output outputs/mocopi/reports/episode-001-joint-inspection.json
 ```
@@ -651,15 +668,19 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --mode joint-wise \
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
   --episode 0 \
-  --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --output outputs/mocopi/reports/episode-001-mapping-measured.yaml \
   --robot-id dual_scorpion_follower_2026_1026 \
-  --right-port /dev/ttyACM0 \
-  --left-port /dev/ttyACM1 \
+  --right-port "$RIGHT_FOLLOWER_PORT" \
+  --left-port "$LEFT_FOLLOWER_PORT" \
   --sign-test-deg 10 \
   --report outputs/mocopi/reports/episode-001-mapping-verification.json
 ```
 
-`lerobot-calibrate` 済みの Dual Scorpion Follower では、`--mode calibration` を使うことで手動の CAD 角度入力や実機の姿勢合わせなしに、既存の較正ファイル（`midpoint = 0.0 deg`）と CAD アセンブリ軸符号からマッピング YAML を直接生成できます（また `replay-dataset` や `export-ft-dataset` で `--mapping` を省略した場合も、この較正ベースのマッピングが自動適用されます）：
+`--mode calibration` は、較正の中点と CAD のゼロを一致させ、既定の符号と
+`offset_deg = 0` を使う `calibration_assumed` マッピングを生成します。用途は Dry-run
+での数値検証と、`--allow-without-replay-report` を付けたオフライン FT 変換です。
+旧形式の `lerobot_calibration_midpoint` は `verified: true` と記録されていても同じ状態です。
+実機では、14 関節の符号とオフセットを実測した `physically_verified` マッピングが必要です。
 
 ```bash
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
@@ -682,7 +703,7 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --allow-partial \
   --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping-v2.yaml \
   --robot-id dual_scorpion_follower_2026_1026 \
-  --right-port /dev/ttyACM0
+  --right-port "$RIGHT_FOLLOWER_PORT"
 ```
 
 実機で1関節ごとに記録した測定ファイル（方向テスト＋既知モデル角・根拠）から検証・生成することもできます：
@@ -691,8 +712,9 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset verify-dataset-mapping \
   --mode joint-wise \
   --measurements config/mocopi/hardware/measured_joints.yaml \
+  --existing-mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
   --allow-partial \
-  --output config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --output outputs/mocopi/reports/episode-001-mapping-measured.yaml \
   --robot-id dual_scorpion_follower_2026_1026
 ```
 
@@ -708,47 +730,26 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 `--mode poses` は3〜5種類の全身姿勢から最小二乗フィットを行う従来方式です（すべての全身姿勢を
 安全に再現できる場合のみ使用）。
 
-次の場合は、`--allow-partial`なしではマッピングを書きません（`--allow-partial`指定時は`verified: false`として保存され、`replay-dataset`では拒否されます）。
+`--allow-partial` は測定済み関節を保存します。次の回はその出力を `--existing-mapping`
+に指定し、新しい出力先を使います。較正・モデルのハッシュが一致する測定記録を引き継ぎます。
+測定 YAML は `joints` 配下に `right_joint5` などの関節名で記録します。各関節で、
+測定方法と基準を `measurement_basis` に、対応する実測角を `model_angles_deg` と
+`motor_angles_deg` の同じ順序で記録してください。1 点の場合は、別途 `direction_test`
+と `direct_drive_confirmed: true` が必要です。
+
+次の場合は `--allow-partial` が必要です。実行には全関節の実測完了が必要です。
 
 - 方向テストで必要量動いていない、または両方向試験で反転しない
 - `motor_id` や MJCF `model_joint` が一致しない
 - 基準角度が未測定、または測定根拠が記載されていない
 - 1関節でも`verified: false`が残る
 
-#### 3. モーターを動かさずに事前検証する
+#### 3. 現在姿勢と軌道を読み取り専用で確認する
 
-`--execute`を付けない場合、モーターへ指令を送りません。データセット、マッピング、
-較正ハッシュ、モデルSHA-256、14関節すべての`verified`、較正範囲、IK状態、衝突、
-フレーム間ステップを検証します。`--check-start`を付けると、現在角度を読んで
-開始誤差と初期移行の安全性（モデル内衝突・較正範囲、`--initial-move-strategy auto|linear|lift-first`）を評価します。読み取りだけで、
-トルク変更や指令は行いません。
-
-```bash
-PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
-  --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
-  --episode 0 \
-  --mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
-  --robot-id dual_scorpion_follower_2026_1026 \
-  --right-port /dev/ttyACM0 \
-  --left-port /dev/ttyACM1 \
-  --initial-move-strategy auto \
-  --check-start
-```
-
-レポートには`joint_inspection`、`pose_context`（4つの姿勢）、`start_pose`、
-`initial_transition`、`validation.calibration_margins_deg`が入ります。`start_pose`が
-2度を超える場合、`--execute`は開始を拒否します。まず支持した状態で実機をデータセット
-先頭姿勢へ手で移動してください。`--allow-initial-move`は、この事前検証で
-`initial_transition.safe: true`を確認した場合だけ、明示的に使用できます。`--initial-move-strategy auto`
-（または `lift-first`）では、直線移行で机・障害物に接触する姿勢から開始する場合に先に手首・肘（`joint5`, `joint3`）を
-持ち上げてから他関節を揃える2段階移行経路も検証・選択します。既定は`--allow-initial-move`無効です。
-
-#### 4. 実機で再生する
-
-`--execute`を付けた場合だけ、Followerへ接続して左右7関節を指令します。初回は
-5度/s以下を推奨します（CLI既定は5度/s）。開始誤差2度以内（または安全な`--allow-initial-move`）、
-1指令0.5度以下、追従誤差5度超でHOLD、終了時は現在位置を保持してトルクを切らずに切断、
-グリッパーは読み書きしません。
+`--check-start` はモーターバスの照合とエンコーダーの読み取りを行います。初期移行の各ステップについて
+TCP の World Z、両腕の各リンクの最小 Z、自己・アーム間・床の接触、角度制限を JSON に記録します。
+`lift-first` は最初に `joint3` と `joint5` を揃えます。手先の上下は姿勢によって決まるため、World Z の
+記録で確認してください。`auto` は直線経路を先に評価します。データセット本体も実行と同じ補間で検査します。
 
 ```bash
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset replay-dataset \
@@ -756,20 +757,59 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
   --episode 0 \
   --mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
   --robot-id dual_scorpion_follower_2026_1026 \
-  --right-port /dev/ttyACM0 \
-  --left-port /dev/ttyACM1 \
+  --right-port "$RIGHT_FOLLOWER_PORT" \
+  --left-port "$LEFT_FOLLOWER_PORT" \
   --max-joint-speed-deg-s 5 \
-  --allow-initial-move \
-  --initial-move-strategy auto \
-  --execute \
-  --report outputs/mocopi/reports/episode-001-hardware-replay.json
+  --initial-move-strategy lift-first \
+  --check-start \
+  --report "outputs/mocopi/reports/episode-001-preflight-$(date +%Y%m%d-%H%M%S).json"
 ```
 
-`--allow-initial-move`を使う場合も、最初は5度/s以下で、周囲に人がいないこと、
-電源をすぐ切れることを確認してください。関節ステップが大きいデータでは補間により
-再生時間が長くなります。レポートの`time_scale`、`control_steps`、
-`max_observed_speed_deg_s`、`tracking`、`tcp_warning_frames`を確認してください。
-左腕172〜173フレームの手先回転誤差警告は収録時の警告であり、この機能では隠しません。
+実行準備には次の実測が必要です。
+
+- Full CAD の親子リンクを基準に左右各7関節の対応角を記録します。支持した腕上で、機械端から離れた
+  連続区間の2点以上を測ると符号とゼロ差を同時に求められます。移動を伴う計測は現場で腕を支持し、
+  トルク操作の可否を決められる操作者が担当してください。
+- 各関節の使用範囲を較正済みのモーター角で測り、左右の `joint_limits_deg.min` / `.max` に
+  `joint0..6` の順で書きます。手首や配線に余裕がある範囲とその測定方法を
+  `joint_limits_evidence` に記録します。配線を含む実機の通過空間を、移行と本編の両方で確認します。
+- `dual_scorpion.agent.scene.v1` 形式で、
+  机の天板上面の高さ・四隅（または中心、幅、奥行き、向き）・厚み、45 cm 支持棒の中心・軸方向・直径、
+  および Full CAD の原点・軸との位置関係を記録します。占有物がある場合は寸法と位置を追記します。
+  計測精度と実機形状のばらつきをカバーする `collision_margin_m` を記録してください。
+  Full CAD の衝突メッシュを用い、支持棒は外接箱で扱います。
+  [実測シーンの形式](SCORPION_REAL_AGENT_HARNESS.md#measured-table-and-45-cm-support-stick-scene)
+- 固定する左右グリッパーの Full CAD `joint7` 角と実機の生エンコーダー値を、シーン YAML の
+  `replay_gripper_poses.left` / `.right` に `model_deg`、`encoder_count`、`measurement_basis` として
+  記録します。生値はローカル設定で下記の `raw_position` を確認できます。再生中も読み取りで固定姿勢を確認します。
+
+```bash
+for arm in left right; do
+  uv run --no-sync --active python -m telegrip.mocopi.agent \
+    --config config/mocopi/agent.local.yaml gripper-state --arm "$arm"
+done
+```
+
+実測済みのマッピングに切り替え、同じ Dry-run に `--scene-geometry <実測シーンYAML>` を足します。
+`initial_transition.modeled_safe` はサンプルしたモデル内の結果です。
+`initial_transition.safe` と `preflight.ready` は実測シーン、実測の関節対応、関節範囲などの条件も含みます。
+レポートの `preflight.blockers` と `trajectory_geometry` を確認し、机との距離が出ることを確認してください。
+測定または姿勢が変わったら、現姿勢から新しいレポートを生成します。
+
+#### 4. 操作者の監督下で再生する
+
+`preflight.ready: true` は開始誤差が 2° 以内であることを含みます。
+監督下で、同じ実測ファイルとポートを指定し、`--check-start` を `--execute` に置き換えます。
+実行用には新しい `--report` パスを指定します。ソフトウェアは指令前に現姿勢で再検証します。
+2° を超える初期移行を行う場合、`preflight.ready_with_initial_move: true` と全ステップを操作者が
+確認し、開始姿勢からの移行を別途明示的に許可したときに `--allow-initial-move` を付けます。
+
+指令間隔は 5°/s（既定値）と 0.5°/指令の上限で補間されます。必要なトルク有効化の前に、
+現在位置を保持目標として書き込み、実機の目標レジスターを読み返して照合します。エンコーダーの遅延、
+追従誤差、関節制限、モデル上のクリアランス違反を検出すると再生が止まります。
+動作開始後の中止では新鮮なエンコーダー値が得られた場合に HOLD を試みます。
+レポートで `hold_sent` または `hold_error` を確認してください。
+左腕172〜173フレームの手先回転誤差警告はレポートに記録されます。
 
 #### 5. 実機検証済みマッピングを変換データへ適用し FT 用データセットを生成する（`export-ft-dataset`）
 
@@ -781,7 +821,7 @@ LeRobot v3 FT データセットを新規出力できます（既定では16次�
 ```bash
 PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.mocopi.dataset export-ft-dataset \
   --dataset outputs/mocopi/datasets/episode-001-robot-final12 \
-  --mapping config/mocopi/hardware/dual_scorpion_follower_2026_1026-mapping.yaml \
+  --mapping outputs/mocopi/reports/episode-001-mapping-measured.yaml \
   --replay-report outputs/mocopi/reports/episode-001-hardware-replay.json \
   --output outputs/mocopi/datasets/episode-001-ft-motor16 \
   --repo-id local/mocopi-episode-001-ft-motor16 \
@@ -794,7 +834,7 @@ PYTHONPATH=telegrip_teleoperation uv run --no-sync --active python -m telegrip.m
 #### 未検証として残る項目
 
 - Full CAD MJCFの関節限界は未測定。±180度はプレビュー用で、実機限界ではない。
-- 机・周辺設備などの外部障害物は、`--obstacles`で明示しない限りモデル化されない。
+- 机・周辺設備などのクリアランスは `--scene-geometry` に記録した実測形状に対して評価します。
 - 実機TCPの物理的な絶対精度は外部計測していない。レポートのTCP誤差はモーター角と
   モデルFKからの推定。
 - joint-wiseマッピングの`sign`と`offset`は操作者の確認に基づく。`scale`は直接駆動の

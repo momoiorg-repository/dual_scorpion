@@ -10,10 +10,12 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "telegrip_teleoperation"))
+from telegrip.mocopi.agent.scene import SceneGeometry
 from telegrip.mocopi.config import load_config
 from telegrip.mocopi.dataset.__main__ import main as mocopi_dataset_cli
 from telegrip.mocopi.dataset.fingerprint import dataset_fingerprint, file_sha256
 from telegrip.mocopi.dataset.hardware_dataset import (
+    CALIBRATION_ASSUMED,
     DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0,
     FT_DATASET_SCHEMA,
     JOINT_VERIFICATION_SCHEMA,
@@ -47,10 +49,59 @@ from telegrip.mocopi.dataset.hardware_dataset import (
 )
 from telegrip.mocopi.dataset.real import JOINTS, arm_only_follower
 from telegrip.mocopi.dataset.real_dataset import export_hardware_replay_dataset
+from telegrip.mocopi.dataset.replay_geometry import ReplayGeometry
 from telegrip.mocopi.full_mujoco import full_model_path
 
 CONFIG = Path(__file__).resolve().parents[2] / "config/mocopi/tracking.yaml"
 LOCAL_DATASET = Path(__file__).resolve().parents[2] / "outputs/mocopi/datasets/episode-001-robot-final12"
+
+
+def _test_scene(tmp_path, table_center=(0.0, 0.0, -1.02), *, status="measured"):
+    path = tmp_path / "test-scene.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema": "dual_scorpion.agent.scene.v1",
+                "status": status,
+                "coordinate_frame": "test",
+                "source": "synthetic test fixture",
+                "measured_at": "2026-11-23T00:00:00Z",
+                "collision_margin_m": 0.01,
+                "arm_collision_radius_m": 0.04,
+                "robot_to_scene": {"position_m": [0, 0, 0], "orientation_xyzw": [0, 0, 0, 1]},
+                "required_obstacles": ["table", "support_stick"],
+                "replay_gripper_poses": {
+                    side: {"model_deg": 0.0, "encoder_count": 2048, "measurement_basis": "synthetic fixture"}
+                    for side in ("left", "right")
+                },
+                "obstacles": [
+                    {
+                        "name": "workbench",
+                        "role": "table",
+                        "shape": "box",
+                        "measurement_status": "measured",
+                        "center_m": list(table_center),
+                        "half_size_m": [0.5, 0.5, 0.02],
+                    },
+                    {
+                        "name": "support",
+                        "role": "support_stick",
+                        "shape": "cylinder",
+                        "measurement_status": "measured",
+                        "center_m": [0, 1, 0],
+                        "length_m": 0.45,
+                        "radius_m": 0.01,
+                    },
+                ],
+            }
+        )
+    )
+    return SceneGeometry.from_file(path)
+
+
+@pytest.fixture
+def replay_scene(tmp_path):
+    return _test_scene(tmp_path)
 
 
 def _joint_records(side, signs, offsets, *, verified=True, record_verified=None, motor_ids=None):
@@ -98,7 +149,12 @@ def _mapping_document(
     offsets = np.zeros(7) if offsets is None else np.asarray(offsets, dtype=float)
     sides = {}
     for side in ("right", "left"):
-        side_doc = {"sign": signs.tolist(), "offset_deg": offsets.tolist()}
+        side_doc = {
+            "sign": signs.tolist(),
+            "offset_deg": offsets.tolist(),
+            "joint_limits_deg": {"min": [-175.0] * 7, "max": [175.0] * 7},
+            "joint_limits_evidence": "synthetic fixture for unit tests",
+        }
         if include_records:
             side_doc["joint_verification"] = _joint_records(
                 side,
@@ -177,7 +233,7 @@ def _fake_robot(
         f"{side}_joint{i}": {
             "id": i + 1,
             "drive_mode": drive_mode,
-            "homing_offset": homing_offset,
+            "homing_offset": homing_offset + (side == "left"),
             "range_min": range_min,
             "range_max": range_max,
         }
@@ -188,7 +244,8 @@ def _fake_robot(
     calibration_path.write_text(json.dumps(calibration))
 
     class FakeBus:
-        def __init__(self, *, connect_error=None):
+        def __init__(self, side, *, connect_error=None):
+            self.port = f"/dev/mock-{side}"
             self.is_connected = False
             self.is_calibrated = is_calibrated
             self._connect_error = connect_error
@@ -196,7 +253,7 @@ def _fake_robot(
                 f"joint{i}": SimpleNamespace(
                     id=i + 1,
                     drive_mode=drive_mode,
-                    homing_offset=homing_offset,
+                    homing_offset=homing_offset + (side == "left"),
                     range_min=range_min,
                     range_max=range_max,
                 )
@@ -216,9 +273,24 @@ def _fake_robot(
             self.is_connected = True
 
         def read(self, field, name, normalize=False):
+            if field == "Present_Position" and name == "gripper" and not normalize:
+                return 2048
             assert field == "Operating_Mode" and not normalize
             assert name != "gripper"
             return 0
+
+        def read_calibration(self):
+            if self.is_calibrated:
+                return self.calibration
+            return {}
+
+        def sync_read(self, field, motors=None, *, normalize=True):
+            if field in ("Present_Position", "Goal_Position"):
+                obs = self.read_pose()
+                return {joint: obs[f"{self.side}_{joint}.pos"] for joint in (motors or JOINTS)}
+            assert not normalize
+            value = int(self.torque_enabled) if field == "Torque_Enable" else 0
+            return dict.fromkeys(JOINTS, value)
 
         def enable_torque(self, names):
             names_list = list(names)
@@ -247,8 +319,11 @@ def _fake_robot(
         config = SimpleNamespace(max_relative_target=0.5, use_degrees=True)
 
         def __init__(self):
-            self.left_bus = FakeBus(connect_error=left_connect_error)
-            self.right_bus = FakeBus()
+            self.left_bus = FakeBus("left", connect_error=left_connect_error)
+            self.right_bus = FakeBus("right")
+            for side, bus in (("left", self.left_bus), ("right", self.right_bus)):
+                bus.side = side
+                bus.read_pose = self.get_observation
             self.stalled = stalled
             self.measurements = list(measurements) if measurements is not None else None
             self.raw_commands = []
@@ -708,7 +783,7 @@ def test_inspection_and_pose_context_distinguish_all_four_poses(tmp_path):
     assert context["start_error_deg"]["max"] == pytest.approx(19.0)
 
 
-def test_execute_mapped_episode_uses_interpolation_and_never_commands_gripper(tmp_path):
+def test_execute_mapped_episode_uses_interpolation_and_never_commands_gripper(tmp_path, replay_scene):
     pytest.importorskip("mujoco")
     episode = _fake_episode(
         [
@@ -728,6 +803,7 @@ def test_execute_mapped_episode_uses_interpolation_and_never_commands_gripper(tm
         load_config(CONFIG),
         robot,
         tmp_path / "real.json",
+        scene=replay_scene,
         realtime=False,
     )
     assert report["status"] == "complete"
@@ -759,13 +835,14 @@ def test_execute_mapped_episode_uses_interpolation_and_never_commands_gripper(tm
             load_config(CONFIG),
             stalled,
             tmp_path / "stalled.json",
+            scene=replay_scene,
             realtime=False,
         )
     stalled_report = json.loads((tmp_path / "stalled.json").read_text())
     assert stalled_report["status"] == "aborted" and stalled_report["failure"]
 
 
-def test_execute_refuses_start_mismatch_without_explicit_initial_move(tmp_path):
+def test_execute_refuses_start_mismatch_without_explicit_initial_move(tmp_path, replay_scene):
     pytest.importorskip("mujoco")
     episode = _fake_episode(
         [
@@ -786,14 +863,15 @@ def test_execute_refuses_start_mismatch_without_explicit_initial_move(tmp_path):
             load_config(CONFIG),
             robot,
             tmp_path / "refuse.json",
+            scene=replay_scene,
             realtime=False,
         )
     refused = json.loads((tmp_path / "refuse.json").read_text())
     assert refused["status"] == "aborted"
     assert refused["start_pose"]["max_error_deg"] == pytest.approx(10.0)
-    assert refused["hold_sent"] is True
-    assert robot.raw_commands
-    assert all(abs(value - (-10.0)) < 1e-9 for command in robot.raw_commands for value in command.values())
+    assert "hold_sent" not in refused
+    assert not robot.raw_commands
+    assert not robot.left_bus.enable_torque_calls and not robot.right_bus.enable_torque_calls
 
     allowed = _fake_robot(
         tmp_path / "allowed", current={"right": np.full(7, -10.0), "left": np.full(7, -10.0)}
@@ -808,6 +886,7 @@ def test_execute_refuses_start_mismatch_without_explicit_initial_move(tmp_path):
         load_config(CONFIG),
         allowed,
         tmp_path / "allowed.json",
+        scene=replay_scene,
         realtime=False,
         allow_initial_move=True,
     )
@@ -844,10 +923,134 @@ def test_initial_transition_evaluation_reports_modeled_collisions(tmp_path):
             simulation=simulation,
         )
         assert transition["collision_checked"] is True
-        assert transition["safe"] is True
+        assert transition["modeled_safe"] is True
+        assert transition["safe"] is False
         assert transition["steps"] >= 40
+        assert len(transition["samples"]) == transition["steps"] + 1
+        assert set(transition["samples"][0]["tcp_world_z_m"]) == {"left", "right"}
+        assert len(transition["samples"][0]["link_min_world_z_m"]) == 16
+        assert all(row["table_clearance_m"] is None for row in transition["samples"])
     finally:
         simulation.close()
+
+
+def test_measured_table_margin_checks_clearance_before_contact(tmp_path, replay_scene):
+    pytest.importorskip("mujoco")
+    config = load_config(CONFIG)["robot"]
+    joints = {side: np.zeros(7) for side in ("left", "right")}
+    geometry = ReplayGeometry.build(config, [], replay_scene)
+    try:
+        lowest_link = min(geometry.check_pose(joints, include_heights=True)["link_min_world_z_m"].values())
+    finally:
+        geometry.simulation.close()
+    near_table = _test_scene(tmp_path, (0, 0, lowest_link - 0.025))
+    geometry = ReplayGeometry.build(config, [], near_table)
+    try:
+        check = geometry.check_pose(joints)
+        assert check["collision"]["count"] == 0
+        assert check["table_clearance_m"] == pytest.approx(0.005, abs=0.0001)
+        assert check["clearance_violations"] == ["measured-workbench"]
+    finally:
+        geometry.simulation.close()
+
+
+def test_replay_rejects_swapped_buses_before_motor_writes(tmp_path, replay_scene):
+    pytest.importorskip("mujoco")
+    robot = _fake_robot(tmp_path)
+    right_calibration, left_calibration = robot.right_bus.calibration, robot.left_bus.calibration
+    robot.right_bus.read_calibration = lambda: left_calibration
+    robot.left_bus.read_calibration = lambda: right_calibration
+    joints = {side: np.zeros(7) for side in ("left", "right")}
+    episode = _fake_episode([joints, joints])
+    document = _mapping_document("robot-test", file_sha256(robot.calibration_fpath))
+    report = tmp_path / "swapped.json"
+
+    with pytest.raises(RuntimeError, match="left port matches the right arm"):
+        execute_joint_episode(episode, document, load_config(CONFIG), robot, report, scene=replay_scene)
+
+    saved = json.loads(report.read_text())
+    assert saved["usb_ports"]["right"]["matching_sides"] == ["left"]
+    assert saved["usb_ports"]["left"]["matching_sides"] == ["right"]
+    assert not robot.raw_commands
+    for bus in (robot.left_bus, robot.right_bus):
+        assert bus.disconnect_calls == [False]
+        assert not bus.enable_torque_calls and not bus.disable_torque_calls
+
+
+def test_legacy_calibration_assumptions_stay_unverified_after_resume(tmp_path, replay_scene):
+    robot = _fake_robot(tmp_path)
+    config = load_config(CONFIG)
+    joints = {side: np.zeros(7) for side in ("left", "right")}
+    episode = _fake_episode([joints, joints])
+    document, _ = build_calibration_mapping(robot, config=config, episode=episode)
+    document.pop("verification_status")
+    document["verified"] = True
+    for side in ("left", "right"):
+        for record in document["sides"][side]["joint_verification"].values():
+            record.pop("verification_status")
+            record.update(verified=True, sign_verified=True, offset_verified=True)
+
+    with pytest.raises(RuntimeError, match="Physically measured sign and zero offset"):
+        execute_joint_episode(episode, document, config, robot, tmp_path / "refused.json", scene=replay_scene)
+    assert not robot.raw_commands
+    assert not robot.left_bus.disconnect_calls and not robot.right_bus.disconnect_calls
+
+    output = tmp_path / "partial.yaml"
+    verification = verify_dataset_mapping_jointwise(
+        episode,
+        robot,
+        output,
+        config=config,
+        existing_mapping=document,
+        allow_partial=True,
+        measurements={"joints": {"right_joint5": _measurement_entry(1, 5.0, model_ref=0.0)}},
+    )
+    mixed = yaml.safe_load(output.read_text())
+    assert mixed["verified"] is False
+    assert mixed["verification_status"] == CALIBRATION_ASSUMED
+    assert mixed["verified_joints"] == ["right_joint5"]
+    assert len(verification["unverified_joints"]) == 13
+
+
+def test_missing_measured_scene_and_changed_gripper_block_before_torque(tmp_path, replay_scene):
+    pytest.importorskip("mujoco")
+    robot = _fake_robot(tmp_path)
+    config = load_config(CONFIG)
+    joints = {side: np.zeros(7) for side in ("left", "right")}
+    episode = _fake_episode([joints, joints])
+    document = _mapping_document("robot-test", file_sha256(robot.calibration_fpath))
+    with pytest.raises(RuntimeError, match="measured scene"):
+        execute_joint_episode(episode, document, config, robot, tmp_path / "no-scene.json")
+    assert not robot.left_bus.disconnect_calls and not robot.right_bus.disconnect_calls
+
+    robot.right_bus.read = lambda *_args, **_kwargs: 2050
+    with pytest.raises(RuntimeError, match="right gripper differs"):
+        execute_joint_episode(
+            episode, document, config, robot, tmp_path / "bad-gripper.json", scene=replay_scene
+        )
+    assert not robot.raw_commands
+    assert not robot.left_bus.enable_torque_calls and not robot.right_bus.enable_torque_calls
+
+
+def test_startup_goal_readback_mismatch_blocks_torque(tmp_path, replay_scene, monkeypatch):
+    pytest.importorskip("mujoco")
+    robot = _fake_robot(tmp_path)
+    config = load_config(CONFIG)
+    joints = {side: np.zeros(7) for side in ("left", "right")}
+    episode = _fake_episode([joints, joints])
+    document = _mapping_document("robot-test", file_sha256(robot.calibration_fpath))
+    original_read = robot.right_bus.sync_read
+
+    def read(field, *args, **kwargs):
+        if field == "Goal_Position":
+            return dict.fromkeys(JOINTS, 25.0)
+        return original_read(field, *args, **kwargs)
+
+    monkeypatch.setattr(robot.right_bus, "sync_read", read)
+    with pytest.raises(RuntimeError, match="initial hold goal readback differs"):
+        execute_joint_episode(episode, document, config, robot, tmp_path / "stale-goal.json", scene=replay_scene)
+    assert not robot.left_bus.enable_torque_calls and not robot.right_bus.enable_torque_calls
+    assert all(value == 0.0 for command in robot.raw_commands for value in command.values())
 
 
 def test_select_reference_frames_is_spread_and_unique():
@@ -1035,7 +1238,7 @@ def _install_mock_feetech_bus(
         f"{side}_joint{i}": {
             "id": i + 1,
             "drive_mode": 0,
-            "homing_offset": 0,
+            "homing_offset": int(side == "left"),
             "range_min": 0,
             "range_max": 4095,
         }
@@ -1101,13 +1304,20 @@ def _install_mock_feetech_bus(
             assert motors != "gripper" and (motors is None or "gripper" not in motors)
             self.torque_enabled = False
 
-        def sync_read(self, data_name, motors=None):
+        def sync_read(self, data_name, motors=None, *, normalize=True):
             self.sync_read_calls.append(
                 (data_name, list(motors) if motors is not None else list(self.motors))
             )
             target_names = list(motors) if motors is not None else list(self.motors)
             assert "gripper" not in target_names
+            if data_name == "Operating_Mode":
+                return dict.fromkeys(target_names, 0)
+            if data_name == "Torque_Enable":
+                return dict.fromkeys(target_names, int(self.torque_enabled))
             return {name: self.pose[name] for name in target_names}
+
+        def read_calibration(self):
+            return self.calibration if self.is_calibrated else {}
 
         def sync_write(self, data_name, values, *, normalize=True):
             self.sync_write_calls.append((data_name, dict(values), normalize))
@@ -1331,7 +1541,9 @@ def test_invalid_mapping_and_calibration_hash_mismatch_rejected(tmp_path):
         validate_mapping_for_robot(bad_hash_doc, robot)
 
 
-def test_allow_initial_move_succeeds_from_different_pose_and_respects_start_separation(tmp_path):
+def test_allow_initial_move_succeeds_from_different_pose_and_respects_start_separation(
+    tmp_path, replay_scene
+):
     pytest.importorskip("mujoco")
     config = load_config(CONFIG)
     episode = _fake_episode(
@@ -1360,6 +1572,7 @@ def test_allow_initial_move_succeeds_from_different_pose_and_respects_start_sepa
         robot,
         report_path,
         allow_initial_move=True,
+        scene=replay_scene,
         realtime=False,
     )
     assert report["status"] == "complete"
@@ -1381,7 +1594,7 @@ def test_allow_initial_move_succeeds_from_different_pose_and_respects_start_sepa
     assert robot.left_bus.disconnect_disable_torque is False
 
 
-def test_execute_refuses_intermediate_initial_transition_collision(tmp_path):
+def test_execute_refuses_intermediate_initial_transition_collision(tmp_path, replay_scene):
     pytest.importorskip("mujoco")
     config = load_config(CONFIG)
     # Endpoints individually have 0 collision, while linear midpoint [0, 0, 0, 90, ...] collides (>0).
@@ -1405,23 +1618,20 @@ def test_execute_refuses_intermediate_initial_transition_collision(tmp_path):
             robot,
             report_path,
             allow_initial_move=True,
+            scene=replay_scene,
             realtime=False,
         )
     assert not robot.right_bus.enable_torque_calls
     assert not robot.left_bus.enable_torque_calls
     assert not robot.right_bus.torque_enabled and not robot.left_bus.torque_enabled
-    # Only passive hold-at-current packet allowed; never moves toward colliding target.
-    for cmd in robot.raw_commands:
-        for i in range(7):
-            assert cmd[f"right_joint{i}.pos"] == pytest.approx(start_model[i])
-            assert cmd[f"left_joint{i}.pos"] == pytest.approx(0.0)
+    assert not robot.raw_commands
     saved = json.loads(report_path.read_text(encoding="utf-8"))
     assert saved["status"] == "aborted"
     assert saved["initial_transition"]["safe"] is False
     assert len(saved["initial_transition"]["collision_frames"]) > 0
 
 
-def test_execute_and_transition_reject_joint_limit_violations(tmp_path):
+def test_execute_and_transition_reject_joint_limit_violations(tmp_path, replay_scene):
     pytest.importorskip("mujoco")
     config = load_config(CONFIG)
     episode = _fake_episode(
@@ -1447,6 +1657,7 @@ def test_execute_and_transition_reject_joint_limit_violations(tmp_path):
             robot,
             report_path,
             allow_initial_move=True,
+            scene=replay_scene,
             realtime=False,
         )
     assert not robot.right_bus.enable_torque_calls
@@ -1459,7 +1670,7 @@ def test_execute_and_transition_reject_joint_limit_violations(tmp_path):
     assert saved["start_pose"]["limit_violations"]
 
 
-def test_large_tracking_error_triggers_hold_and_aborts_replay(tmp_path):
+def test_large_tracking_error_triggers_hold_and_aborts_replay(tmp_path, replay_scene):
     pytest.importorskip("mujoco")
     config = load_config(CONFIG)
     # Case A: stalled during trajectory playback.
@@ -1473,7 +1684,9 @@ def test_large_tracking_error_triggers_hold_and_aborts_replay(tmp_path):
     doc_traj = _mapping_document("robot-test", file_sha256(robot_traj.calibration_fpath))
     report_traj = tmp_path / "stalled-traj.json"
     with pytest.raises(RuntimeError, match="HOLD"):
-        execute_joint_episode(episode, doc_traj, config, robot_traj, report_traj, realtime=False)
+        execute_joint_episode(
+            episode, doc_traj, config, robot_traj, report_traj, scene=replay_scene, realtime=False
+        )
     saved_traj = json.loads(report_traj.read_text(encoding="utf-8"))
     assert saved_traj["status"] == "aborted"
     assert saved_traj["hold_sent"] is True
@@ -1495,6 +1708,7 @@ def test_large_tracking_error_triggers_hold_and_aborts_replay(tmp_path):
             robot_init,
             report_init,
             allow_initial_move=True,
+            scene=replay_scene,
             realtime=False,
         )
     saved_init = json.loads(report_init.read_text(encoding="utf-8"))
@@ -1886,7 +2100,7 @@ def test_unidirectional_desk_safe_verification_for_joint5_at_limit(tmp_path, mon
     assert live_doc["sides"]["left"]["joint_verification"]["joint5"]["offset_deg"] == pytest.approx(18.0)
 
 
-def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path):
+def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path, replay_scene):
     pytest.importorskip("mujoco")
     from telegrip.mocopi.full_mujoco import FullMujocoSimulation
 
@@ -1939,10 +2153,11 @@ def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path):
             strategy="auto",
         )
         assert auto_eval["strategy"] == "lift_first"
-        assert auto_eval["safe"] is True
+        assert auto_eval["modeled_safe"] is True
+        assert auto_eval["safe"] is False
         assert not auto_eval["collision_frames"]
         assert len(auto_eval["stages"]) == 2
-        assert auto_eval["stages"][0]["name"] == "lift_distal_pitch"
+        assert auto_eval["stages"][0]["name"] == "align_joint3_and_joint5"
     finally:
         sim.close()
 
@@ -1957,6 +2172,7 @@ def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path):
             refuse_report,
             allow_initial_move=True,
             initial_move_strategy="linear",
+            scene=replay_scene,
             realtime=False,
         )
     assert not robot.right_bus.enable_torque_calls
@@ -1971,6 +2187,7 @@ def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path):
         ok_report,
         allow_initial_move=True,
         initial_move_strategy="auto",
+        scene=replay_scene,
         realtime=False,
     )
     assert rep["status"] == "complete"
@@ -2244,9 +2461,10 @@ def test_calibration_midpoint_mapping_and_optional_mapping_cli(tmp_path, monkeyp
     cal_path.write_text(json.dumps(cal_data), encoding="utf-8")
     robot = arm_only_follower("/dev/not-used-left", "/dev/not-used-right", "robot-cal", 0.5, cal_dir)
     doc, report = build_calibration_mapping(robot, config=config)
-    assert doc["verified"] is True
+    assert doc["verified"] is False
+    assert doc["verification_status"] == CALIBRATION_ASSUMED
     assert doc["verification_method"] == METHOD_CALIBRATION_MIDPOINT
-    assert report["status"] == "ok"
+    assert report["status"] == CALIBRATION_ASSUMED
     assert report["manual_cad_pose_required"] is False
     expected_right = list(DEFAULT_FULL_CAD_SIGNS_DRIVE_MODE_0["right"])
     expected_right[2] *= -1  # drive_mode == 1 flips sign
@@ -2276,5 +2494,6 @@ def test_calibration_midpoint_mapping_and_optional_mapping_cli(tmp_path, monkeyp
         ],
     )
     saved = yaml.safe_load(out_yaml.read_text(encoding="utf-8"))
-    assert saved["verified"] is True
+    assert saved["verified"] is False
+    assert saved["verification_status"] == CALIBRATION_ASSUMED
     assert saved["verification_method"] == METHOD_CALIBRATION_MIDPOINT

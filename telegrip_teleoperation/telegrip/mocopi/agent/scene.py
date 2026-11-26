@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -30,6 +30,13 @@ class SceneObstacle:
 
 
 @dataclass(frozen=True)
+class MeasuredGripperPose:
+    model_deg: float
+    encoder_count: int
+    measurement_basis: str
+
+
+@dataclass(frozen=True)
 class SceneGeometry:
     arm_collision_radius_m: float
     status: str
@@ -41,6 +48,7 @@ class SceneGeometry:
     obstacles: tuple[SceneObstacle, ...]
     required_obstacles: tuple[str, ...]
     sha256: str
+    replay_gripper_poses: dict[str, MeasuredGripperPose] | None = None
 
     @property
     def execution_allowed(self) -> bool:
@@ -93,10 +101,11 @@ class SceneGeometry:
             obstacles=obstacles,
             required_obstacles=tuple(required),
             sha256=hashlib.sha256(encoded).hexdigest(),
+            replay_gripper_poses=_gripper_poses(document.get("replay_gripper_poses")),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "schema": SCENE_SCHEMA,
             "status": self.status,
             "coordinate_frame": self.coordinate_frame,
@@ -113,9 +122,7 @@ class SceneGeometry:
                     "shape": obstacle.shape,
                     "center_m": list(obstacle.center_m),
                     "rotation_xyzw": list(obstacle.rotation_xyzw),
-                    "half_size_m": None
-                    if obstacle.half_size_m is None
-                    else list(obstacle.half_size_m),
+                    "half_size_m": None if obstacle.half_size_m is None else list(obstacle.half_size_m),
                     "length_m": obstacle.length_m,
                     "radius_m": obstacle.radius_m,
                 }
@@ -124,6 +131,9 @@ class SceneGeometry:
             "sha256": self.sha256,
             "execution_allowed": self.execution_allowed,
         }
+        if self.replay_gripper_poses is not None:
+            result["replay_gripper_poses"] = {side: asdict(pose) for side, pose in self.replay_gripper_poses.items()}
+        return result
 
 
 class SceneCollisionChecker:
@@ -271,6 +281,24 @@ class SceneCollisionChecker:
             quaternion.tolist(),
             physicsClientId=self.client,
         )
+
+
+def _gripper_poses(value: Any) -> dict[str, MeasuredGripperPose] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {"left", "right"}:
+        raise ValueError("replay_gripper_poses must contain left and right measurements")
+    result = {}
+    for side, row in value.items():
+        if not isinstance(row, dict):
+            raise ValueError(f"replay_gripper_poses.{side} must be a mapping")
+        angle, count = row.get("model_deg"), row.get("encoder_count")
+        if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not -180 <= angle <= 180:
+            raise ValueError(f"replay_gripper_poses.{side}.model_deg must be a Full-CAD angle in [-180, 180]")
+        if type(count) is not int or not 0 <= count <= 4095:
+            raise ValueError(f"replay_gripper_poses.{side}.encoder_count must be an STS3215 encoder count")
+        result[side] = MeasuredGripperPose(float(angle), count, _required_string(row, "measurement_basis"))
+    return result
 
 
 def _obstacle_from_dict(row: dict[str, Any], transform: np.ndarray) -> SceneObstacle:

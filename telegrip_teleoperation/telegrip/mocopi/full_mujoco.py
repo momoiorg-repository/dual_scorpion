@@ -359,7 +359,7 @@ class FullMujocoSimulation:
         address = int(getattr(model, f"name_{prefix}adr")[int(index)])
         return model.names[address:].split(b"\0", 1)[0].decode("utf-8")
 
-    def collision_report(self):
+    def collision_report(self, *, ignore_fixed_obstacle_contacts=False):
         """Return contacts implied by the current kinematic state, without stepping.
 
         MuJoCo's contact list is rebuilt by ``mj_forward`` in ``_sync_state``.
@@ -373,8 +373,16 @@ class FullMujocoSimulation:
             if float(contact.dist) >= -1e-9:
                 continue
             first_id, second_id = int(contact.geom1), int(contact.geom2)
-            first_body = self._model_name(self.model, "body", int(self.model.geom_bodyid[first_id]))
-            second_body = self._model_name(self.model, "body", int(self.model.geom_bodyid[second_id]))
+            first_body_id = int(self.model.geom_bodyid[first_id])
+            second_body_id = int(self.model.geom_bodyid[second_id])
+            first_body = self._model_name(self.model, "body", first_body_id)
+            second_body = self._model_name(self.model, "body", second_body_id)
+            if (
+                ignore_fixed_obstacle_contacts
+                and (first_body.startswith("obstacle/") or second_body.startswith("obstacle/"))
+                and not (self.model.body_dofnum[first_body_id] or self.model.body_dofnum[second_body_id])
+            ):
+                continue  # The fixed base can be mounted on or through the table.
             contacts.append(
                 {
                     "distance_m": float(contact.dist),

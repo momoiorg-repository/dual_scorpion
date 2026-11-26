@@ -204,7 +204,7 @@ def parser():
         "--mode",
         choices=["calibration", "joint-wise", "poses"],
         default="joint-wise",
-        help="calibration: build directly from lerobot-calibrate midpoint without manual CAD posing; "
+        help="calibration: build a preview mapping using the assumed LeRobot midpoint; "
         "joint-wise: independent per-joint sign/reference verification; "
         "poses: legacy multi-pose least-squares fit",
     )
@@ -267,14 +267,22 @@ def parser():
     replay_dataset.add_argument("--episode", type=int, default=0)
     replay_dataset.add_argument(
         "--mapping",
-        help="Optional verified hardware joint mapping YAML; defaults to the lerobot-calibrate midpoint mapping",
+        help="Hardware mapping YAML; the default midpoint mapping is for validation only",
     )
     replay_dataset.add_argument("--execute", action="store_true", help="Connect and move the real arms")
-    replay_dataset.add_argument("--left-port", help="Left follower serial device")
-    replay_dataset.add_argument("--right-port", help="Right follower serial device")
+    replay_dataset.add_argument(
+        "--left-port", help="Left follower serial device, preferably /dev/serial/by-id"
+    )
+    replay_dataset.add_argument(
+        "--right-port", help="Right follower serial device, preferably /dev/serial/by-id"
+    )
     replay_dataset.add_argument("--robot-id", required=True, help="Existing calibrated robot id")
     replay_dataset.add_argument("--calibration-dir", help="Override the existing calibration directory")
-    replay_dataset.add_argument("--report", help="New JSON output for measured real replay results")
+    replay_dataset.add_argument("--report", help="New JSON report including all initial transition samples")
+    replay_dataset.add_argument(
+        "--scene-geometry",
+        help="Measured scene YAML with the table, support stick and fixed gripper poses; required for execution",
+    )
     replay_dataset.add_argument("--max-start-error-deg", type=float, default=2.0)
     replay_dataset.add_argument("--max-tracking-error-deg", type=float, default=5.0)
     replay_dataset.add_argument(
@@ -301,8 +309,8 @@ def parser():
         "--initial-move-strategy",
         choices=["auto", "linear", "lift-first"],
         default="auto",
-        help="Initial transition path: auto falls back to lift-first (wrist/elbow pitch lift first) "
-        "when linear collides",
+        help="Initial transition path: lift-first aligns joint3 and joint5 before the other joints; "
+        "auto checks linear first",
     )
     export_ft = sub.add_parser(
         "export-ft-dataset",
@@ -789,6 +797,7 @@ def main():
                 check_start=args.check_start,
                 allow_initial_move=args.allow_initial_move,
                 initial_move_strategy=args.initial_move_strategy,
+                scene_geometry=args.scene_geometry,
             )
             if args.execute:
                 result = {
@@ -804,6 +813,13 @@ def main():
                 }
             else:
                 result = real_result
+            if args.report and result.get("initial_transition"):
+                transition = result["initial_transition"]
+                result["initial_transition"] = {
+                    key: value for key, value in transition.items() if key != "samples"
+                }
+            if args.report and not args.execute:
+                result["report"] = args.report
         elif args.command == "export-ft-dataset":
             from .hardware_dataset import export_ft_dataset
 

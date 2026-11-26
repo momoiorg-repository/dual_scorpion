@@ -59,17 +59,14 @@ upper-arm guidance. `ik-compare` runs the same episode under all modes and
 writes per-mode plans, per-frame metrics, summary CSV/JSON, a fairness check,
 300 dpi PNG/SVG figures, and a factual comparison report. Omitting `--ik-mode`
 keeps the previous mocopi behaviour and its numerical output.
-Full-CAD 14-joint datasets can also be replayed on the follower through
-`inspect-dataset-mapping`, `verify-dataset-mapping`, `replay-dataset`, and
-exported for policy fine-tuning with `export-ft-dataset`. The mapping
-is verified independently per joint (no whole-body dataset pose or MID positioning
-required, supporting unidirectional motion away from desk/stops) and
-refused when any joint is unverified or when calibrated/configured limits, signs,
-offsets, or calibration/model hashes do not match. Read-only inspection (`--check-start`)
-preserves existing motor torque state; playback supports two-stage `--initial-move-strategy`
-(`auto`/`lift-first`), retains the 0.5-degree step, 15-degree/s max speed (5 deg/s default),
-2-degree start, and 5-degree HOLD limits, and never commands the gripper.
-The 14-joint dataset remains a kinematic simulation source, not encoder data.
+Full-CAD 14-joint datasets support read-only verification with `replay-dataset --check-start`
+and offline export with `export-ft-dataset`. The midpoint mapping supplies assumed signs and
+offsets for preview. Hardware replay requires all 14 sign/zero measurements, measured physical
+joint ranges, matching left/right bus calibration, and a measured table and obstacle scene.
+Read-only verification preserves torque and reports TCP height, link height, joint limits and
+collisions along each initial move, plus checks the interpolated dataset. Replay uses a 0.5°
+command step limit, 5°/s default, and encoder feedback to stop on faults. See the
+[Full-CAD replay guide](MOCOPI_DATASET_GUIDE.md#full-cadの14関節データを実機で再生する).
 
 ## Universal robot policy inference
 

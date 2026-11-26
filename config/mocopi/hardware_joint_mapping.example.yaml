@@ -16,8 +16,9 @@
 #     slope, sign, offset_deg, rms_deg, max_residual_deg
 #     positive_delta_deg, negative_delta_deg
 #     scale_basis, scale_verified, evidence, verification_evidence, failures
-# Partial mappings keep verified: false at the top level and use null for unmeasured joints.
-# Every joint must have verified: true before replay-dataset allows motor commands.
+# Partial mappings use null for unmeasured joints. Calibration midpoint mappings carry
+# assumed signs and offsets with verification_status: calibration_assumed.
+# Replay requires physically_verified status derived from all 14 joint records.
 schema: dual_scorpion.mocopi.hardware_joint_mapping.v1
 robot_id: CHANGE_ME
 calibration_sha256: CHANGE_ME
@@ -27,6 +28,7 @@ dataset_sha256: null
 dataset_manifest_sha256: null
 episode: null
 verified: false
+verification_status: partial
 model_kind: full_mujoco
 verification_method: per_joint_reference
 created_at: null
@@ -35,10 +37,9 @@ sides:
   right:
     sign: [null, null, null, null, null, null, null]
     offset_deg: [null, null, null, null, null, null, null]
-    # Optional tighter limits.  If omitted, the calibrated motor range is used.
-    # joint_limits_deg:
-    #   min: [-180, -180, -180, -180, -180, -180, -180]
-    #   max: [180, 180, 180, 180, 180, 180, 180]
+    # Add measured joint_limits_deg.min / .max in motor degrees in joint0..6 order,
+    # inside the calibrated ranges, and joint_limits_evidence documenting how the
+    # physical, wrist and cable bounds were established. Required on both sides for replay.
   left:
     sign: [null, null, null, null, null, null, null]
     offset_deg: [null, null, null, null, null, null, null]
