@@ -14,10 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from dataclasses import dataclass, field
 
+from lerobot.streaming.episode_pool import StreamingSamplingStrategy
 from lerobot.transforms import ImageTransformsConfig
-from lerobot.utils.import_utils import get_safe_default_codec
+from lerobot.utils.import_utils import get_safe_default_video_backend
+
+from .video import DEFAULT_DEPTH_UNIT, DEPTH_METER_UNIT, DEPTH_MILLIMETER_UNIT
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,20 +33,84 @@ class DatasetConfig:
     # "dataset_index" into the returned item. The index mapping is made according to the order in which the
     # datasets are provided.
     repo_id: str
+    # Hub repository type: "dataset" (default) or "bucket" for an HF Storage Bucket
+    # (hf://buckets/). Whether a bucket needs streaming=true depends on the dataset's
+    # storage format, so that is checked at load time in the dataset factory.
+    repo_type: str = "dataset"
     # Root directory for a concrete local dataset tree (e.g. 'dataset/path'). If None, local datasets are
     # looked up under $HF_LEROBOT_HOME/repo_id and Hub downloads use a revision-safe cache under $HF_LEROBOT_HOME/hub.
+    # With streaming=true, an 'hf://buckets/OWNER/BUCKET' URI is also accepted and implies repo_type="bucket".
     root: str | None = None
     episodes: list[int] | None = None
+    # Episode indices to drop (e.g. corrupt or heterogeneous ones). Applied on top of `episodes`.
+    exclude_episodes: list[int] | None = None
     image_transforms: ImageTransformsConfig = field(default_factory=ImageTransformsConfig)
     revision: str | None = None
     use_imagenet_stats: bool = True
-    video_backend: str = field(default_factory=get_safe_default_codec)
-    # When True, video frames are returned as uint8 tensors (0-255) instead of float32 (0.0-1.0).
+    video_backend: str = field(default_factory=get_safe_default_video_backend)
+    # When True, RGB video frames are returned as uint8 tensors (0-255) instead of float32 (0.0-1.0).
     # This reduces memory and speeds up DataLoader IPC. The training pipeline handles the conversion.
     return_uint8: bool = False
+    # Physical unit depth maps are dequantized to at load time: "mm" (millimeters) or "m" (metres).
+    # Has no effect on datasets without depth cameras.
+    depth_output_unit: str = DEFAULT_DEPTH_UNIT
     streaming: bool = False
+    # Complete episodes mixed by the exact-coverage sampler of each DataLoader worker. None mixes
+    # 32 episodes for the rank and gives each of the N workers 32/N; a larger pool mixes more
+    # episodes in each batch, but uses more memory and fetches more data before the first sample.
+    streaming_episode_pool_size: int | None = None
+    # Round-robin trades frame-weighted sampling for more even resident-episode mixing.
+    streaming_sampling_strategy: StreamingSamplingStrategy = StreamingSamplingStrategy.REMAINING
+    # Complete episodes fetched ahead of the current admission frontier.
+    streaming_prefetch_episodes: int = 8
+    # Hard per-rank cap for synthesized episode-video bytes.
+    streaming_byte_budget_gb: float = 8.0
+    # Parallel sample assembly/decode workers and their bounded in-order result queue.
+    streaming_decode_threads: int = 2
+    streaming_decoded_queue_size: int = 8
+    # Per-rank native HTTP limits. None preserves the fetcher's worker-derived default.
+    streaming_native_http_connections: int | None = None
+    streaming_native_http_subranges: int = 1
+    # Seconds to wait for another process that builds the same MP4 sidecar.
+    streaming_sidecar_lock_timeout_s: float = 30 * 60
+    # Maximum open video decoders. Streaming: per rank, None covers every camera in the episode pool.
+    # Map-style: only for non-default storage formats (e.g. lance), per DataLoader worker.
+    video_decoder_cache_size: int | None = None
+    # Fraction of episodes held out per task for offline evaluation (0.0 = disabled).
+    eval_split: float = 0.0
 
     def __post_init__(self) -> None:
+        if self.repo_type not in ("dataset", "bucket"):
+            raise ValueError(f"repo_type must be 'dataset' or 'bucket', got {self.repo_type!r}")
+        if self.eval_split != 0.0 and self.streaming:
+            raise ValueError(
+                "eval_split requires map-style datasets and is not supported with dataset.streaming=true."
+            )
+        if self.depth_output_unit not in (DEPTH_METER_UNIT, DEPTH_MILLIMETER_UNIT):
+            raise ValueError(
+                f"depth_output_unit must be '{DEPTH_METER_UNIT}' or '{DEPTH_MILLIMETER_UNIT}', got {self.depth_output_unit!r}"
+            )
+        if not (0.0 <= self.eval_split < 1.0):
+            raise ValueError(f"eval_split must be in [0.0, 1.0), got {self.eval_split}")
+        self.streaming_sampling_strategy = StreamingSamplingStrategy(self.streaming_sampling_strategy)
+        if self.streaming_episode_pool_size is not None and self.streaming_episode_pool_size <= 0:
+            raise ValueError("streaming_episode_pool_size must be positive")
+        if self.streaming_prefetch_episodes < 0:
+            raise ValueError("streaming_prefetch_episodes must be non-negative")
+        if self.streaming_byte_budget_gb <= 0:
+            raise ValueError("streaming_byte_budget_gb must be positive")
+        if self.streaming_decode_threads <= 0:
+            raise ValueError("streaming_decode_threads must be positive")
+        if self.streaming_decoded_queue_size <= 0:
+            raise ValueError("streaming_decoded_queue_size must be positive")
+        if self.video_decoder_cache_size is not None and self.video_decoder_cache_size <= 0:
+            raise ValueError("video_decoder_cache_size must be positive")
+        if self.streaming_native_http_connections is not None and self.streaming_native_http_connections <= 0:
+            raise ValueError("streaming_native_http_connections must be positive")
+        if self.streaming_native_http_subranges <= 0:
+            raise ValueError("streaming_native_http_subranges must be positive")
+        if self.streaming_sidecar_lock_timeout_s <= 0:
+            raise ValueError("streaming_sidecar_lock_timeout_s must be positive")
         if self.episodes is not None:
             if any(ep < 0 for ep in self.episodes):
                 raise ValueError(
@@ -49,19 +119,50 @@ class DatasetConfig:
             if len(self.episodes) != len(set(self.episodes)):
                 duplicates = sorted({ep for ep in self.episodes if self.episodes.count(ep) > 1})
                 raise ValueError(f"Episode indices contain duplicates: {duplicates}")
+        if self.exclude_episodes is not None:
+            negative_episodes = [episode for episode in self.exclude_episodes if episode < 0]
+            if negative_episodes:
+                logger.warning(
+                    "Ignoring negative exclude_episodes entries: %s",
+                    negative_episodes,
+                )
+                self.exclude_episodes = [episode for episode in self.exclude_episodes if episode >= 0]
+
+
+TRACKIO_RESUME_MODES = frozenset({"allow", "must", "never"})
 
 
 @dataclass
-class WandBConfig:
+class TrackioConfig:
+    """Training run tracking with Trackio (https://huggingface.co/docs/trackio).
+
+    Runs are stored in a local SQLite database under `~/.cache/huggingface/trackio` and viewed with
+    `trackio show --project <project>`. Set `space_id` to sync the run to a Hugging Face Space instead.
+    """
+
     enable: bool = False
-    # Set to true to disable saving an artifact despite training.save_checkpoint=True
-    disable_artifact: bool = False
+    # Opt in with False to duplicate checkpoint weights in Trackio; Hub uploads are configured separately.
+    disable_artifact: bool = True
     project: str = "lerobot"
-    entity: str | None = None
-    notes: str | None = None
-    run_id: str | None = None
-    mode: str | None = None  # Allowed values: 'online', 'offline' 'disabled'. Defaults to 'online'
-    add_tags: bool = True  # If True, save configuration as tags in the WandB run.
+    # Hugging Face Space (`user/space`) to log to instead of the local database; created if missing.
+    # Required for remote jobs (--job.target), whose local database vanishes with the pod.
+    space_id: str | None = None
+    # Whether a newly created Space is private. Ignored if the Space already exists.
+    private: bool | None = None
+    # Run name. Defaults to "<job_name>-<short id>", persisted in the checkpoint so resuming reattaches to it.
+    run_name: str | None = None
+    # Allowed values: 'allow', 'must', 'never'. Defaults to 'allow' when resuming a checkpoint that stored a
+    # run_name (reattach if the run exists, else start a new run under that name) and to 'never' otherwise.
+    resume: str | None = None
+    # Store the run's console output (stdout and stderr, so prints, logs and tracebacks) with the run,
+    # viewable and downloadable from its dashboard page. The launch command is recorded either way.
+    capture_console: bool = True
+
+    def __post_init__(self) -> None:
+        if self.resume is not None and self.resume not in TRACKIO_RESUME_MODES:
+            raise ValueError(
+                f"trackio.resume must be one of {sorted(TRACKIO_RESUME_MODES)}, got {self.resume!r}."
+            )
 
 
 @dataclass
@@ -73,8 +174,22 @@ class EvalConfig:
     # `use_async_envs` specifies whether to use asynchronous environments (multiprocessing).
     # Defaults to True; automatically downgraded to SyncVectorEnv when batch_size=1.
     use_async_envs: bool = True
+    # Whether to record eval rollouts as a LeRobot dataset on disk.
+    recording: bool = False
+    # If set, push recorded eval datasets to the Hub under this repo id (one repo per task,
+    # suffixed by task and env index). Requires recording=true.
+    recording_repo_id: str | None = None
+    # Whether the pushed recording repositories should be private.
+    recording_private: bool = False
+    # Cap each episode at this many steps (the env's own limit still applies when lower).
+    # For quick end-to-end checks such as CI; success rates from capped episodes are not meaningful.
+    max_episode_steps: int | None = None
 
     def __post_init__(self) -> None:
+        if self.recording_repo_id is not None and not self.recording:
+            raise ValueError("eval.recording_repo_id requires eval.recording=true.")
+        if self.max_episode_steps is not None and self.max_episode_steps < 1:
+            raise ValueError(f"eval.max_episode_steps must be at least 1, got {self.max_episode_steps}.")
         if self.batch_size == 0:
             self.batch_size = self._auto_batch_size()
         if self.batch_size > self.n_episodes:
@@ -117,3 +232,41 @@ class PeftConfig:
     # the rank used for the adapter. In general a higher rank means more trainable parameters and closer to full
     # fine-tuning.
     r: int = 16
+
+    # Alpha parameter for LoRA scaling (scaling = lora_alpha / r).
+    # In general, a higher alpha means stronger adaptation signal.
+    # If None, the PEFT library defaults to alpha=8, which may dampen high-rank adapters.
+    # Common values are r (alpha == rank) or 2*r.
+    lora_alpha: int | None = None
+
+
+@dataclass
+class JobConfig:
+    # Where training runs. None (omitted) or "local" runs on this machine.
+    # Any other value is an HF Jobs flavor and submits the run to HF Jobs.
+    # List available flavors + pricing with `hf jobs hardware` command.
+    target: str | None = None
+    # Runtime image for the remote job (ignored for local runs).
+    image: str = "huggingface/lerobot-gpu:latest"
+    # Max wall-clock for the remote job as an HF Jobs duration string (e.g. "2h").
+    # Defaults to "2d": We pass an explicit, generous cap instead. Set a smaller
+    # value to fail fast, or a larger one for long runs.
+    timeout: str | None = "2d"
+    # Submit and exit instead of streaming the job logs in the foreground.
+    detach: bool = False
+    # Extra tags attached to the HF job and to any dataset this run pushes to the
+    # Hub. A "lerobot" tag is always added; e.g. --job.tags '["lelab"]' adds more.
+    tags: list[str] = field(default_factory=list)
+
+    # Two entry points to the same predicate: the staticmethod tests a raw target string
+    # straight from argv (before any JobConfig exists, to decide dispatch early), while the
+    # property is the ergonomic accessor for code that already holds a config instance.
+    @staticmethod
+    def is_remote_target(target: str | None) -> bool:
+        """True when `target` names an HF Jobs flavor rather than a local run."""
+        return target not in (None, "local")
+
+    @property
+    def is_remote(self) -> bool:
+        """True when training should run on HF Jobs rather than this machine."""
+        return self.is_remote_target(self.target)
