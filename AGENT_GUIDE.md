@@ -145,7 +145,7 @@ lerobot-train \
   --output_dir=outputs/train/act_my_task \
   --job_name=act_my_task \
   --batch_size=8 \
-  --wandb.enable=true \
+  --trackio.enable=true \
   --policy.repo_id=${HF_USER}/act_my_task
 ```
 

@@ -16,8 +16,10 @@
 # limitations under the License.
 
 import logging
+import math
 import time
 from collections.abc import Sequence
+from contextlib import ExitStack
 from functools import cached_property
 
 from lerobot.cameras import make_cameras_from_configs
@@ -29,6 +31,7 @@ from lerobot.motors.feetech import (
 from lerobot.types import RobotAction, RobotObservation
 from lerobot.utils.constants import HF_LEROBOT_CALIBRATION, ROBOTS
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
+from lerobot.utils.errors import DeviceNotConnectedError
 from lerobot.utils.partial_calibration import (
     calibration_for_prefixed_bus,
     recalibrate_prefixed_bus_joints,
@@ -129,19 +132,24 @@ class DualScorpionFollower(Robot):
         接続時にはアームが休止位置にあると想定しており、
         トルクを安全に無効にしてキャリブレーションを実行できます。
         """
-        self.right_bus.connect()
-        self.left_bus.connect()
-
-        if not self.is_calibrated and calibrate:
-            logger.info(
-                "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
-            )
-            self.calibrate()
-
-        for cam in self.cameras.values():
-            cam.connect()
-
-        self.configure()
+        configured = False
+        with ExitStack() as cleanup:
+            for bus in (self.right_bus, self.left_bus):
+                bus.connect()
+                cleanup.callback(
+                    lambda bus=bus: bus.disconnect(configured and self.config.disable_torque_on_disconnect)
+                )
+            if (calibrate or self.config.require_calibrated) and not self.is_calibrated:
+                if self.config.require_calibrated:
+                    raise ValueError(f"{self}: saved calibration does not match both follower buses.")
+                logger.info("Motor calibration differs from the saved calibration or the file is missing")
+                self.calibrate()
+            for cam in self.cameras.values():
+                cam.connect()
+                cleanup.callback(cam.disconnect)
+            configured = True
+            self.configure()
+            cleanup.pop_all()
         logger.info(f"{self} connected.")
 
     @property
@@ -253,31 +261,40 @@ class DualScorpionFollower(Robot):
         Apply the motor settings for both arms.
         モーターの設定を適用する
         """
-        with self.right_bus.torque_disabled(), self.left_bus.torque_disabled():
-            self.right_bus.configure_motors()
-            self.left_bus.configure_motors()
-            for motor in self.right_bus.motors:
-                self.right_bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
-                # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
-                self.right_bus.write("P_Coefficient", motor, 16)
-                # Set I_Coefficient and D_Coefficient to default value 0 and 32
-                self.right_bus.write("I_Coefficient", motor, 0)
-                self.right_bus.write("D_Coefficient", motor, 32)
+        if not self.config.require_calibrated:
+            with self.right_bus.torque_disabled(), self.left_bus.torque_disabled():
+                self._configure_motors()
+            return
+
+        buses = (self.right_bus, self.left_bus)
+        for bus in buses:
+            bus.disable_torque()
+        self._configure_motors()
+        for bus in buses:
+            present = bus.sync_read("Present_Position", normalize=False)
+            if present.keys() != bus.motors.keys() or any(
+                not bus.calibration[motor].range_min <= position <= bus.calibration[motor].range_max
+                for motor, position in present.items()
+            ):
+                raise RuntimeError("Cannot hold the follower at a position outside its saved calibration.")
+            bus.sync_write("Goal_Position", present, normalize=False)
+            if bus.sync_read("Goal_Position", normalize=False) != present:
+                raise RuntimeError("Follower startup hold could not be confirmed.")
+        for bus in buses:
+            bus.enable_torque()
+
+    def _configure_motors(self) -> None:
+        for bus in (self.right_bus, self.left_bus):
+            bus.configure_motors()
+            bus.set_operating_mode("position")
+            for motor in bus.motors:
+                bus.write("P_Coefficient", motor, 16)
+                bus.write("I_Coefficient", motor, 0)
+                bus.write("D_Coefficient", motor, 32)
                 if motor == "gripper":
-                    self.right_bus.write("Max_Torque_Limit", motor, 500)
-                    self.right_bus.write("Protection_Current", motor, 250)
-                    self.right_bus.write("Overload_Torque", motor, 25)
-            for motor in self.left_bus.motors:
-                self.left_bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
-                # Set P_Coefficient to lower value to avoid shakiness (Default is 32)
-                self.left_bus.write("P_Coefficient", motor, 16)
-                # Set I_Coefficient and D_Coefficient to default value 0 and 32
-                self.left_bus.write("I_Coefficient", motor, 0)
-                self.left_bus.write("D_Coefficient", motor, 32)
-                if motor == "gripper":
-                    self.left_bus.write("Max_Torque_Limit", motor, 500)
-                    self.left_bus.write("Protection_Current", motor, 250)
-                    self.left_bus.write("Overload_Torque", motor, 25)
+                    bus.write("Max_Torque_Limit", motor, 500)
+                    bus.write("Protection_Current", motor, 250)
+                    bus.write("Overload_Torque", motor, 25)
 
     def setup_motors(self, arm: str | None = None) -> None:
         """
@@ -305,7 +322,8 @@ class DualScorpionFollower(Robot):
                 print(f"LEFT '{motor}' motor id set to {self.left_bus.motors[motor].id}")
 
     @check_if_not_connected
-    def get_observation(self) -> RobotObservation:
+    def get_joint_positions(self) -> dict[str, float]:
+        """Read both arms without acquiring camera frames."""
         # Read arm position
         start = time.perf_counter()
         right_obs_dict = self.right_bus.sync_read("Present_Position")
@@ -318,8 +336,10 @@ class DualScorpionFollower(Robot):
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
 
-        # Combine both arm observations
-        obs_dict = {**right_obs_dict, **left_obs_dict}
+        return {**right_obs_dict, **left_obs_dict}
+
+    def get_observation(self) -> RobotObservation:
+        obs_dict: RobotObservation = self.get_joint_positions()
 
         # capture camera images
         for cam_key, cam in self.cameras.items():
@@ -357,6 +377,7 @@ class DualScorpionFollower(Robot):
         # 現在の位置から離れすぎている場合は、目標位置をキャップします。
         # /!\ フォロワーからの読み取りにより、fps が遅くなることが予想されます。
         if self.config.max_relative_target is not None:
+            started = time.monotonic()
             right_present_pos = self.right_bus.sync_read("Present_Position")
             left_present_pos = self.left_bus.sync_read("Present_Position")
 
@@ -367,6 +388,22 @@ class DualScorpionFollower(Robot):
                 {f"left_{motor}": (goal, left_present_pos[motor]) for motor, goal in left_goal_pos.items()}
             )
 
+            if self.config.require_calibrated:
+                if time.monotonic() - started > 0.25:
+                    raise RuntimeError("Follower position feedback is stale.")
+                for bus, goals in ((self.right_bus, right_goal_pos), (self.left_bus, left_goal_pos)):
+                    for motor, value in goals.items():
+                        calibration = bus.calibration[motor]
+                        mode = bus.motors[motor].norm_mode
+                        if mode is MotorNormMode.DEGREES:
+                            upper = (calibration.range_max - calibration.range_min) * 180 / (
+                                bus.resolution(bus.motors[motor].model) - 1
+                            )
+                            lower = -upper
+                        else:
+                            lower, upper = (0, 100) if mode is MotorNormMode.RANGE_0_100 else (-100, 100)
+                        if not math.isfinite(value) or not lower - 1e-5 <= value <= upper + 1e-5:
+                            raise ValueError(f"Follower target for {motor} is outside its calibrated range.")
             safe_goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
             right_goal_pos = {
                 key.removeprefix("right_"): val
@@ -386,11 +423,15 @@ class DualScorpionFollower(Robot):
             **{f"left_{motor}.pos": val for motor, val in left_goal_pos.items()},
         }
 
-    @check_if_not_connected
-    def disconnect(self):
-        self.right_bus.disconnect(self.config.disable_torque_on_disconnect)
-        self.left_bus.disconnect(self.config.disable_torque_on_disconnect)
-        for cam in self.cameras.values():
-            cam.disconnect()
+    def disconnect(self) -> None:
+        with ExitStack() as cleanup:
+            for cam in self.cameras.values():
+                if cam.is_connected:
+                    cleanup.callback(cam.disconnect)
+            connected_buses = [bus for bus in (self.left_bus, self.right_bus) if bus.is_connected]
+            if not connected_buses and not any(cam.is_connected for cam in self.cameras.values()):
+                raise DeviceNotConnectedError(f"{self} is not connected.")
+            for bus in connected_buses:
+                cleanup.callback(bus.disconnect, self.config.disable_torque_on_disconnect)
 
         logger.info(f"{self} disconnected.")

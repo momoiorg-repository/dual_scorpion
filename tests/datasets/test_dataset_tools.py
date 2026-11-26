@@ -15,6 +15,8 @@
 # limitations under the License.
 """Tests for dataset tools utilities."""
 
+import shutil
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -23,31 +25,40 @@ import torch
 
 pytest.importorskip("datasets", reason="datasets is required (install lerobot[dataset])")
 
+
+from lerobot.configs import DepthEncoderConfig, RGBEncoderConfig
 from lerobot.datasets.dataset_tools import (
+    _fractions_to_episode_indices,
+    _try_keep_episodes_from_video_by_stream_copy,
     add_features,
+    convert_image_to_video_dataset,
     delete_episodes,
     merge_datasets,
     modify_features,
     modify_tasks,
+    reencode_dataset,
     remove_feature,
     split_dataset,
 )
-from lerobot.scripts.lerobot_edit_dataset import convert_image_to_video_dataset
+from lerobot.datasets.io_utils import load_episodes, load_info
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+from tests.datasets.test_video_encoding import require_h264, require_hevc, require_libsvtav1
+from tests.fixtures.constants import DEFAULT_FPS, DUMMY_DEPTH_FEATURES, DUMMY_DEPTH_KEY, DUMMY_REPO_ID
+from tests.fixtures.dataset_factories import add_frames
+
+pytestmark = pytest.mark.dataset
 
 
-@pytest.fixture
-def sample_dataset(tmp_path, empty_lerobot_dataset_factory):
-    """Create a sample dataset for testing."""
+@pytest.fixture(scope="module")
+def sample_dataset_template(tmp_path_factory):
+    """Build the sample dataset once per module; `sample_dataset` hands each test its own copy."""
     features = {
         "action": {"dtype": "float32", "shape": (6,), "names": None},
         "observation.state": {"dtype": "float32", "shape": (4,), "names": None},
         "observation.images.top": {"dtype": "image", "shape": (224, 224, 3), "names": None},
     }
-
-    dataset = empty_lerobot_dataset_factory(
-        root=tmp_path / "test_dataset",
-        features=features,
-    )
+    root = tmp_path_factory.mktemp("sample_dataset_template") / "test_dataset"
+    dataset = LeRobotDataset.create(repo_id=DUMMY_REPO_ID, fps=DEFAULT_FPS, root=root, features=features)
 
     for ep_idx in range(5):
         for _ in range(10):
@@ -61,6 +72,39 @@ def sample_dataset(tmp_path, empty_lerobot_dataset_factory):
         dataset.save_episode()
 
     dataset.finalize()
+    return root
+
+
+@pytest.fixture
+def sample_dataset(tmp_path, sample_dataset_template):
+    """A private copy of the sample dataset, so tests can modify it freely."""
+    root = tmp_path / "test_dataset"
+    shutil.copytree(sample_dataset_template, root)
+    return LeRobotDataset(DUMMY_REPO_ID, root=root)
+
+
+def _make_packed_video_dataset(root, dataset_factory):
+    """Encode H.264 episodes separately, then pack them into one video file."""
+    features = {
+        "action": {"dtype": "float32", "shape": (6,), "names": None},
+        "observation.images.top": {"dtype": "video", "shape": (64, 64, 3), "names": None},
+    }
+
+    dataset = dataset_factory(
+        root=root,
+        features=features,
+        use_videos=True,
+        # A short GOP puts several keyframes inside each episode, so a mid-GOP boundary is
+        # reachable for the negative case.
+        rgb_encoder=RGBEncoderConfig(vcodec="h264", pix_fmt="yuv420p", g=6, crf=30),
+    )
+
+    for _ in range(5):
+        add_frames(dataset, 10)
+        dataset.save_episode()
+
+    dataset.finalize()
+    dataset.meta.episodes = load_episodes(dataset.meta.root)
     return dataset
 
 
@@ -229,6 +273,19 @@ def test_split_overlapping_episodes(sample_dataset, tmp_path):
         split_dataset(sample_dataset, splits=splits, output_dir=tmp_path)
 
 
+def test_split_duplicate_episodes(sample_dataset, tmp_path):
+    """Test error when a split lists the same episode more than once."""
+    splits = {
+        "train": [0, 0, 1],
+        "val": [2, 3],
+    }
+
+    with pytest.raises(ValueError, match=r"Split 'train' lists episodes more than once: \[0\]"):
+        split_dataset(sample_dataset, splits=splits, output_dir=tmp_path)
+
+    assert not (tmp_path / "train").exists()
+
+
 def test_split_invalid_fractions(sample_dataset, tmp_path):
     """Test error when fractions sum to more than 1."""
     splits = {
@@ -297,40 +354,45 @@ def test_merge_empty_list(tmp_path):
         merge_datasets([], output_repo_id="merged", output_dir=tmp_path)
 
 
-def test_add_features_with_values(sample_dataset, tmp_path):
-    """Test adding a feature with pre-computed values."""
+@pytest.mark.parametrize(
+    "values, feature_shape, expected_item_shape",
+    [
+        (np.random.randn(50).astype(np.float32), (1,), ()),
+        (np.random.randn(50, 1).astype(np.float32), (1,), ()),
+        (np.random.randn(50, 7).astype(np.float32), (7,), (7,)),
+        (np.random.randn(50, 1, 4).astype(np.float32), (1, 4), (1, 4)),
+    ],
+    ids=["scalar_1d", "scalar_2d", "vector", "matrix"],
+)
+def test_add_features_with_values(sample_dataset, tmp_path, values, feature_shape, expected_item_shape):
+    """Test adding a pre-computed feature across supported per-frame shapes."""
     num_frames = sample_dataset.meta.total_frames
-    reward_values = np.random.randn(num_frames, 1).astype(np.float32)
+    assert len(values) == num_frames
 
-    feature_info = {
-        "dtype": "float32",
-        "shape": (1,),
-        "names": None,
-    }
-    features = {
-        "reward": (reward_values, feature_info),
-    }
+    feature_info = {"dtype": "float32", "shape": feature_shape, "names": None}
+    features = {"new_feature": (values, feature_info)}
 
     with (
         patch("lerobot.datasets.dataset_metadata.get_safe_version") as mock_get_safe_version,
         patch("lerobot.datasets.dataset_metadata.snapshot_download") as mock_snapshot_download,
     ):
         mock_get_safe_version.return_value = "v3.0"
-        mock_snapshot_download.return_value = str(tmp_path / "with_reward")
+        mock_snapshot_download.return_value = str(tmp_path / "with_feature")
 
         new_dataset = add_features(
             dataset=sample_dataset,
             features=features,
-            output_dir=tmp_path / "with_reward",
+            output_dir=tmp_path / "with_feature",
         )
 
-    assert "reward" in new_dataset.meta.features
-    assert new_dataset.meta.features["reward"] == feature_info
+    assert "new_feature" in new_dataset.meta.features
+    assert new_dataset.meta.features["new_feature"] == feature_info
 
     assert len(new_dataset) == num_frames
     sample_item = new_dataset[0]
-    assert "reward" in sample_item
-    assert isinstance(sample_item["reward"], torch.Tensor)
+    assert "new_feature" in sample_item
+    assert isinstance(sample_item["new_feature"], torch.Tensor)
+    assert tuple(sample_item["new_feature"].shape) == expected_item_shape
 
 
 def test_add_features_with_callable(sample_dataset, tmp_path):
@@ -729,6 +791,39 @@ def test_split_three_ways(sample_dataset, tmp_path):
     assert total_frames == sample_dataset.meta.total_frames
 
 
+@pytest.mark.parametrize(
+    "total_episodes, fractions",
+    [
+        (5, {"train": 0.9, "val": 0.1}),  # last split rounds down to 0
+        (5, {"tiny": 0.1, "train": 0.9}),  # first split rounds down to 0
+        (7, {"a": 0.5, "b": 0.3, "c": 0.2}),
+        (3, {"train": 0.34, "val": 0.33, "test": 0.33}),
+    ],
+)
+def test_fractions_to_episode_indices_lossless(total_episodes, fractions):
+    """Fractions that sum to 1.0 must assign every episode exactly once and keep every requested split."""
+    result = _fractions_to_episode_indices(total_episodes, fractions)
+
+    assert set(result.keys()) == set(fractions.keys())
+    all_indices = [idx for indices in result.values() for idx in indices]
+    assert sorted(all_indices) == list(range(total_episodes))
+    assert all(len(indices) > 0 for indices in result.values())
+
+
+@pytest.mark.parametrize(
+    "total_episodes, fractions, match",
+    [
+        (2, {"train": 0.4, "val": 0.4, "test": 0.2}, "Cannot split"),
+        (5, {"train": 0.0}, "positive fraction"),
+        (5, {"a": -0.5, "b": 0.5}, "non-negative"),
+    ],
+)
+def test_fractions_to_episode_indices_invalid(total_episodes, fractions, match):
+    """Inputs that cannot produce a valid split fail loudly instead of dropping splits."""
+    with pytest.raises(ValueError, match=match):
+        _fractions_to_episode_indices(total_episodes, fractions)
+
+
 def test_split_preserves_stats(sample_dataset, tmp_path):
     """Test that statistics are preserved when splitting."""
     splits = {"train": [0, 1, 2], "val": [3, 4]}
@@ -964,6 +1059,100 @@ def test_delete_first_and_last_episodes(sample_dataset, tmp_path):
     assert episode_indices == [0, 1, 2]
 
 
+@require_h264
+@pytest.mark.parametrize("stream_copy", [True, False], ids=["stream-copy", "reencode"])
+def test_delete_episodes_packed_videos(stream_copy, tmp_path, empty_lerobot_dataset_factory):
+    """Both video paths retain the selected episodes and a continuous output timeline."""
+    import av
+
+    src_dataset = _make_packed_video_dataset(tmp_path / "src", empty_lerobot_dataset_factory)
+    output_dir = tmp_path / "filtered"
+    video_key = src_dataset.meta.video_keys[0]
+
+    with (
+        patch("lerobot.datasets.dataset_metadata.get_safe_version") as mock_get_safe_version,
+        patch("lerobot.datasets.dataset_metadata.snapshot_download") as mock_snapshot_download,
+        patch(
+            "lerobot.datasets.dataset_tools._try_keep_episodes_from_video_by_stream_copy",
+            wraps=_try_keep_episodes_from_video_by_stream_copy,
+        ) as mock_stream_copy,
+    ):
+        mock_get_safe_version.return_value = "v3.0"
+        mock_snapshot_download.return_value = str(output_dir)
+        if not stream_copy:
+            mock_stream_copy.return_value = False
+
+        new_dataset = delete_episodes(src_dataset, [1, 3], output_dir=output_dir)
+
+    mock_stream_copy.assert_called_once()
+
+    assert new_dataset.meta.total_episodes == 3
+    assert new_dataset.meta.total_frames == 30
+
+    video_path = new_dataset.root / new_dataset.meta.get_video_file_path(0, video_key)
+    with av.open(str(video_path)) as container:
+        pts = [frame.pts for frame in container.decode(video=0)]
+        ticks_per_frame = round(1 / (src_dataset.meta.fps * container.streams.video[0].time_base))
+    assert len(pts) == 30
+    assert [p - pts[0] for p in pts] == [i * ticks_per_frame for i in range(30)]
+
+    source_frames = torch.stack([src_dataset[i][video_key] for i in range(src_dataset.meta.total_frames)])
+    for new_ep, old_ep in enumerate([0, 2, 4]):
+        for offset in range(10):
+            source_index = old_ep * 10 + offset
+            expected = source_frames[source_index]
+            actual = new_dataset[new_ep * 10 + offset][video_key]
+            if stream_copy:
+                assert torch.equal(actual, expected)
+            else:
+                # Allow lossy pixel changes, but require the correct source frame, in order.
+                errors = (source_frames - actual).abs().mean(dim=(1, 2, 3))
+                assert errors.argmin().item() == source_index
+
+
+@require_h264
+def test_stream_copy_declines_when_boundaries_are_not_gop_aligned(tmp_path, empty_lerobot_dataset_factory):
+    """A range starting mid-GOP is refused so the caller can re-encode instead."""
+    src_dataset = _make_packed_video_dataset(tmp_path / "src", empty_lerobot_dataset_factory)
+    video_key = src_dataset.meta.video_keys[0]
+    src_video_path = src_dataset.root / src_dataset.meta.get_video_file_path(0, video_key)
+    output_path = tmp_path / "declined.mp4"
+
+    # Frame 3 sits inside the first episode's GOP rather than on its boundary.
+    assert not _try_keep_episodes_from_video_by_stream_copy(
+        src_video_path, output_path, [(3, 10)], src_dataset.meta.fps
+    )
+    assert not output_path.exists(), "declining must not leave a partial file behind"
+
+
+@require_h264
+def test_stream_copy_declines_open_gop_keyframes(tmp_path):
+    """Keyframes followed by leading pictures are not clean cut points.
+
+    In an open GOP the pictures after a keyframe in decode order can be presented before it and
+    reference the previous GOP, so the keyframe's packet index is not its frame index.
+    """
+    import av
+
+    fps = 30
+    # 64 frames, 64x64, x264: keyint=16:min-keyint=16:open-gop=1:bframes=3:b-adapt=0:scenecut=0.
+    src_video_path = Path(__file__).parent.parent / "artifacts" / "encoded_videos" / "open_gop_h264.mp4"
+
+    with av.open(str(src_video_path)) as container:
+        keyframe_indices = [
+            i
+            for i, packet in enumerate(p for p in container.demux(video=0) if p.size > 0)
+            if packet.is_keyframe
+        ]
+    assert len(keyframe_indices) > 2, "fixture must contain mid-stream keyframes"
+
+    output_path = tmp_path / "declined.mp4"
+    assert not _try_keep_episodes_from_video_by_stream_copy(
+        src_video_path, output_path, [(keyframe_indices[1], keyframe_indices[2])], fps
+    )
+    assert not output_path.exists()
+
+
 def test_split_all_episodes_assigned(sample_dataset, tmp_path):
     """Test that all episodes can be explicitly assigned to splits."""
     splits = {
@@ -1118,9 +1307,61 @@ def test_modify_tasks_default_with_overrides(sample_dataset):
             assert ep_data["tasks"][0] == default_task
 
 
+def test_modify_tasks_replacements(sample_dataset):
+    """Test replacing task strings based on their current values."""
+    modified_dataset = modify_tasks(
+        sample_dataset,
+        task_replacements={
+            "task_0": "Pick the cube",
+            "task_1": "Place the cube",
+        },
+    )
+
+    assert len(modified_dataset.meta.tasks) == 2
+    assert "Pick the cube" in modified_dataset.meta.tasks.index
+    assert "Place the cube" in modified_dataset.meta.tasks.index
+
+    for ep_idx in range(5):
+        expected_task = "Pick the cube" if ep_idx % 2 == 0 else "Place the cube"
+        assert modified_dataset.meta.episodes[ep_idx]["tasks"][0] == expected_task
+
+
+def test_modify_tasks_replacements_with_episode_overrides(sample_dataset):
+    """Test that explicit episode overrides take precedence over replacements."""
+    modified_dataset = modify_tasks(
+        sample_dataset,
+        task_replacements={
+            "task_0": "Pick the cube",
+            "task_1": "Place the cube",
+        },
+        episode_tasks={1: "Inspect the cube"},
+    )
+
+    assert modified_dataset.meta.episodes[0]["tasks"][0] == "Pick the cube"
+    assert modified_dataset.meta.episodes[1]["tasks"][0] == "Inspect the cube"
+    assert modified_dataset.meta.episodes[3]["tasks"][0] == "Place the cube"
+    assert len(modified_dataset.meta.tasks) == 3
+
+
+def test_modify_tasks_default_task_and_replacements(sample_dataset):
+    """Test that new_task acts as the default for episodes not matched by task_replacements."""
+    modified_dataset = modify_tasks(
+        sample_dataset,
+        new_task="Default task",
+        task_replacements={"task_0": "Pick the cube"},
+    )
+
+    for ep_idx in range(5):
+        expected_task = "Pick the cube" if ep_idx % 2 == 0 else "Default task"
+        assert modified_dataset.meta.episodes[ep_idx]["tasks"][0] == expected_task
+    assert len(modified_dataset.meta.tasks) == 2
+
+
 def test_modify_tasks_no_task_specified(sample_dataset):
     """Test error when no task is specified."""
-    with pytest.raises(ValueError, match="Must specify at least one of new_task or episode_tasks"):
+    with pytest.raises(
+        ValueError, match="Must specify at least one of new_task, episode_tasks, or task_replacements"
+    ):
         modify_tasks(sample_dataset)
 
 
@@ -1128,6 +1369,12 @@ def test_modify_tasks_invalid_episode_indices(sample_dataset):
     """Test error with invalid episode indices."""
     with pytest.raises(ValueError, match="Invalid episode indices"):
         modify_tasks(sample_dataset, episode_tasks={10: "Task", 20: "Task"})
+
+
+def test_modify_tasks_invalid_task_replacements(sample_dataset):
+    """Test error when task replacements refer to unknown task strings."""
+    with pytest.raises(ValueError, match="Task replacements reference unknown tasks"):
+        modify_tasks(sample_dataset, task_replacements={"missing_task": "New task"})
 
 
 def test_modify_tasks_updates_info_json(sample_dataset):
@@ -1246,10 +1493,12 @@ def test_convert_image_to_video_dataset(tmp_path):
             dataset=source_dataset,
             output_dir=output_dir,
             repo_id="lerobot/pusht_video",
-            vcodec="libsvtav1",
-            pix_fmt="yuv420p",
-            g=2,
-            crf=30,
+            rgb_encoder=RGBEncoderConfig(
+                vcodec="libsvtav1",
+                pix_fmt="yuv420p",
+                g=2,
+                crf=30,
+            ),
             episode_indices=[0, 1],
             num_workers=2,
         )
@@ -1323,3 +1572,163 @@ def test_convert_image_to_video_dataset_subset_episodes(tmp_path):
 
         if output_dir.exists():
             shutil.rmtree(output_dir)
+
+
+@require_libsvtav1
+@require_hevc
+def test_convert_image_to_video_dataset_depth(tmp_path, empty_lerobot_dataset_factory):
+    """Depth image features convert to depth videos using the depth encoder.
+
+    Mirrors :func:`test_convert_image_to_video_dataset` but with a small local
+    image dataset that mixes an RGB camera with a depth camera, so the
+    ``depth_keys`` → ``depth_encoder`` routing and ``is_depth_map`` preservation
+    are exercised end-to-end.
+    """
+    features = {
+        "action": {"dtype": "float32", "shape": (2,), "names": ["a", "b"]},
+        "observation.images.cam": {
+            "dtype": "image",
+            "shape": (64, 96, 3),
+            "names": ["height", "width", "channels"],
+        },
+        "observation.images.depth": {
+            "dtype": "image",
+            "shape": (64, 96, 1),
+            "names": ["height", "width", "channels"],
+            "info": {"is_depth_map": True},
+        },
+    }
+    source_dataset = empty_lerobot_dataset_factory(
+        root=tmp_path / "img_ds",
+        features=features,
+        use_videos=False,
+    )
+
+    add_frames(source_dataset, num_frames=4)
+    source_dataset.save_episode()
+    source_dataset.finalize()
+
+    # Source is an image dataset with the depth marker on the depth camera.
+    assert len(source_dataset.meta.video_keys) == 0
+    assert "observation.images.depth" in source_dataset.meta.depth_keys
+
+    output_dir = tmp_path / "video_ds"
+    with (
+        patch("lerobot.datasets.dataset_metadata.get_safe_version") as mock_get_safe_version,
+        patch("lerobot.datasets.dataset_metadata.snapshot_download") as mock_snapshot_download,
+    ):
+        mock_get_safe_version.return_value = "v3.0"
+        mock_snapshot_download.return_value = str(output_dir)
+
+        # Use non-default quantization params so the persisted metadata must
+        # come from the depth encoder (not RGB encoder defaults).
+        depth_encoder = DepthEncoderConfig(
+            vcodec="hevc",
+            pix_fmt="gray12le",
+            g=2,
+            crf=30,
+            depth_min=0.05,
+            depth_max=8.0,
+            shift=2.0,
+            use_log=False,
+        )
+        video_dataset = convert_image_to_video_dataset(
+            dataset=source_dataset,
+            output_dir=output_dir,
+            repo_id="dummy/depth_video",
+            rgb_encoder=RGBEncoderConfig(vcodec="libsvtav1", pix_fmt="yuv420p", g=2, crf=30),
+            depth_encoder=depth_encoder,
+            num_workers=1,
+        )
+
+    # Both cameras are now videos, and the depth marker survived the conversion.
+    assert "observation.images.cam" in video_dataset.meta.video_keys
+    assert "observation.images.depth" in video_dataset.meta.video_keys
+    assert "observation.images.depth" in video_dataset.meta.depth_keys
+    assert "observation.images.cam" not in video_dataset.meta.depth_keys
+
+    depth_path = video_dataset.root / video_dataset.meta.get_video_file_path(0, "observation.images.depth")
+    assert depth_path.exists(), f"Depth video file should exist: {depth_path}"
+
+    # The persisted depth-video metadata must carry the depth quantization params
+    # from the depth encoder (so frames dequantize correctly on read), and the RGB
+    # camera must not be marked as a depth map.
+    persisted_info = load_info(video_dataset.root)
+    depth_info = persisted_info.features["observation.images.depth"]["info"]
+    assert depth_info["is_depth_map"] is True
+    assert DepthEncoderConfig.from_video_info(depth_info) == depth_encoder
+
+    cam_info = persisted_info.features["observation.images.cam"]["info"]
+    assert cam_info.get("is_depth_map") is False
+    assert "video.codec" in cam_info
+
+
+# ─── reencode_dataset ─────────────────────────────────────────────────
+
+
+@require_hevc
+def test_reencode_dataset_depth_uses_depth_encoder(tmp_path, empty_lerobot_dataset_factory):
+    """Depth videos are re-encoded with the depth encoder and keep their depth metadata.
+
+    Depth-focused companion to :func:`test_reencode_dataset_multi_key_multiprocessing`.
+    """
+    initial_cfg = DepthEncoderConfig(vcodec="hevc", pix_fmt="gray12le", g=2, crf=30)
+    dataset = empty_lerobot_dataset_factory(
+        root=tmp_path / "ds",
+        features=DUMMY_DEPTH_FEATURES,
+        use_videos=True,
+        depth_encoder=initial_cfg,
+    )
+
+    add_frames(dataset, num_frames=4)
+    dataset.save_episode()
+    dataset.finalize()
+
+    assert DUMMY_DEPTH_KEY in dataset.meta.depth_keys
+
+    target_cfg = DepthEncoderConfig(vcodec="hevc", pix_fmt="gray12le", g=6, crf=23)
+    result = reencode_dataset(dataset, depth_encoder=target_cfg, num_workers=0)
+
+    assert result is dataset
+
+    persisted_info = load_info(dataset.root)
+    depth_info = persisted_info.features[DUMMY_DEPTH_KEY].get("info", {})
+    # Re-encode applied the new codec parameters to the depth video ...
+    assert DepthEncoderConfig.from_video_info(depth_info) == target_cfg
+    # ... while preserving the depth marker.
+    assert depth_info["is_depth_map"] is True
+
+
+@require_libsvtav1
+@require_h264
+def test_reencode_dataset_multi_key_multiprocessing(
+    tmp_path, empty_lerobot_dataset_factory, features_factory
+):
+    """Re-encode a two-camera dataset with num_workers=2 and verify metadata refresh."""
+    features = features_factory(use_videos=True)
+    initial_cfg = RGBEncoderConfig(vcodec="libsvtav1", g=2, crf=30, preset=12)
+    dataset = empty_lerobot_dataset_factory(
+        root=tmp_path / "ds",
+        features=features,
+        use_videos=True,
+        rgb_encoder=initial_cfg,
+    )
+
+    add_frames(dataset, num_frames=4)
+    dataset.save_episode()
+    add_frames(dataset, num_frames=4)
+    dataset.save_episode()
+    dataset.finalize()
+
+    assert len(dataset.meta.video_keys) == 2
+
+    target_cfg = RGBEncoderConfig(vcodec="h264", g=6, crf=23, pix_fmt="yuv420p")
+
+    result = reencode_dataset(dataset, rgb_encoder=target_cfg, num_workers=2)
+
+    assert result is dataset
+
+    persisted_info = load_info(dataset.root)
+    for vk in dataset.meta.video_keys:
+        persisted_encoder = RGBEncoderConfig.from_video_info(persisted_info.features[vk].get("info", {}))
+        assert persisted_encoder == target_cfg

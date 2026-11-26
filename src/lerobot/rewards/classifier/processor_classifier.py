@@ -16,6 +16,7 @@ from typing import Any
 
 import torch
 
+from lerobot.configs import FeatureType
 from lerobot.processor import (
     DeviceProcessorStep,
     IdentityProcessorStep,
@@ -25,7 +26,8 @@ from lerobot.processor import (
     policy_action_to_transition,
     transition_to_policy_action,
 )
-from lerobot.rewards.classifier.configuration_classifier import RewardClassifierConfig
+
+from .configuration_classifier import RewardClassifierConfig
 
 
 def make_classifier_processor(
@@ -54,13 +56,13 @@ def make_classifier_processor(
         A tuple containing the configured pre-processor and post-processor pipelines.
     """
 
+    # The config keys the mapping by `FeatureType` value strings; the normalizer expects enum keys.
+    norm_map = {
+        FeatureType(feature_type): mode for feature_type, mode in config.normalization_mapping.items()
+    }
     input_steps = [
-        NormalizerProcessorStep(
-            features=config.input_features, norm_map=config.normalization_mapping, stats=dataset_stats
-        ),
-        NormalizerProcessorStep(
-            features=config.output_features, norm_map=config.normalization_mapping, stats=dataset_stats
-        ),
+        NormalizerProcessorStep(features=config.input_features, norm_map=norm_map, stats=dataset_stats),
+        NormalizerProcessorStep(features=config.output_features, norm_map=norm_map, stats=dataset_stats),
         DeviceProcessorStep(device=config.device),
     ]
     output_steps = [DeviceProcessorStep(device="cpu"), IdentityProcessorStep()]

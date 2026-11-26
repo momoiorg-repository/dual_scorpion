@@ -107,7 +107,8 @@ def test_default_matches_recorded_pre_change_plan():
             [frame["arms"][side]["joint_deg"] for frame in reference["frames"]], dtype=float
         )
         actual = np.asarray([frame["arms"][side]["joint_deg"] for frame in plan["frames"]], dtype=float)
-        np.testing.assert_allclose(actual, expected, rtol=0.0, atol=0.0)
+        # The CAD export moved each shoulder and rounded axis components again.
+        np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-6)
     assert not plan["failures"] and not reference["failures"]
     assert report["ik_failures"] == []
 
