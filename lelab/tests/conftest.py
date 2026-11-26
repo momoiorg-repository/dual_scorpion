@@ -57,7 +57,9 @@ def tmp_lerobot_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     follower_cfg_dir = cache / "configs" / "so_follower"
     port_dir = cache / "ports"
     saved_dir = cache / "saved_configs"
-    for d in (teleop_dir, robot_dir, leader_cfg_dir, follower_cfg_dir, port_dir, saved_dir):
+    robots_dir = cache / "robots"
+    cam_ref_dir = cache / "camera_references"
+    for d in (teleop_dir, robot_dir, leader_cfg_dir, follower_cfg_dir, port_dir, saved_dir, robots_dir, cam_ref_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(cfg, "CALIBRATION_BASE_PATH_TELEOP", str(teleop_dir))
@@ -70,6 +72,8 @@ def tmp_lerobot_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(cfg, "CONFIG_STORAGE_PATH", str(saved_dir))
     monkeypatch.setattr(cfg, "LEADER_CONFIG_FILE", str(saved_dir / "leader_config.txt"))
     monkeypatch.setattr(cfg, "FOLLOWER_CONFIG_FILE", str(saved_dir / "follower_config.txt"))
+    monkeypatch.setattr(cfg, "ROBOTS_PATH", str(robots_dir))
+    monkeypatch.setattr(cfg, "CAMERA_REFERENCES_PATH", str(cam_ref_dir))
 
     return cache
 

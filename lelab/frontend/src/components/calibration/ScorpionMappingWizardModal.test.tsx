@@ -11,11 +11,25 @@ const stableToast = { toast: toastMock };
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => stableToast }));
 vi.mock("@/components/UrdfViewer", () => ({
-  default: () => <div data-testid="wizard-urdf-viewer" />,
+  default: ({ recordedFrame }: { recordedFrame?: { joints: Record<string, number> } }) => (
+    <div
+      data-testid="wizard-urdf-viewer"
+      data-joint0-r={String(recordedFrame?.joints?.joint0_R ?? 0)}
+    />
+  ),
 }));
 
-let mockMotorValue = 10.0;
-const savedBodies: unknown[] = [];
+let mockPositions: Record<string, number> = {
+  "right_joint0.pos": 5.0,
+  "right_joint1.pos": 2.0,
+  "right_joint2.pos": -3.0,
+  "right_joint3.pos": 4.0,
+  "right_joint4.pos": 1.0,
+  "right_joint5.pos": -2.0,
+  "right_joint6.pos": 0.0,
+  "right_gripper.pos": 0,
+};
+const savedBodies: Array<{ joints?: Record<string, { expected_model_direction: number; motor_reference_deg: number }> }> = [];
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
@@ -32,10 +46,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     return json({
       success: true,
       active: true,
-      positions: {
-        "right_joint0.pos": mockMotorValue,
-        "right_gripper.pos": 0,
-      },
+      positions: mockPositions,
     });
   }
   if (url.endsWith("/scorpion-mapping/stop")) {
@@ -65,10 +76,19 @@ afterEach(() => {
   toastMock.mockReset();
   fetchMock.mockClear();
   savedBodies.length = 0;
-  mockMotorValue = 10.0;
+  mockPositions = {
+    "right_joint0.pos": 5.0,
+    "right_joint1.pos": 2.0,
+    "right_joint2.pos": -3.0,
+    "right_joint3.pos": 4.0,
+    "right_joint4.pos": 1.0,
+    "right_joint5.pos": -2.0,
+    "right_joint6.pos": 0.0,
+    "right_gripper.pos": 0,
+  };
 });
 
-test("ScorpionMappingWizardModal connects follower, captures 2 poses, and saves YAML without CAD input", async () => {
+test("ScorpionMappingWizardModal records whole-arm Pose 1 + Pose 2, allows Live Mirror adjustments, and saves YAML", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const robot: RobotRecord = {
     name: "test-scorp",
@@ -77,8 +97,8 @@ test("ScorpionMappingWizardModal connects follower, captures 2 poses, and saves 
     follower_port: "",
     leader_left_port: "",
     leader_right_port: "",
-    follower_left_port: "/dev/ttyACM1",
-    follower_right_port: "/dev/ttyACM0",
+    follower_left_port: "/dev/ttyACM0",
+    follower_right_port: "/dev/ttyACM1",
     leader_config: "",
     follower_config: "follower.json",
     cameras: [],
@@ -111,23 +131,45 @@ test("ScorpionMappingWizardModal connects follower, captures 2 poses, and saves 
   });
 
   const pose1Btn = [...document.body.querySelectorAll("button")].find((b) =>
-    b.textContent?.includes("画面と同じ姿勢で記録"),
+    b.textContent?.includes("ポーズ 1 (L字) を記録"),
   );
   await act(async () => {
     pose1Btn?.click();
     await Promise.resolve();
   });
 
-  mockMotorValue = 38.0;
+  // Move all 7 right-arm joints by >= 10 deg to match Pose 2
+  mockPositions = {
+    "right_joint0.pos": -25.0,
+    "right_joint1.pos": 35.0,
+    "right_joint2.pos": 25.0,
+    "right_joint3.pos": -30.0,
+    "right_joint4.pos": 38.0,
+    "right_joint5.pos": 28.0,
+    "right_joint6.pos": 33.0,
+    "right_gripper.pos": 50,
+  };
   await act(async () => {
     await new Promise((r) => setTimeout(r, 250));
   });
 
   const pose2Btn = [...document.body.querySelectorAll("button")].find((b) =>
-    b.textContent?.includes("動かした先を記録"),
+    b.textContent?.includes("ポーズ 2 をまとめて記録"),
   );
   await act(async () => {
     pose2Btn?.click();
+    await Promise.resolve();
+  });
+
+  // Should transition straight to Live 確認 with all 7 right-arm joints verified
+  expect(document.body.textContent).toContain("完了関節: 7 / 14");
+
+  // Flip joint0 direction in Live Mirror and re-zero joint0
+  const flipBtn = [...document.body.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("向き反転"),
+  );
+  await act(async () => {
+    flipBtn?.click();
     await Promise.resolve();
   });
 
@@ -141,6 +183,8 @@ test("ScorpionMappingWizardModal connects follower, captures 2 poses, and saves 
   });
 
   expect(savedBodies).toHaveLength(1);
+  expect(Object.keys(savedBodies[0].joints ?? {})).toHaveLength(7);
+  expect(savedBodies[0].joints?.right_joint0?.expected_model_direction).toBe(-1);
   expect(onSaved).toHaveBeenCalledWith("follower-mapping.yaml");
 
   act(() => root.unmount());
