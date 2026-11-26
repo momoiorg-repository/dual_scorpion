@@ -30,6 +30,7 @@ develop-eggs/
 *.egg
 MANIFEST
 lib/
+!/lelab/frontend/src/lib/
 lib64/
 
 # PyInstaller
@@ -164,4 +165,9 @@ outputs/
 *.stl
 *.urdf
 *.xml
+!/lelab/frontend/public/so-101-urdf/urdf/so101_new_calib.urdf
+!/lelab/frontend/public/so-101-urdf/joints_properties.xml
+!/lelab/frontend/public/so-101-urdf/package.xml
 *.part
+
+.venv-lelab/

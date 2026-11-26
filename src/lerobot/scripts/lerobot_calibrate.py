@@ -39,20 +39,26 @@ from lerobot.robots import (  # noqa: F401
     Robot,
     RobotConfig,
     bi_openarm_follower,
+    bi_rebot_b601_follower,
     bi_so_follower,
     dual_scorpion_follower,
+    bi_yam_follower,
     hope_jr,
     koch_follower,
     lekiwi,
     make_robot_from_config,
     omx_follower,
     openarm_follower,
+    rebot_b601_follower,
     so_follower,
+    yam_follower,
 )
 from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
     TeleoperatorConfig,
     bi_openarm_leader,
+    bi_openarm_mini,
+    bi_rebot_102_leader,
     bi_so_leader,
     dual_scorpion_leader,
     homunculus,
@@ -61,6 +67,7 @@ from lerobot.teleoperators import (  # noqa: F401
     omx_leader,
     openarm_leader,
     openarm_mini,
+    rebot_102_leader,
     so_leader,
     unitree_g1,
 )
@@ -74,20 +81,28 @@ class CalibrateConfig:
     robot: RobotConfig | None = None
     joints: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if bool(self.teleop) == bool(self.robot):
             raise ValueError("Choose either a teleop or a robot.")
-
-        self.device = self.robot if self.robot else self.teleop
         if self.joints is not None and not self.joints.strip():
             raise ValueError("--joints must be a comma-separated list of joints.")
 
+    @property
+    def device(self) -> RobotConfig | TeleoperatorConfig:
+        """The one device config given on the CLI (`__post_init__` enforces exactly one)."""
+        if self.robot is not None:
+            return self.robot
+        if self.teleop is not None:
+            return self.teleop
+        raise ValueError("Choose either a teleop or a robot.")
+
 
 @draccus.wrap()
-def calibrate(cfg: CalibrateConfig):
+def calibrate(cfg: CalibrateConfig) -> None:
     init_logging()
     logging.info(pformat(asdict(cfg)))
 
+    device: Robot | Teleoperator
     if isinstance(cfg.device, RobotConfig):
         device = make_robot_from_config(cfg.device)
     elif isinstance(cfg.device, TeleoperatorConfig):
@@ -98,9 +113,9 @@ def calibrate(cfg: CalibrateConfig):
     try:
         if cfg.joints is None:
             device.calibrate()
+        elif not hasattr(device, "calibrate_joints"):
+            raise ValueError(f"{type(device).__name__} does not support partial joint calibration.")
         else:
-            if not hasattr(device, "calibrate_joints"):
-                raise ValueError(f"{type(device).__name__} does not support partial joint calibration.")
             joints = [joint.strip() for joint in cfg.joints.split(",") if joint.strip()]
             device.calibrate_joints(joints)
     finally:

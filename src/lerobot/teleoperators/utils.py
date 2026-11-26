@@ -55,6 +55,10 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> "Teleoperator":
         from .so_leader import SO101Leader
 
         return SO101Leader(config)
+    elif config.type == "dual_scorpion_leader":
+        from .dual_scorpion_leader import DualScorpionLeader
+
+        return DualScorpionLeader(config)
     elif config.type == "mock_teleop":
         from tests.mocks.mock_teleop import MockTeleop
 
@@ -99,10 +103,18 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> "Teleoperator":
         from .openarm_mini import OpenArmMini
 
         return OpenArmMini(config)
-    elif config.type == "dual_scorpion_leader":
-        from .dual_scorpion_leader import DualScorpionLeader
+    elif config.type == "bi_openarm_mini":
+        from .bi_openarm_mini import BiOpenArmMini
 
-        return DualScorpionLeader(config)
+        return BiOpenArmMini(config)
+    elif config.type == "rebot_102_leader":
+        from .rebot_102_leader import RebotArm102Leader
+
+        return RebotArm102Leader(config)
+    elif config.type == "bi_rebot_102_leader":
+        from .bi_rebot_102_leader import BiRebot102Leader
+
+        return BiRebot102Leader(config)
     else:
         try:
             return cast("Teleoperator", make_device_from_device_class(config))
