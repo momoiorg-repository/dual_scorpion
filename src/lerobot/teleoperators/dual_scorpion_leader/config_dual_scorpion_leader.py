@@ -30,3 +30,5 @@ class DualScorpionLeaderConfig(TeleoperatorConfig):
     left_arm_port: str  # Port for the left arm (e.g. "/dev/ttyACM3")
 
     use_degrees: bool = True
+
+    require_calibrated: bool = False

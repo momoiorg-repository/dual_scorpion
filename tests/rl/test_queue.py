@@ -20,11 +20,13 @@ from queue import Queue
 
 import pytest
 
-pytest.importorskip("grpc")
+pytest.importorskip("datasets", reason="datasets is required (install lerobot[dataset])")
 
 from torch.multiprocessing import Queue as TorchMPQueue  # noqa: E402
 
 from lerobot.rl.queue import get_last_item_from_queue  # noqa: E402
+
+pytestmark = pytest.mark.dataset
 
 
 def test_get_last_item_single_item():

@@ -2,20 +2,24 @@
 
 from lerobot.robots.dual_scorpion_follower import DualScorpionFollowerConfig
 from lerobot.robots.utils import make_robot_from_config
-from lerobot.scripts.lerobot_setup_motors import COMPATIBLE_DEVICES, SetupConfig
+from lerobot.scripts.lerobot_setup_motors import SetupConfig, setup_motors
 from lerobot.teleoperators.dual_scorpion_leader import DualScorpionLeaderConfig
 from lerobot.teleoperators.utils import make_teleoperator_from_config
 
 
-def test_setup_motors_accepts_dual_scorpion_arm_selector():
+def test_setup_motors_accepts_dual_scorpion_arm_selector(monkeypatch):
+    from unittest.mock import Mock
+
+    device = Mock()
+    monkeypatch.setattr("lerobot.scripts.lerobot_setup_motors.make_robot_from_config", lambda _: device)
     cfg = SetupConfig(
         robot=DualScorpionFollowerConfig(right_arm_port="/dev/right", left_arm_port="/dev/left"),
         arm="left",
     )
 
     assert cfg.device.type == "dual_scorpion_follower"
-    assert "dual_scorpion_follower" in COMPATIBLE_DEVICES
-    assert "dual_scorpion_leader" in COMPATIBLE_DEVICES
+    setup_motors(cfg)
+    device.setup_motors.assert_called_once_with(arm="left")
 
 
 def test_dual_scorpion_factories_are_registered(monkeypatch):
