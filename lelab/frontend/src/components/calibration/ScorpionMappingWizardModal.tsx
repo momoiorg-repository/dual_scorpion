@@ -480,7 +480,7 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl border-slate-700 bg-slate-900 text-white">
+      <DialogContent className="w-[95vw] max-w-6xl border-slate-700 bg-slate-900 text-white">
         <DialogHeader>
           <DialogTitle>3D Mapping Wizard (CAD知識不要)</DialogTitle>
           <DialogDescription className="text-slate-400">
@@ -488,9 +488,9 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <div className="h-80 overflow-hidden rounded-md border border-slate-700 bg-slate-950">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <div className="flex flex-col gap-2 lg:col-span-7">
+            <div className="h-[420px] overflow-hidden rounded-md border border-slate-700 bg-slate-950 lg:h-[520px]">
               <Suspense fallback={<p className="p-4 text-sm text-slate-400">Loading 3D model…</p>}>
                 <UrdfViewer robotModel="dual_scorpion" recordedFrame={recordedFrame} />
               </Suspense>
@@ -506,7 +506,7 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 text-sm">
+          <div className="flex flex-col gap-3 text-sm lg:col-span-5">
             {!connected ? (
               <div className="space-y-3 rounded-md border border-amber-700/60 bg-amber-950/30 p-3">
                 <p className="text-xs text-amber-200">

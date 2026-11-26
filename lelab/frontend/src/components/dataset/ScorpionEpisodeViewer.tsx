@@ -193,7 +193,7 @@ export default function ScorpionEpisodeViewer({
         error ? <p role="alert" className="text-sm text-red-400">{error}</p>
           : frame ? (
             <div className="space-y-3">
-              <div className="h-80 overflow-hidden rounded-md border border-gray-800">
+              <div className="h-[440px] overflow-hidden rounded-md border border-gray-800">
                 <Suspense fallback={<p className="p-4 text-gray-400">Loading robot model…</p>}>
                   <UrdfViewer
                     robotModel="dual_scorpion"

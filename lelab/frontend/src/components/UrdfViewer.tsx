@@ -96,6 +96,7 @@ const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame, visu
   const scorpion = robotModel === "dual_scorpion";
   const containerRef = useRef<HTMLDivElement>(null);
   const [highlightedJoint, setHighlightedJoint] = useState<string | null>(null);
+  const [showJointHud, setShowJointHud] = useState(false);
   const [loadedRobotMapping, setLoadedRobotMapping] = useState<ScorpionVisualMapping | null>(null);
   const { registerUrdfProcessor, alternativeUrdfModels, isDefaultModel } =
     useUrdf();
@@ -406,23 +407,43 @@ const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame, visu
       )}
 
       {scorpion && Object.keys(positions).length > 0 && (
-        <div className="absolute bottom-2 left-2 z-10 max-h-[45%] overflow-auto rounded-md bg-black/80 p-2 text-xs text-gray-200">
-          <div className="grid grid-cols-2 gap-x-4">
-            {Object.entries(positions).sort(([a], [b]) => a.localeCompare(b)).map(([joint, value]) => (
-              <div key={joint} className="font-mono">
-                {joint.replace(".pos", "").replace(/_/g, " ")} {value.toFixed(1)}{joint.endsWith("gripper.pos") ? "%" : "°"}
-              </div>
-            ))}
+        showJointHud ? (
+          <div className="absolute bottom-2 left-2 z-10 max-h-[45%] overflow-auto rounded-md bg-black/80 p-2 text-xs text-gray-200">
+            <div className="mb-1 flex items-center justify-between gap-3 border-b border-white/10 pb-1">
+              <span className="font-medium text-[11px] text-gray-300">Joint INFO</span>
+              <button
+                type="button"
+                onClick={() => setShowJointHud(false)}
+                className="rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-white/10 hover:text-white"
+              >
+                Hide
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4">
+              {Object.entries(positions).sort(([a], [b]) => a.localeCompare(b)).map(([joint, value]) => (
+                <div key={joint} className="font-mono">
+                  {joint.replace(".pos", "").replace(/_/g, " ")} {value.toFixed(1)}{joint.endsWith("gripper.pos") ? "%" : "°"}
+                </div>
+              ))}
+            </div>
+            {recordedFrame && !backendProvidedJoints && jointsMapped > 0 && (
+              <p className="mt-1 text-[11px] text-sky-300">
+                Visual preview mapping active (no CAD verification required).
+              </p>
+            )}
+            {jointsMapped < Object.keys(positions).length && (
+              <p className="mt-1 text-amber-300">A verified mapping is needed to animate the remaining joints.</p>
+            )}
           </div>
-          {recordedFrame && !backendProvidedJoints && jointsMapped > 0 && (
-            <p className="mt-1 text-[11px] text-sky-300">
-              Visual preview mapping active (no CAD verification required).
-            </p>
-          )}
-          {jointsMapped < Object.keys(positions).length && (
-            <p className="mt-1 text-amber-300">A verified mapping is needed to animate the remaining joints.</p>
-          )}
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowJointHud(true)}
+            className="absolute bottom-2 left-2 z-10 rounded bg-black/60 px-2 py-1 text-[11px] font-medium text-gray-300 hover:bg-black/80 hover:text-white"
+          >
+            Joint INFO ({Object.keys(positions).length})
+          </button>
+        )
       )}
 
       {/* WebSocket connection status */}
