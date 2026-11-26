@@ -1,0 +1,122 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "setuptools_scm[toml]>=6.2", "nodejs-wheel-binaries>=22.12"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "LeLab"
+version = "0.1.0"
+description = "LeRobot Lab - A web interface for robotics with lerobot integration"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115.12",
+    "websockets>=15.0.1",
+    "uvicorn>=0.24.0",
+    "psutil>=5.9.0",
+    "lerobot[core_scripts,feetech,training] @ git+https://github.com/huggingface/lerobot.git@v0.7.0",
+    # Windows-only: real DirectShow camera names for /available-cameras so the
+    # frontend can match a camera to its browser deviceId (issues #12, #16).
+    # Guarded by try/except at the call site, so its absence degrades gracefully.
+    "pygrabber>=0.2 ; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.6",
+    "pre-commit>=3.0",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+lelab = "lelab.scripts.lelab:main"
+
+[tool.setuptools]
+# Ship only the package-data below: the frontend sources are build inputs, not runtime files.
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lelab*", "frontend"]
+
+[tool.setuptools.package-data]
+frontend = ["dist/**/*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+exclude = ["tests/artifacts/**/*.safetensors", "*_pb2.py", "*_pb2_grpc.py"]
+
+[tool.ruff.lint]
+# E, W: pycodestyle errors and warnings
+# F: PyFlakes
+# I: isort
+# UP: pyupgrade
+# B: flake8-bugbear (good practices, potential bugs)
+# C4: flake8-comprehensions (more concise comprehensions)
+# A: flake8-builtins (shadowing builtins)
+# SIM: flake8-simplify
+# RUF: Ruff-specific rules
+# D: pydocstyle (for docstring style/formatting)
+# S: flake8-bandit (some security checks, complements Bandit)
+# T20: flake8-print (discourage print statements in production code)
+# N: pep8-naming
+# TODO: Uncomment rules when ready to use
+select = [
+    "E", "W", "F", "I", "B", "C4", "T20", "N", "UP", "SIM" #, "A", "S", "D", "RUF"
+]
+ignore = [
+    "E501", # Line too long
+    "T201", # Print statement found
+    "T203", # Pprint statement found
+    "B008", # Perform function call in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403", "E402"]
+# E402: conditional-import guards (TYPE_CHECKING / is_package_available) must precede the imports they protect
+"src/lerobot/scripts/convert_dataset_v21_to_v30.py" = ["E402"]
+"src/lerobot/policies/wall_x/**" = ["N801", "N812", "SIM102", "SIM108", "SIM210", "SIM211", "B006", "B007", "SIM118"] # Supprese these as they are coming from original Qwen2_5_vl code TODO(pepijn): refactor original
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["lerobot"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-vv --maxfail=10"
+asyncio_mode = "auto"
+
+[tool.typos]
+files.extend-exclude = [
+    "frontend/.gitattributes",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101", "B110", "B112", "B311", "B404", "B603", "B607", "B615"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "lelab.*"
+ignore_errors = true

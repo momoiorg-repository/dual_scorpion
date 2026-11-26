@@ -1,0 +1,378 @@
+# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Tests for lelab.jobs — parsers and Pydantic models. Does not exercise
+LocalJobRunner.start() (see plan, "Discovered issue")."""
+
+from __future__ import annotations
+
+import json as _json
+
+import pytest
+
+
+def test_extract_tracking_url_finds_the_space_url() -> None:
+    from lelab.jobs import extract_tracking_url
+
+    line = "INFO 2026-11-05 15:03:26 io_utils.py:101 Track this run --> https://huggingface.co/spaces/me/lelab-trackio"
+    assert extract_tracking_url(line) == "https://huggingface.co/spaces/me/lelab-trackio"
+
+
+def test_extract_tracking_url_ignores_a_local_database_run() -> None:
+    from lelab.jobs import extract_tracking_url
+
+    assert extract_tracking_url('Track this run --> trackio show --project "lerobot"') is None
+    assert extract_tracking_url("https://huggingface.co/spaces/me/other") is None
+
+
+def test_job_record_reads_a_legacy_wandb_run_url() -> None:
+    from lelab.jobs import JobRecord
+    from lelab.train import TrainingRequest
+
+    record = JobRecord.model_validate(
+        {
+            "id": "j",
+            "name": "n",
+            "state": "done",
+            "config": TrainingRequest(dataset_repo_id="x").model_dump(),
+            "output_dir": "/tmp/out",
+            "started_at": 0.0,
+            "wandb_run_url": "https://wandb.ai/me/p/runs/abc",
+        }
+    )
+    assert record.tracking_url == "https://wandb.ai/me/p/runs/abc"
+    assert "wandb_run_url" not in record.model_dump()
+
+
+@pytest.mark.parametrize(
+    ("whoami", "space_id", "expected"),
+    [
+        ({"name": "me"}, None, "me/lelab-trackio"),
+        ({"name": "me"}, "team/runs", "team/runs"),  # an explicit Space wins
+        (None, None, None),  # signed out: the run stays in the local database
+    ],
+)
+def test_tracked_runs_default_to_the_users_trackio_space(monkeypatch, whoami, space_id, expected) -> None:
+    from lelab import jobs
+    from lelab.train import TrainingRequest
+    from lelab.utils import hf_auth
+
+    monkeypatch.setattr(hf_auth, "cached_whoami", lambda: whoami)
+    config = TrainingRequest(dataset_repo_id="x", trackio_enable=True, trackio_space_id=space_id)
+
+    assert jobs._with_default_trackio_space(config).trackio_space_id == expected
+
+
+def test_untracked_runs_get_no_trackio_space(monkeypatch) -> None:
+    from lelab import jobs
+    from lelab.train import TrainingRequest
+    from lelab.utils import hf_auth
+
+    monkeypatch.setattr(hf_auth, "cached_whoami", lambda: {"name": "me"})
+
+    assert jobs._with_default_trackio_space(TrainingRequest(dataset_repo_id="x")).trackio_space_id is None
+
+
+def test_parse_duration_handles_mm_ss_and_hh_mm_ss() -> None:
+    from lelab.jobs import _parse_duration
+
+    assert _parse_duration("01:30") == 90
+    assert _parse_duration("01:00:00") == 3600
+    assert _parse_duration("?") is None
+    assert _parse_duration("garbage") is None
+
+
+def test_parse_metrics_into_extracts_loss_and_step() -> None:
+    from lelab.jobs import TrainingMetrics, parse_metrics_into
+
+    m = TrainingMetrics()
+    line = "INFO ... step:42 smpl:336 loss:0.0123 grdn:1.5 lr:0.0001 ..."
+    parse_metrics_into(line, m)
+
+    assert m.current_step == 42
+    assert m.current_loss == pytest.approx(0.0123)
+    assert m.current_lr == pytest.approx(0.0001)
+    assert m.grad_norm == pytest.approx(1.5)
+
+
+def test_parse_metrics_into_extracts_tqdm_progress() -> None:
+    from lelab.jobs import TrainingMetrics, parse_metrics_into
+
+    m = TrainingMetrics()
+    # tqdm format: "Training:  10%|...| 100/1000 [00:30<04:30, ..."
+    line = "Training:  10%|██░|  100/1000 [00:30<04:30, 3.21it/s]"
+    parse_metrics_into(line, m)
+
+    assert m.current_step == 100
+    assert m.total_steps == 1000
+    assert m.eta_seconds == 270  # 4 min 30 s
+
+
+def test_parse_metrics_into_ignores_unrelated_lines() -> None:
+    from lelab.jobs import TrainingMetrics, parse_metrics_into
+
+    m = TrainingMetrics()
+    parse_metrics_into("just a log line with no metrics", m)
+    assert m.current_step == 0 or m.current_step is None  # accept either default
+
+
+def test_log_line_round_trips_to_json() -> None:
+    from lelab.jobs import LogLine
+
+    line = LogLine(timestamp=1.5, message="hello")
+    payload = line.model_dump_json()
+    parsed = LogLine.model_validate_json(payload)
+    assert parsed.timestamp == 1.5
+    assert parsed.message == "hello"
+
+
+def test_pid_alive_returns_false_for_unlikely_pid() -> None:
+    from lelab.jobs import _pid_alive
+
+    # DISCOVERED: os.kill(-1, 0) on macOS sends to process group and succeeds
+    # (returns True), so we use a large PID that certainly does not exist.
+    assert _pid_alive(999999999) is False
+
+
+def test_hub_checkpoints_from_files_parses_tree() -> None:
+    from lelab.jobs import _hub_checkpoints_from_files
+
+    files = [
+        "README.md",
+        "checkpoints/000010/pretrained_model/config.json",
+        "checkpoints/000020/pretrained_model/config.json",
+        "checkpoints/000020/pretrained_model/model.safetensors",
+    ]
+    out = _hub_checkpoints_from_files(files, "user/repo")
+    assert [c.step for c in out] == [10, 20]
+    assert out[1].source == "hub"
+    assert out[1].ref == "user/repo@checkpoints/000020"
+
+
+def _make_pretrained(dir_path) -> None:
+    dir_path.mkdir(parents=True, exist_ok=True)
+    (dir_path / "config.json").write_text(_json.dumps({"type": "act"}))
+
+
+def test_list_imported_local_single_model(tmp_path) -> None:
+    from lelab.jobs import _list_imported_local
+
+    _make_pretrained(tmp_path)  # config.json at the root
+    out = _list_imported_local(str(tmp_path))
+    assert len(out) == 1
+    assert out[0].step == 0
+    assert out[0].source == "local"
+    assert out[0].ref == str(tmp_path.resolve())
+
+
+def test_list_imported_local_checkpoints_tree(tmp_path) -> None:
+    from lelab.jobs import _list_imported_local
+
+    _make_pretrained(tmp_path / "checkpoints" / "000010" / "pretrained_model")
+    out = _list_imported_local(str(tmp_path))
+    assert [c.step for c in out] == [10]
+    assert out[0].source == "local"
+    assert out[0].ref.endswith("/checkpoints/000010/pretrained_model")
+
+
+def test_list_imported_local_empty_when_no_model(tmp_path) -> None:
+    from lelab.jobs import _list_imported_local
+
+    assert _list_imported_local(str(tmp_path)) == []
+
+
+def test_list_imported_hub_single_model() -> None:
+    from lelab.jobs import _list_imported_hub
+
+    class FakeApi:
+        def list_repo_files(self, repo_id, repo_type):
+            return ["config.json", "model.safetensors", "README.md"]
+
+    out = _list_imported_hub(FakeApi(), "user/repo")
+    assert len(out) == 1
+    assert out[0].step == 0
+    assert out[0].source == "hub"
+    assert out[0].ref == "user/repo@root"
+
+
+def test_list_imported_hub_prefers_checkpoints_tree() -> None:
+    from lelab.jobs import _list_imported_hub
+
+    class FakeApi:
+        def list_repo_files(self, repo_id, repo_type):
+            return [
+                "config.json",  # also present, but the tree wins
+                "checkpoints/000050/pretrained_model/config.json",
+            ]
+
+    out = _list_imported_hub(FakeApi(), "user/repo")
+    assert [c.step for c in out] == [50]
+    assert out[0].ref == "user/repo@checkpoints/000050"
+
+
+def test_list_imported_hub_empty_when_no_model() -> None:
+    from lelab.jobs import _list_imported_hub
+
+    class FakeApi:
+        def list_repo_files(self, repo_id, repo_type):
+            return ["README.md"]
+
+    assert _list_imported_hub(FakeApi(), "user/repo") == []
+
+
+def test_read_checkpoint_config_local_reads_config_json(tmp_path) -> None:
+    from lelab.jobs import JobCheckpoint, _read_checkpoint_config
+
+    (tmp_path / "config.json").write_text(_json.dumps({"type": "act"}))
+    ckpt = JobCheckpoint(step=0, source="local", ref=str(tmp_path))
+    assert _read_checkpoint_config(ckpt) == {"type": "act"}
+
+
+def test_read_checkpoint_config_hub_root(monkeypatch, tmp_path) -> None:
+    from lelab.jobs import JobCheckpoint, _read_checkpoint_config
+
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text(_json.dumps({"type": "smolvla"}))
+    seen = {}
+
+    def fake_download(**kwargs):
+        seen.update(kwargs)
+        return str(cfg_file)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_download)
+    ckpt = JobCheckpoint(step=0, source="hub", ref="user/repo@root")
+    assert _read_checkpoint_config(ckpt) == {"type": "smolvla"}
+    assert seen["repo_id"] == "user/repo"
+    assert seen["filename"] == "config.json"
+
+
+def test_read_checkpoint_config_hub_tree(monkeypatch, tmp_path) -> None:
+    from lelab.jobs import JobCheckpoint, _read_checkpoint_config
+
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text(_json.dumps({"type": "act"}))
+    seen = {}
+
+    def fake_download(**kwargs):
+        seen.update(kwargs)
+        return str(cfg_file)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_download)
+    ckpt = JobCheckpoint(step=50, source="hub", ref="user/repo@checkpoints/000050")
+    assert _read_checkpoint_config(ckpt) == {"type": "act"}
+    assert seen["repo_id"] == "user/repo"
+    assert seen["filename"] == "checkpoints/000050/pretrained_model/config.json"
+
+
+def test_register_imported_local_dir(tmp_path) -> None:
+    from lelab.jobs import JobRegistry
+
+    model = tmp_path / "model"
+    _make_pretrained(model)  # config.json at root
+    reg = JobRegistry(tmp_path / "root")
+    rec = reg.register_imported(str(model))
+
+    assert rec.runner == "imported"
+    assert rec.state == "done"
+    assert rec.output_dir == str(model.resolve())
+    assert rec.hf_repo_id is None
+    cks = reg.list_checkpoints(rec.id)
+    assert [c.step for c in cks] == [0]
+    # Persisted as a pointer job.json, reloadable.
+    reg2 = JobRegistry(tmp_path / "root")
+    assert reg2.get(rec.id).runner == "imported"
+
+
+def test_register_imported_rejects_unusable_source(tmp_path) -> None:
+    from lelab.jobs import JobRegistry
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    reg = JobRegistry(tmp_path / "root")
+    with pytest.raises(ValueError, match="No usable model"):
+        reg.register_imported(str(empty))
+
+
+def test_register_imported_hub_repo(monkeypatch, tmp_path) -> None:
+    from lelab.jobs import JobRegistry
+
+    class FakeApi:
+        def list_repo_files(self, repo_id, repo_type):
+            return ["config.json", "model.safetensors"]
+
+    monkeypatch.setattr("lelab.utils.hf_auth.shared_hf_api", lambda: FakeApi())
+    reg = JobRegistry(tmp_path / "root")
+    rec = reg.register_imported("user/some-model")
+
+    assert rec.runner == "imported"
+    assert rec.hf_repo_id == "user/some-model"
+    assert rec.output_dir == ""
+    cks = reg.list_checkpoints(rec.id)
+    assert [c.ref for c in cks] == ["user/some-model@root"]
+
+
+def _default_to_cp932(monkeypatch) -> None:
+    """Make Path.read_text/write_text default to CP932, as on Japanese Windows."""
+    from pathlib import Path
+
+    real_write_text, real_read_text = Path.write_text, Path.read_text
+
+    def write_text(self, data, encoding=None, *args, **kwargs):
+        return real_write_text(self, data, encoding or "cp932", *args, **kwargs)
+
+    def read_text(self, encoding=None, *args, **kwargs):
+        return real_read_text(self, encoding or "cp932", *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", write_text)
+    monkeypatch.setattr(Path, "read_text", read_text)
+
+
+def test_job_json_survives_a_cp932_default_encoding(monkeypatch, tmp_path) -> None:
+    """CP932 cannot encode the "·" in the default name of an imported model (#131)."""
+    from lelab.jobs import JobRegistry
+
+    model = tmp_path / "model"
+    _make_pretrained(model)
+    _default_to_cp932(monkeypatch)
+
+    rec = JobRegistry(tmp_path / "root").register_imported(str(model))
+
+    assert "·" in rec.name
+    assert JobRegistry(tmp_path / "root").get(rec.id).name == rec.name
+
+
+def test_cp932_job_json_written_before_the_fix_still_loads(monkeypatch, tmp_path) -> None:
+    from lelab.jobs import JobRegistry
+
+    model = tmp_path / "model"
+    _make_pretrained(model)
+    rec = JobRegistry(tmp_path / "root").register_imported(str(model), name="日本語のモデル")
+    meta = next((tmp_path / "root").rglob("job.json"))
+    meta.write_bytes(meta.read_text(encoding="utf-8").encode("cp932"))
+    _default_to_cp932(monkeypatch)
+
+    assert JobRegistry(tmp_path / "root").get(rec.id).name == "日本語のモデル"
+
+
+@pytest.mark.parametrize("policy_type", ["act", "diffusion", "vqbet", "tdmpc", "sac"])
+def test_policy_requires_task_false_for_task_free_policies(policy_type: str) -> None:
+    from lelab.jobs import _policy_requires_task
+
+    assert _policy_requires_task(policy_type) is False
+
+
+@pytest.mark.parametrize("policy_type", ["smolvla", "pi0", "pi05", "groot", "xvla", "some_plugin", None])
+def test_policy_requires_task_true_for_language_or_unknown_policies(policy_type: object) -> None:
+    from lelab.jobs import _policy_requires_task
+
+    assert _policy_requires_task(policy_type) is True
