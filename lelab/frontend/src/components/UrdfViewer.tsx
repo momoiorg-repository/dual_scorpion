@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 
 import URDFManipulator from "urdf-loader/src/urdf-manipulator-element.js";
 import { useUrdf } from "@/hooks/useUrdf";
+import type { RobotModel } from "@/hooks/useRobots";
+import { useApi } from "@/contexts/ApiContext";
 import { useRealTimeJoints } from "@/hooks/useRealTimeJoints";
 import {
   createUrdfViewer,
@@ -32,7 +34,14 @@ interface UrdfViewerElement extends HTMLElement {
   setJointValue?: (jointName: string, value: number) => void;
 }
 
-const UrdfViewer: React.FC = () => {
+interface Props {
+  robotModel?: RobotModel;
+  recordedFrame?: { joints: Record<string, number>; motor_positions: Record<string, number> };
+}
+
+const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame }) => {
+  const { baseUrl } = useApi();
+  const scorpion = robotModel === "dual_scorpion";
   const containerRef = useRef<HTMLDivElement>(null);
   const [highlightedJoint, setHighlightedJoint] = useState<string | null>(null);
   const { registerUrdfProcessor, alternativeUrdfModels, isDefaultModel } =
@@ -43,10 +52,27 @@ const UrdfViewer: React.FC = () => {
   const hasInitializedRef = useRef<boolean>(false);
 
   // Real-time joint updates via WebSocket
-  const { isConnected: isWebSocketConnected } = useRealTimeJoints({
+  const { isConnected, motorPositions, mappedJoints } = useRealTimeJoints({
     viewerRef,
-    enabled: isDefaultModel, // Only enable WebSocket for default model
+    enabled: isDefaultModel && !recordedFrame,
+    robotModel,
   });
+  const isWebSocketConnected = isConnected && (!scorpion || Object.keys(motorPositions).length > 0);
+  const positions = recordedFrame?.motor_positions ?? motorPositions;
+  const jointsMapped = recordedFrame ? Object.keys(recordedFrame.joints).length : mappedJoints;
+
+  useEffect(() => {
+    if (!recordedFrame) return;
+    const viewer = viewerRef.current;
+    const showFrame = () => {
+      for (const [joint, value] of Object.entries(recordedFrame.joints)) {
+        viewer?.setJointValue?.(joint, value);
+      }
+    };
+    showFrame();
+    viewer?.addEventListener("urdf-processed", showFrame);
+    return () => viewer?.removeEventListener("urdf-processed", showFrame);
+  }, [recordedFrame]);
 
   // Add state for custom URDF path
   const [customUrdfPath, setCustomUrdfPath] = useState<string | null>(null);
@@ -136,13 +162,13 @@ const UrdfViewer: React.FC = () => {
 
     // Setup mesh loading function with appropriate URL modifier
     const activeUrlModifier = isDefaultModel
-      ? defaultUrlModifier
+      ? scorpion ? null : defaultUrlModifier
       : urlModifierFunc;
     setupMeshLoader(viewer, activeUrlModifier);
 
     // Determine which URDF to load - fixed path to match the actual available file
     const urdfPath = isDefaultModel
-      ? "/so-101-urdf/urdf/so101_new_calib.urdf"
+      ? scorpion ? `${baseUrl}/scorpion-urdf/scorpion.urdf` : "/so-101-urdf/urdf/so101_new_calib.urdf"
       : customUrdfPath || "";
 
     // Set the package path for the default model
@@ -262,6 +288,8 @@ const UrdfViewer: React.FC = () => {
     };
   }, [
     isDefaultModel,
+    scorpion,
+    baseUrl,
     customUrdfPath,
     urlModifierFunc,
     defaultUrlModifier,
@@ -284,8 +312,23 @@ const UrdfViewer: React.FC = () => {
         </div>
       )}
 
+      {scorpion && Object.keys(positions).length > 0 && (
+        <div className="absolute bottom-2 left-2 z-10 max-h-[45%] overflow-auto rounded-md bg-black/80 p-2 text-xs text-gray-200">
+          <div className="grid grid-cols-2 gap-x-4">
+            {Object.entries(positions).sort(([a], [b]) => a.localeCompare(b)).map(([joint, value]) => (
+              <div key={joint} className="font-mono">
+                {joint.replace(".pos", "").replace(/_/g, " ")} {value.toFixed(1)}{joint.endsWith("gripper.pos") ? "%" : "°"}
+              </div>
+            ))}
+          </div>
+          {jointsMapped < Object.keys(positions).length && (
+            <p className="mt-2 text-amber-300">A verified mapping is needed to animate the remaining joints.</p>
+          )}
+        </div>
+      )}
+
       {/* WebSocket connection status */}
-      {isDefaultModel && (
+      {isDefaultModel && !recordedFrame && (
         <div className="absolute top-4 right-4 z-10">
           <div
             className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-mono ${

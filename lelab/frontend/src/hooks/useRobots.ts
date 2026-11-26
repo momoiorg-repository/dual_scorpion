@@ -4,7 +4,22 @@ import { useApi } from "@/contexts/ApiContext";
 import { useToast } from "@/hooks/use-toast";
 import { CameraConfig, cameraConfigurationError, loadCameraConfigs } from "@/lib/cameraConfig";
 
+export type RobotModel = "so101" | "dual_scorpion";
+
+export const scorpionPortFields = [
+  ["leader_left_port", "Leader left port"],
+  ["leader_right_port", "Leader right port"],
+  ["follower_left_port", "Follower left port"],
+  ["follower_right_port", "Follower right port"],
+] as const;
+
 export interface RobotRecord {
+  robot_model?: RobotModel;
+  leader_left_port?: string;
+  leader_right_port?: string;
+  follower_left_port?: string;
+  follower_right_port?: string;
+  view_mapping?: string;
   name: string;
   leader_port: string;
   follower_port: string;

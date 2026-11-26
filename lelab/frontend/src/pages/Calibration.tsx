@@ -44,6 +44,8 @@ import { isMotorRangeComplete } from "@/lib/calibrationTargets";
 import CameraConfiguration from "@/components/recording/CameraConfiguration";
 import { CameraConfig, loadCameraConfigs, cameraConfigurationError } from "@/lib/cameraConfig";
 
+import { type RobotModel, type RobotRecord, scorpionPortFields } from "@/hooks/useRobots";
+
 const DISCONTINUITY_ERROR_PREFIX = "Motor discontinuity detected";
 
 interface CalibrationStatus {
@@ -66,16 +68,9 @@ interface CalibrationRequest {
   port: string;
   config_file: string;
   robot_name: string | null;
-}
-
-interface RobotRecord {
-  name: string;
-  leader_port: string;
-  follower_port: string;
-  leader_config: string;
-  follower_config: string;
-  cameras: CameraConfig[];
-  is_clean: boolean;
+  robot_model?: RobotModel;
+  left_port?: string;
+  right_port?: string;
 }
 
 const Calibration = () => {
@@ -92,6 +87,39 @@ const Calibration = () => {
   const [deviceType, setDeviceType] = useState<string>("teleop");
   const [port, setPort] = useState<string>("");
   const [robot, setRobot] = useState<RobotRecord | null>(null);
+  const [detectedPorts, setDetectedPorts] = useState<string[]>([]);
+  const dualScorpion = robot?.robot_model === "dual_scorpion";
+  const deviceRole = deviceType === "robot" ? "follower" : "leader";
+  const leftPort = robot?.[`${deviceRole}_left_port`] ?? "";
+  const rightPort = robot?.[`${deviceRole}_right_port`] ?? "";
+  const canCalibrate = dualScorpion ? Boolean(leftPort && rightPort) : Boolean(port);
+
+  const updateRobot = async (patch: Partial<RobotRecord>) => {
+    if (!robotName) return;
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/robots/${encodeURIComponent(robotName)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) throw new Error("Could not save robot configuration.");
+      const data = await response.json();
+      if (data.robot) setRobot(data.robot);
+    } catch (error) {
+      toast({ title: "Configuration error", description: String(error), variant: "destructive" });
+    }
+  };
+
+  const scanSerialPorts = async () => {
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/available-ports`);
+      if (!response.ok) throw new Error("Could not detect serial ports.");
+      const data = await response.json();
+      setDetectedPorts(data.ports ?? []);
+    } catch (error) {
+      toast({ title: "Serial ports", description: String(error), variant: "destructive" });
+    }
+  };
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
   // Off by default so merely opening the calibration page never grabs a camera.
   // The user explicitly starts a scan, which is when cameras are turned on,
@@ -248,10 +276,10 @@ const Calibration = () => {
       });
       return;
     }
-    if (!port) {
+    if (!canCalibrate) {
       toast({
         title: "Missing port",
-        description: "Set the device's serial port before starting.",
+        description: "Set the selected device's serial ports before starting.",
         variant: "destructive",
       });
       return;
@@ -260,8 +288,11 @@ const Calibration = () => {
     const request: CalibrationRequest = {
       device_type: deviceType,
       port: port,
-      config_file: robotName,
+      config_file: dualScorpion && existingConfigs.includes(`${robotName}.json`)
+        ? `${robotName}-${Date.now()}`
+        : robotName,
       robot_name: robotName,
+      ...(dualScorpion && { robot_model: "dual_scorpion", left_port: leftPort, right_port: rightPort }),
     };
 
     // Optimistically mark as active so the unmount cleanup will fire even if
@@ -494,7 +525,7 @@ const Calibration = () => {
   const [existingConfigs, setExistingConfigs] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
-    fetchWithHeaders(`${baseUrl}/calibration-configs/${deviceType}`)
+    fetchWithHeaders(`${baseUrl}/calibration-configs/${deviceType}${dualScorpion ? "?robot_model=dual_scorpion" : ""}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -508,7 +539,7 @@ const Calibration = () => {
       cancelled = true;
     };
     // Re-list when a calibration ends, so a newly written file shows up.
-  }, [deviceType, baseUrl, fetchWithHeaders, calibrationStatus.calibration_active]);
+  }, [deviceType, baseUrl, fetchWithHeaders, calibrationStatus.calibration_active, dualScorpion]);
 
   const configField = deviceType === "robot" ? "follower_config" : "leader_config";
 
@@ -523,7 +554,7 @@ const Calibration = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             [configField]: filename,
-            ...(port ? { [portField]: port } : {}),
+            ...(!dualScorpion && port ? { [portField]: port } : {}),
           }),
         }
       );
@@ -638,6 +669,23 @@ const Calibration = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
+                <Label htmlFor="robot-model">Robot model</Label>
+                <select
+                  id="robot-model"
+                  value={robot?.robot_model ?? "so101"}
+                  disabled={!robot || calibrationStatus.calibration_active}
+                  className="w-full rounded-md border border-slate-600 bg-slate-700 p-2 text-white"
+                  onChange={(event) => updateRobot({
+                    robot_model: event.target.value as RobotModel,
+                    leader_config: "",
+                    follower_config: "",
+                  })}
+                >
+                  <option value="so101">SO-101</option>
+                  <option value="dual_scorpion">Dual Scorpion</option>
+                </select>
+              </div>
+              <div className="space-y-2">
                 <Label
                   htmlFor="deviceType"
                   className="text-sm font-medium text-slate-300"
@@ -662,6 +710,39 @@ const Calibration = () => {
                 </Select>
               </div>
 
+              {dualScorpion && robot ? (
+                <div className="space-y-3">
+                  <Button variant="outline" size="sm" onClick={scanSerialPorts}>Detect serial ports</Button>
+                  <datalist id="scorpion-serial-ports">
+                    {detectedPorts.map((detected) => <option key={detected} value={detected} />)}
+                  </datalist>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {scorpionPortFields.map(([field, label]) => (
+                      <div key={field} className="space-y-1">
+                        <Label htmlFor={field}>{label}</Label>
+                        <Input
+                          id={field}
+                          list="scorpion-serial-ports"
+                          value={robot[field] ?? ""}
+                          disabled={calibrationStatus.calibration_active}
+                          onChange={(event) => setRobot({ ...robot, [field]: event.target.value })}
+                          onBlur={(event) => updateRobot({ [field]: event.target.value.trim() })}
+                          className="border-slate-600 bg-slate-700 text-white"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <Label htmlFor="scorpion-view-mapping">Verified URDF mapping (optional)</Label>
+                  <Input
+                    id="scorpion-view-mapping"
+                    placeholder="Mapping YAML filename"
+                    value={robot.view_mapping ?? ""}
+                    onChange={(event) => setRobot({ ...robot, view_mapping: event.target.value })}
+                    onBlur={(event) => updateRobot({ view_mapping: event.target.value.trim() })}
+                    className="border-slate-600 bg-slate-700 text-white"
+                  />
+                </div>
+              ) : (
               <div className="space-y-2">
                 <Label
                   htmlFor="port"
@@ -686,6 +767,8 @@ const Calibration = () => {
                 </div>
               </div>
 
+              )}
+
               <Separator className="bg-slate-700" />
 
               <div className="flex flex-col gap-3">
@@ -693,7 +776,7 @@ const Calibration = () => {
                   <Button
                     onClick={handleStartCalibration}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-full py-6 text-lg"
-                    disabled={!robotName || !deviceType || !port}
+                    disabled={!robotName || !deviceType || !canCalibrate}
                     data-tour="calibration-start"
                   >
                     <Play className="w-5 h-5 mr-2" />

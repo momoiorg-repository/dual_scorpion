@@ -18,6 +18,7 @@
 import logging
 import time
 from collections.abc import Sequence
+from contextlib import ExitStack
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.feetech import (
@@ -25,6 +26,7 @@ from lerobot.motors.feetech import (
     OperatingMode,
 )
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
+from lerobot.utils.errors import DeviceNotConnectedError
 from lerobot.utils.partial_calibration import (
     calibration_for_prefixed_bus,
     recalibrate_prefixed_bus_joints,
@@ -96,16 +98,17 @@ class DualScorpionLeader(Teleoperator):
 
     @check_if_already_connected
     def connect(self, calibrate: bool = True) -> None:
-        self.right_bus.connect()
-        self.left_bus.connect()
-
-        if not self.is_calibrated and calibrate:
-            logger.info(
-                "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
-            )
-            self.calibrate()
-
-        self.configure()
+        with ExitStack() as cleanup:
+            for bus in (self.right_bus, self.left_bus):
+                bus.connect()
+                cleanup.callback(bus.disconnect, False)
+            if (calibrate or self.config.require_calibrated) and not self.is_calibrated:
+                if self.config.require_calibrated:
+                    raise ValueError(f"{self}: saved calibration does not match both leader buses.")
+                logger.info("Motor calibration differs from the saved calibration or the file is missing")
+                self.calibrate()
+            self.configure()
+            cleanup.pop_all()
         logger.info(f"{self} connected.")
 
     @property
@@ -265,9 +268,12 @@ class DualScorpionLeader(Teleoperator):
     def send_feedback(self, feedback: dict[str, float]) -> None:
         raise NotImplementedError
 
-    @check_if_not_connected
     def disconnect(self) -> None:
-        self.right_bus.disconnect()
-        self.left_bus.disconnect()
+        connected_buses = [bus for bus in (self.left_bus, self.right_bus) if bus.is_connected]
+        if not connected_buses:
+            raise DeviceNotConnectedError(f"{self} is not connected.")
+        with ExitStack() as cleanup:
+            for bus in connected_buses:
+                cleanup.callback(bus.disconnect)
 
         logger.info(f"{self} disconnected.")

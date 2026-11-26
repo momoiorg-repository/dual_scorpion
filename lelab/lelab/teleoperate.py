@@ -18,11 +18,11 @@ import threading
 import time
 from typing import Any
 
-from pydantic import BaseModel
-
 from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 from lerobot.teleoperators.so_leader import SO101Leader, SO101LeaderConfig
 
+from .hardware import MAX_SCORPION_FPS, HardwareRequest, scorpion_pair
+from .scorpion_view import read_view_mapping, scorpion_joint_frame
 from .utils.config import setup_calibration_files
 from .utils.devices import follower_lock, safe_disconnect_device
 
@@ -32,12 +32,14 @@ logger = logging.getLogger(__name__)
 teleoperation_active = False
 teleoperation_thread: threading.Thread | None = None
 current_robot = None
+latest_joint_frame = None
+teleoperation_starting = False
 current_teleop = None
 
 
-class TeleoperateRequest(BaseModel):
-    leader_port: str
-    follower_port: str
+class TeleoperateRequest(HardwareRequest):
+    leader_port: str = ""
+    follower_port: str = ""
     leader_config: str
     follower_config: str
 
@@ -114,12 +116,16 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
     dying silently in the worker thread while the API has already claimed
     success. Only the teleoperation loop runs in the background thread.
     """
-    global teleoperation_active, teleoperation_thread, current_robot, current_teleop
+    global teleoperation_active, teleoperation_thread, current_robot, current_teleop, latest_joint_frame
+    global teleoperation_starting
 
     from . import record as _record, replay as _replay, rollout as _rollout
+    from .calibrate import calibration_manager
 
     with follower_lock:
-        if teleoperation_active:
+        if calibration_manager.get_status().calibration_active:
+            return {"success": False, "message": "Calibration is currently active."}
+        if teleoperation_busy():
             return {"success": False, "message": "Teleoperation is already active"}
         if _record.recording_active:
             return {"success": False, "message": "Recording is currently active. Stop it first."}
@@ -128,6 +134,7 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
         if _replay.replay_active:
             return {"success": False, "message": "Replay is currently active. Stop it first."}
         teleoperation_active = True
+        teleoperation_starting = True
 
     robot = None
     teleop_device = None
@@ -136,63 +143,77 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
             f"Starting teleoperation with leader port: {request.leader_port}, follower port: {request.follower_port}"
         )
 
-        # Setup calibration files
-        leader_config_name, follower_config_name = setup_calibration_files(
-            request.leader_config, request.follower_config
-        )
+        dual_scorpion = request.robot_model == "dual_scorpion"
+        view_mapping = {}
+        latest_joint_frame = None
+        if dual_scorpion:
+            from lerobot.robots import make_robot_from_config
+            from lerobot.teleoperators import make_teleoperator_from_config
 
-        # Create robot and teleop configs
-        robot_config = SO101FollowerConfig(
-            port=request.follower_port,
-            id=follower_config_name,
-        )
+            follower_config, leader_config = scorpion_pair(request)
+            robot = make_robot_from_config(follower_config)
+            teleop_device = make_teleoperator_from_config(leader_config)
+            view_mapping = read_view_mapping(request.view_mapping, robot)
+            teleop_device.connect(calibrate=False)
+            robot.connect(calibrate=False)
+        else:
+            # Setup calibration files
+            leader_config_name, follower_config_name = setup_calibration_files(
+                request.leader_config, request.follower_config
+            )
 
-        teleop_config = SO101LeaderConfig(
-            port=request.leader_port,
-            id=leader_config_name,
-        )
+            # Create robot and teleop configs
+            robot_config = SO101FollowerConfig(
+                port=request.follower_port,
+                id=follower_config_name,
+            )
 
-        # Connect synchronously. If either device fails to connect, clean up the
-        # other (so its serial port is released) and report the error — do NOT
-        # leave the caller thinking teleoperation started.
-        logger.info("Initializing robot and teleop device...")
-        robot = SO101Follower(robot_config)
-        teleop_device = SO101Leader(teleop_config)
+            teleop_config = SO101LeaderConfig(
+                port=request.leader_port,
+                id=leader_config_name,
+            )
 
-        # Connect each arm separately so the error names which one failed and
-        # tells the user what to do, instead of a generic "failed to start".
-        logger.info("Connecting to follower arm...")
-        try:
-            robot.bus.connect()
-        except Exception as e:
-            raise RuntimeError(
-                f"Could not connect to the follower arm on {request.follower_port}. "
-                "Make sure it's plugged in and powered on, then try again."
-            ) from e
+            # Connect synchronously. If either device fails to connect, clean up the
+            # other (so its serial port is released) and report the error — do NOT
+            # leave the caller thinking teleoperation started.
+            logger.info("Initializing robot and teleop device...")
+            robot = SO101Follower(robot_config)
+            teleop_device = SO101Leader(teleop_config)
 
-        logger.info("Connecting to leader arm...")
-        try:
-            teleop_device.bus.connect()
-        except Exception as e:
-            raise RuntimeError(
-                f"Could not connect to the leader arm on {request.leader_port}. "
-                "Make sure it's plugged in and powered on, then try again."
-            ) from e
+            # Connect each arm separately so the error names which one failed and
+            # tells the user what to do, instead of a generic "failed to start".
+            logger.info("Connecting to follower arm...")
+            try:
+                robot.bus.connect()
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not connect to the follower arm on {request.follower_port}. "
+                    "Make sure it's plugged in and powered on, then try again."
+                ) from e
 
-        # Feetech motors only store calibration registers with the torque off,
-        # which also opens their EEPROM lock.
-        logger.info("Writing calibration to motors...")
-        robot.bus.disable_torque()
-        robot.bus.write_calibration(robot.calibration)
-        teleop_device.bus.disable_torque()
-        teleop_device.bus.write_calibration(teleop_device.calibration)
+            logger.info("Connecting to leader arm...")
+            try:
+                teleop_device.bus.connect()
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not connect to the leader arm on {request.leader_port}. "
+                    "Make sure it's plugged in and powered on, then try again."
+                ) from e
 
-        # Connect cameras and configure motors
-        logger.info("Connecting cameras and configuring motors...")
-        for cam in robot.cameras.values():
-            cam.connect()
-        robot.configure()
-        teleop_device.configure()
+            # Feetech motors only store calibration registers with the torque off,
+            # which also opens their EEPROM lock.
+            logger.info("Writing calibration to motors...")
+            robot.bus.disable_torque()
+            robot.bus.write_calibration(robot.calibration)
+            teleop_device.bus.disable_torque()
+            teleop_device.bus.write_calibration(teleop_device.calibration)
+
+            # Connect cameras and configure motors
+            logger.info("Connecting cameras and configuring motors...")
+            for cam in robot.cameras.values():
+                cam.connect()
+            robot.configure()
+            teleop_device.configure()
         logger.info("Successfully connected to both devices")
 
         current_robot = robot
@@ -201,7 +222,7 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
         # Stream the arms in the background; the worker owns disconnect so stop()
         # does not race the serial bus from the request thread.
         def teleoperation_worker():
-            global teleoperation_active, current_robot, current_teleop
+            global teleoperation_active, current_robot, current_teleop, latest_joint_frame
 
             logger.info("Starting teleoperation loop...")
             try:
@@ -209,25 +230,30 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
                 broadcast_interval = 1 / 30  # 30 FPS
 
                 while teleoperation_active:
+                    tick = time.monotonic()
                     action = teleop_device.get_action()
                     robot.send_action(action)
 
                     current_time = time.time()
                     if current_time - last_broadcast_time >= broadcast_interval:
                         try:
-                            joint_positions = get_joint_positions_from_robot(robot)
-                            joint_data = {
-                                "type": "joint_update",
-                                "joints": joint_positions,
-                                "timestamp": current_time,
-                            }
+                            frame = (
+                                scorpion_joint_frame(robot.get_joint_positions(), view_mapping)
+                                if dual_scorpion
+                                else {"joints": get_joint_positions_from_robot(robot), "robot_model": "so101"}
+                            )
+                            joint_data = {"type": "joint_update", "timestamp": current_time, **frame}
+                            latest_joint_frame = joint_data
                             if websocket_manager and websocket_manager.active_connections:
                                 websocket_manager.broadcast_joint_data_sync(joint_data)
                             last_broadcast_time = current_time
                         except Exception as e:
                             logger.error(f"Error broadcasting joint data: {e}")
 
-                    time.sleep(0.001)
+                    if dual_scorpion:
+                        time.sleep(max(0.0, 1 / MAX_SCORPION_FPS - (time.monotonic() - tick)))
+                    else:
+                        time.sleep(0.001)
             except Exception as e:
                 logger.error(f"Error during teleoperation loop: {e}")
             finally:
@@ -242,6 +268,7 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
             target=teleoperation_worker, name="teleoperation-worker", daemon=True
         )
         teleoperation_thread.start()
+        teleoperation_starting = False
 
         return {
             "success": True,
@@ -256,12 +283,21 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
         _safe_disconnect(robot)
         _safe_disconnect(teleop_device)
         teleoperation_active = False
+        teleoperation_starting = False
         current_robot = None
         current_teleop = None
         logger.error(f"Failed to start teleoperation: {e}")
         # str(e) is already a user-facing message for the connection failures
         # raised above; the toast title supplies the "error starting" context.
         return {"success": False, "message": str(e)}
+
+
+def teleoperation_busy() -> bool:
+    return (
+        teleoperation_starting
+        or teleoperation_active
+        or bool(teleoperation_thread and teleoperation_thread.is_alive())
+    )
 
 
 def handle_stop_teleoperation() -> dict[str, Any]:
@@ -284,6 +320,9 @@ def handle_stop_teleoperation() -> dict[str, Any]:
         worker.join(timeout=5.0)
         if worker.is_alive():
             logger.warning("Teleoperation worker did not exit within 5s")
+            return {"success": False, "message": "Teleoperation is stopping. The ports are still in use."}
+    if teleoperation_starting:
+        return {"success": False, "message": "Teleoperation setup is stopping."}
     teleoperation_thread = None
 
     return {"success": True, "message": "Teleoperation stopped successfully"}
@@ -308,6 +347,8 @@ def handle_get_joint_positions() -> dict[str, Any]:
         return {"success": False, "message": "No active teleoperation session"}
 
     try:
+        if getattr(current_robot, "name", None) == "dual_scorpion_follower":
+            return {"success": True, **(latest_joint_frame or {"joints": {}, "motor_positions": {}})}
         joint_positions = get_joint_positions_from_robot(current_robot)
         return {"success": True, "joint_positions": joint_positions, "timestamp": time.time()}
     except Exception as e:

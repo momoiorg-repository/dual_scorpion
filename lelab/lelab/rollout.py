@@ -35,19 +35,20 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
 from lerobot.utils.device_utils import auto_select_torch_device
 
 from .camera_config import lerobot_camera_settings, validate_camera_rotations
+from .hardware import MAX_SCORPION_FPS, HardwareRequest, scorpion_follower
 from .utils.config import setup_follower_calibration_file
 from .utils.devices import follower_lock
 
 logger = logging.getLogger(__name__)
 
 
-class InferenceRequest(BaseModel):
-    follower_port: str
+class InferenceRequest(HardwareRequest):
+    follower_port: str = ""
     follower_config: str
     policy_ref: str  # opaque ref returned by /jobs/{id}/checkpoints
     task: str = ""
@@ -299,9 +300,12 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
 
     # Mutex with teleop, recording and replay: they all drive the same serial bus.
     from . import record as _record, replay as _replay, teleoperate as _teleoperate
+    from .calibrate import calibration_manager
 
     with follower_lock, _state_lock:
-        if _teleoperate.teleoperation_active:
+        if calibration_manager.get_status().calibration_active:
+            return {"success": False, "status_code": 409, "message": "Calibration is currently active."}
+        if _teleoperate.teleoperation_busy():
             return {
                 "success": False,
                 "status_code": 409,
@@ -338,7 +342,29 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
         # .json extension. We need that stripped form for `--robot.id`,
         # because lerobot appends `.json` itself when constructing
         # `calibration_dir / f"{id}.json"`.
-        follower_id = setup_follower_calibration_file(request.follower_config)
+        if request.robot_model == "dual_scorpion":
+            if request.duration_s <= 0:
+                raise ValueError("Dual Scorpion rollout requires a positive duration.")
+            config = scorpion_follower(
+                request.follower_left_port, request.follower_right_port, request.follower_config
+            )
+            robot_args = [
+                "--robot.type=dual_scorpion_follower",
+                f"--robot.left_arm_port={json.dumps(config.left_arm_port)}",
+                f"--robot.right_arm_port={json.dumps(config.right_arm_port)}",
+                f"--robot.id={json.dumps(config.id)}",
+                f"--robot.calibration_dir={json.dumps(str(config.calibration_dir))}",
+                "--robot.require_calibrated=true",
+                f"--robot.max_relative_target={config.max_relative_target}",
+                f"--fps={MAX_SCORPION_FPS}",
+            ]
+        else:
+            follower_id = setup_follower_calibration_file(request.follower_config)
+            robot_args = [
+                "--robot.type=so101_follower",
+                f"--robot.port={request.follower_port}",
+                f"--robot.id={follower_id}",
+            ]
         policy_path = _resolve_policy_path(request.policy_ref)
 
         cmd = [
@@ -348,9 +374,7 @@ def handle_start_inference(request: InferenceRequest) -> dict[str, Any]:
             "--strategy.type=base",
             f"--policy.path={policy_path}",
             f"--policy.device={auto_select_torch_device().type}",
-            "--robot.type=so101_follower",
-            f"--robot.port={request.follower_port}",
-            f"--robot.id={follower_id}",
+            *robot_args,
             # JSON-quoted: draccus decodes a string as YAML, so "step 1: grab it" became a dict.
             f"--task={json.dumps(request.task)}",
             f"--duration={request.duration_s}",

@@ -350,32 +350,33 @@ def _resolve_action_file(dataset_dir: Path, episode_idx: int) -> Path | None:
     return fallback if fallback.is_file() else None
 
 
-def load_episode_actions(dataset_dir: Path, episode_idx: int) -> list[list[float]]:
-    """This episode's per-frame commanded action vectors, in file order.
-
-    Returns a ``(T, dof)`` nested list. Kept as plain Python rather than numpy so
-    the caller can hand it straight to the JSON encoder.
-    """
+def load_episode_vectors(dataset_dir: Path, episode_idx: int, column: str) -> list[list[float]]:
+    """Read one vector column for an episode, in file order."""
     import pyarrow.parquet as pq
 
     file_path = _resolve_action_file(dataset_dir, episode_idx)
     if file_path is None:
         raise EpisodeNotFoundError(f"No data parquet for episode {episode_idx}")
     try:
-        table = pq.read_table(file_path, columns=["episode_index", "action"])
+        table = pq.read_table(file_path, columns=["episode_index", column])
     except Exception as e:
         raise EpisodeNotFoundError(f"Could not read {file_path.name}: {e}") from e
 
-    if "action" not in table.column_names:
-        raise EpisodeNotFoundError(f"{file_path.name} has no 'action' column")
+    if column not in table.column_names:
+        raise EpisodeNotFoundError(f"{file_path.name} has no '{column}' column")
 
     indices = table["episode_index"].to_pylist()
-    actions = table["action"].to_pylist()
-    rows = [a for ep, a in zip(indices, actions, strict=False) if int(ep) == episode_idx]
+    vectors = table[column].to_pylist()
+    rows = [vector for ep, vector in zip(indices, vectors, strict=True) if int(ep) == episode_idx]
     if not rows:
-        raise EpisodeNotFoundError(f"Episode {episode_idx} has no action rows")
+        raise EpisodeNotFoundError(f"Episode {episode_idx} has no {column} rows")
     # Some datasets store a scalar action per frame; normalise to 2-D.
     return [list(r) if isinstance(r, (list, tuple)) else [r] for r in rows]
+
+
+def load_episode_actions(dataset_dir: Path, episode_idx: int) -> list[list[float]]:
+    """Return the commands recorded for this episode."""
+    return load_episode_vectors(dataset_dir, episode_idx, "action")
 
 
 def episode_motion_trace(dataset_dir: Path, episode_idx: int) -> list[float]:

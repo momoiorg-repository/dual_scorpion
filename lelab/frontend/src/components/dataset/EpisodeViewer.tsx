@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useApi } from "@/contexts/ApiContext";
 import { EpisodeDetail, frameUrl, videoUrl } from "@/lib/datasetApi";
 import FilmStrip from "./FilmStrip";
+import ScorpionEpisodeViewer from "./ScorpionEpisodeViewer";
 import MotionTrace from "./MotionTrace";
 import ReplayButton from "./ReplayButton";
 
@@ -35,6 +36,8 @@ interface EpisodeViewerProps {
 const EpisodeViewer: React.FC<EpisodeViewerProps> = ({ repoId, detail, onNavigate }) => {
   const { baseUrl } = useApi();
   const cams = detail.cameras;
+  const hasScorpionState = ["dual_scorpion_follower", "so101_dual_follower", "dual_scorpion_kinematic"]
+    .includes(detail.robot_type ?? "");
 
   const [activeCam, setActiveCam] = useState<string>(cams[0]?.name ?? "");
   const [showAll, setShowAll] = useState(false);
@@ -204,8 +207,17 @@ const EpisodeViewer: React.FC<EpisodeViewerProps> = ({ repoId, detail, onNavigat
 
   if (!activeInfo) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-lg border border-gray-800 bg-gray-950 text-sm text-gray-500">
-        This episode has no camera videos on disk.
+      <div className="space-y-3">
+        <p className="rounded-lg border border-gray-800 p-4 text-sm text-gray-400">
+          This episode has no camera videos on disk.
+        </p>
+        {hasScorpionState && (
+          <>
+            <input type="range" min={0} max={Math.max(detail.length - 1, 0)} value={currentFrame}
+              onChange={(event) => setCurrentFrame(Number(event.target.value))} aria-label="Scrub episode" />
+            <ScorpionEpisodeViewer repoId={repoId} episode={detail.episode_index} frameIndex={currentFrame} />
+          </>
+        )}
       </div>
     );
   }
@@ -386,6 +398,10 @@ const EpisodeViewer: React.FC<EpisodeViewerProps> = ({ repoId, detail, onNavigat
           {currentFrame} / {Math.max(detail.length - 1, 0)}
         </span>
       </div>
+
+      {hasScorpionState && (
+        <ScorpionEpisodeViewer repoId={repoId} episode={detail.episode_index} frameIndex={currentFrame} />
+      )}
 
       <MotionTrace
         repoId={repoId}

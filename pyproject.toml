@@ -24,7 +24,7 @@ issues = "https://github.com/huggingface/lerobot/issues"
 discord = "https://discord.gg/s3KuuzsPFb"
 
 [tool.uv.workspace]
-members = ["telegrip_teleoperation"]
+members = ["telegrip_teleoperation", "lelab"]
 
 [project]
 name = "lerobot"
@@ -175,6 +175,9 @@ mocopi = [
     "PyYAML>=6.0.0,<7.0.0",
     "lerobot[matplotlib-dep]",
 ]
+
+lelab = ["LeLab"]
+lelab-test = ["LeLab[test]"]
 
 # Common
 av-dep = ["av>=15.0.0,<16.0.0"]
@@ -464,6 +467,7 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
+lelab = { workspace = true }
 torch = [{ index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }]
 torchvision = [{ index = "pytorch-cpu", extra = "cpu", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" }]
 # LeRobot decodes videos on CPU; avoid GPU-only TorchCodec dependencies without changing GPU training.

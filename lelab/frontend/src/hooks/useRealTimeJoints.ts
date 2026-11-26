@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { URDFViewerElement } from "@/lib/urdfViewerHelpers";
 import { useApi } from "@/contexts/ApiContext";
+import type { RobotModel } from "@/hooks/useRobots";
 
 interface JointData {
   type: "joint_update";
   joints: Record<string, number>;
   timestamp: number;
+  robot_model?: RobotModel;
+  motor_positions?: Record<string, number>;
 }
 
 interface UseRealTimeJointsProps {
   viewerRef: React.RefObject<URDFViewerElement>;
   enabled?: boolean;
   websocketUrl?: string;
+  robotModel?: RobotModel;
 }
 
 const INITIAL_RECONNECT_DELAY_MS = 1000;
@@ -21,6 +25,7 @@ export const useRealTimeJoints = ({
   viewerRef,
   enabled = true,
   websocketUrl,
+  robotModel = "so101",
 }: UseRealTimeJointsProps) => {
   const { wsBaseUrl } = useApi();
   const finalWebSocketUrl = websocketUrl || `${wsBaseUrl}/ws/joint-data`;
@@ -30,6 +35,8 @@ export const useRealTimeJoints = ({
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const intentionallyClosedRef = useRef(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [motorPositions, setMotorPositions] = useState<Record<string, number>>({});
+  const [mappedJoints, setMappedJoints] = useState(0);
 
   const updateJointValues = useCallback(
     (joints: Record<string, number>) => {
@@ -76,8 +83,12 @@ export const useRealTimeJoints = ({
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as JointData;
-          if (data.type === "joint_update" && data.joints) {
+          if (data.type === "joint_update" && data.joints && (data.robot_model ?? "so101") === robotModel) {
             updateJointValues(data.joints);
+            if (robotModel === "dual_scorpion") {
+              setMotorPositions(data.motor_positions ?? {});
+              setMappedJoints(Object.keys(data.joints).length);
+            }
           }
         } catch (error) {
           console.error("Error parsing WebSocket message:", error);
@@ -124,7 +135,7 @@ export const useRealTimeJoints = ({
       }
       setIsConnected(false);
     };
-  }, [enabled, finalWebSocketUrl, updateJointValues]);
+  }, [enabled, finalWebSocketUrl, updateJointValues, robotModel]);
 
-  return { isConnected };
+  return { isConnected, motorPositions, mappedJoints };
 };

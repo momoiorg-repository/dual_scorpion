@@ -17,35 +17,41 @@ import logging
 import os
 import platform
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Literal
 
+from ..episode_media import lerobot_cache_root
+
 logger = logging.getLogger(__name__)
 
 RobotSide = Literal["leader", "follower"]
+_cache_root = lerobot_cache_root()
+_calibration_root = Path(os.environ.get("HF_LEROBOT_CALIBRATION", _cache_root / "calibration")).expanduser()
+_robot_records_lock = threading.RLock()
 
 # Define the calibration config paths (shared between features)
-CALIBRATION_BASE_PATH_TELEOP = os.path.expanduser("~/.cache/huggingface/lerobot/calibration/teleoperators")
-CALIBRATION_BASE_PATH_ROBOTS = os.path.expanduser("~/.cache/huggingface/lerobot/calibration/robots")
+CALIBRATION_BASE_PATH_TELEOP = str(_calibration_root / "teleoperators")
+CALIBRATION_BASE_PATH_ROBOTS = str(_calibration_root / "robots")
 LEADER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH_TELEOP, "so_leader")
 FOLLOWER_CONFIG_PATH = os.path.join(CALIBRATION_BASE_PATH_ROBOTS, "so_follower")
 
 # Define port storage path
-PORT_CONFIG_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/ports")
+PORT_CONFIG_PATH = str(_cache_root / "ports")
 LEADER_PORT_FILE = os.path.join(PORT_CONFIG_PATH, "leader_port.txt")
 FOLLOWER_PORT_FILE = os.path.join(PORT_CONFIG_PATH, "follower_port.txt")
 
 # Define configuration storage path
-CONFIG_STORAGE_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/saved_configs")
+CONFIG_STORAGE_PATH = str(_cache_root / "saved_configs")
 LEADER_CONFIG_FILE = os.path.join(CONFIG_STORAGE_PATH, "leader_config.txt")
 FOLLOWER_CONFIG_FILE = os.path.join(CONFIG_STORAGE_PATH, "follower_config.txt")
 
 # Robot config records (per-robot JSON metadata)
-ROBOTS_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/robots")
+ROBOTS_PATH = str(_cache_root / "robots")
 
 # Saved camera reference frames, one PNG per robot/camera (see lelab/camera_reference.py)
-CAMERA_REFERENCES_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/camera_references")
+CAMERA_REFERENCES_PATH = str(_cache_root / "camera_references")
 
 # Tag stamped on every dataset pushed to the Hub from LeLab, so we can later
 # query the Hub for LeLab-produced datasets and compute usage metrics.
@@ -370,6 +376,12 @@ def get_robot_record(name: str) -> dict | None:
     # Ensure all expected fields exist (forward/back compat)
     record = _empty_record(name)
     record.update({k: v for k, v in data.items() if k in record})
+    if data.get("robot_model") == "dual_scorpion":
+        from ..hardware import SCORPION_PORT_FIELDS
+
+        record["robot_model"] = "dual_scorpion"
+        record.update({field: data.get(field, "") for field in SCORPION_PORT_FIELDS})
+        record["view_mapping"] = data.get("view_mapping", "")
     record["name"] = name
     return record
 
@@ -399,6 +411,11 @@ def save_robot_record(name: str, data: dict, allow_create: bool = True) -> bool:
       fields then merge.
     - If the record does not exist and `allow_create` is False: log and no-op.
     """
+    with _robot_records_lock:
+        return _save_robot_record(name, data, allow_create)
+
+
+def _save_robot_record(name: str, data: dict, allow_create: bool) -> bool:
     if not is_valid_robot_name(name):
         logger.error(f"Invalid robot name: {name!r}")
         return False
@@ -416,6 +433,20 @@ def save_robot_record(name: str, data: dict, allow_create: bool = True) -> bool:
     for field in _ROBOT_LIST_FIELDS:
         if field in data and isinstance(data[field], list):
             record[field] = data[field]
+    if data.get("robot_model", record.get("robot_model")) == "dual_scorpion":
+        from ..hardware import SCORPION_PORT_FIELDS
+
+        record["robot_model"] = "dual_scorpion"
+        for field in (*SCORPION_PORT_FIELDS, "view_mapping"):
+            if isinstance(data.get(field), str):
+                record[field] = data[field]
+            else:
+                record.setdefault(field, "")
+    elif data.get("robot_model") == "so101":
+        from ..hardware import SCORPION_PORT_FIELDS
+
+        for field in ("robot_model", *SCORPION_PORT_FIELDS, "view_mapping"):
+            record.pop(field, None)
     record["name"] = name
 
     path = _robot_record_path(name)
@@ -444,6 +475,18 @@ def is_robot_record_clean(record: dict) -> bool:
     """
     if not record:
         return False
+    if record.get("robot_model") == "dual_scorpion":
+        from ..hardware import SCORPION_PORT_FIELDS, calibration_directory, calibration_id, validate_ports
+
+        try:
+            validate_ports(*(record.get(field, "") for field in SCORPION_PORT_FIELDS))
+            leader = calibration_id(record.get("leader_config", ""))
+            follower = calibration_id(record.get("follower_config", ""))
+        except ValueError:
+            return False
+        return (calibration_directory("leader", leader) / f"{leader}.json").is_file() and (
+            calibration_directory("follower", follower) / f"{follower}.json"
+        ).is_file()
     for field in _ROBOT_STRING_FIELDS:
         value = record.get(field, "")
         if not isinstance(value, str) or not value.strip():

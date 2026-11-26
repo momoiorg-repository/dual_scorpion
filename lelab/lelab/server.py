@@ -42,6 +42,7 @@ from . import camera_reference, datasets as dataset_browser, record as _record
 # Import our custom calibration functionality
 from .calibrate import CalibrationRequest, calibration_manager
 from .episode_media import DatasetNotFoundError, EpisodeNotFoundError
+from .hardware import RobotModel, calibration_dirs
 from .jobs import (
     JobAlreadyRunningError,
     JobNotFoundError,
@@ -74,6 +75,7 @@ from .rollout import (
     handle_start_inference,
     handle_stop_inference,
 )
+from .scorpion_view import SCORPION_MODEL_DIR
 
 # Import our custom teleoperation functionality
 from .teleoperate import (
@@ -172,12 +174,25 @@ _FLAVOR_CACHE_TTL_SECONDS = 300.0
 
 app = FastAPI()
 
+_BROWSER_ORIGINS = [
+    f"http://{host}:{port}" for host in ("localhost", "127.0.0.1", "[::1]") for port in (8000, 8080)
+] + [value.strip() for value in os.getenv("LELAB_ALLOWED_ORIGINS", "").split(",") if value.strip()]
+
+
+@app.middleware("http")
+async def check_browser_origin(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin not in _BROWSER_ORIGINS:
+        return JSONResponse({"detail": "Browser origin is not allowed."}, status_code=403)
+    return await call_next(request)
+
+
 # In dev mode the React app runs on :8080 while the API runs on :8000; in
 # prod they share an origin and CORS is unnecessary. allow_credentials with
 # a wildcard origin is rejected by browsers, so we drop it.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_BROWSER_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -374,6 +389,8 @@ def teleoperation_status():
 @app.post("/start-replay")
 def start_replay(request: ReplayRequest):
     """Replay a recorded episode on the follower arm"""
+    if request.robot_model == "dual_scorpion":
+        return handle_start_replay(request, manager)
     return handle_start_replay(request)
 
 
@@ -515,6 +532,16 @@ def dataset_motion(repo_id: str, episode_index: int):
     return dataset_browser.handle_episode_motion(repo_id, episode_index)
 
 
+@app.get("/dataset-scorpion-joints")
+def dataset_scorpion_joints(repo_id: str, episode_index: int, robot_name: str | None = None):
+    from .scorpion_view import recorded_joint_frames
+
+    try:
+        return {"frames": recorded_joint_frames(repo_id, episode_index, robot_name)}
+    except (ValueError, DatasetNotFoundError, EpisodeNotFoundError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/dataset-thumbnails")
 def dataset_thumbnails(repo_id: str, episode_index: int, camera: str | None = None, count: int = 12):
     """Evenly-spaced film-strip thumbnails, decoded in a single pass over the mp4."""
@@ -578,6 +605,10 @@ def websocket_test():
 
 @app.websocket("/ws/joint-data")
 async def websocket_endpoint(websocket: WebSocket):
+    origin = websocket.headers.get("origin")
+    if origin and origin not in _BROWSER_ORIGINS:
+        await websocket.close(code=1008)
+        return
     logger.info("🔗 New WebSocket connection attempt")
     try:
         await manager.connect(websocket)
@@ -1000,7 +1031,7 @@ def complete_calibration_step():
 
 
 @app.get("/calibration-configs/{device_type}")
-def get_calibration_configs(device_type: str):
+def get_calibration_configs(device_type: str, robot_model: RobotModel = "so101"):
     """Get all calibration config files for a specific device type"""
     try:
         if device_type == "robot":
@@ -1010,24 +1041,26 @@ def get_calibration_configs(device_type: str):
         else:
             return {"success": False, "message": "Invalid device type"}
 
-        # Get all JSON files in the config directory
+        paths = (
+            calibration_dirs("follower" if device_type == "robot" else "leader")
+            if robot_model == "dual_scorpion"
+            else (Path(config_path),)
+        )
         configs = []
-        if os.path.exists(config_path):
-            for file in os.listdir(config_path):
-                if file.endswith(".json"):
-                    config_name = os.path.splitext(file)[0]
-                    file_path = os.path.join(config_path, file)
-                    file_size = os.path.getsize(file_path)
-                    modified_time = os.path.getmtime(file_path)
-
+        seen = set()
+        for directory in paths:
+            for file in sorted(directory.glob("*.json")):
+                if file.name not in seen and file.is_file():
+                    stat = file.stat()
                     configs.append(
                         {
-                            "name": config_name,
-                            "filename": file,
-                            "size": file_size,
-                            "modified": modified_time,
+                            "name": file.stem,
+                            "filename": file.name,
+                            "size": stat.st_size,
+                            "modified": stat.st_mtime,
                         }
                     )
+                    seen.add(file.name)
 
         return {"success": True, "configs": configs, "device_type": device_type}
 
@@ -1469,6 +1502,10 @@ async def shutdown_event():
     logger.info("🔄 FastAPI shutting down, cleaning up...")
 
     _record.stop_recording_and_wait()
+    handle_stop_teleoperation()
+    handle_stop_replay()
+    handle_stop_inference()
+    calibration_manager.stop_calibration_process()
 
     if manager:
         manager.stop_broadcast_thread()
@@ -1520,6 +1557,13 @@ class SPAStaticFiles(StaticFiles):
                 return await super().get_response("index.html", scope)
             raise
 
+
+# Serve the synchronized model in place so its URDF and relative mesh paths stay paired.
+app.mount(
+    "/scorpion-urdf",
+    StaticFiles(directory=SCORPION_MODEL_DIR / "urdf", check_dir=False),
+    name="scorpion-urdf",
+)
 
 # Serve the built frontend at /. Must be mounted last so API routes win.
 if FRONTEND_DIST.exists():

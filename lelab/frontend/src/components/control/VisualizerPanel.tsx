@@ -4,9 +4,11 @@ import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import UrdfViewer from "../UrdfViewer";
 import Logo from "@/components/Logo";
+import type { RobotModel } from "@/hooks/useRobots";
 
 interface VisualizerPanelProps {
   onGoBack: () => void;
+  robotModel?: RobotModel;
   className?: string;
   /** Optional content rendered as a column beside the 3D viewer (e.g. a camera panel). */
   rightSlot?: React.ReactNode;
@@ -16,6 +18,7 @@ const VisualizerPanel: React.FC<VisualizerPanelProps> = ({
   onGoBack,
   className,
   rightSlot,
+  robotModel,
 }) => {
   return (
     <div
@@ -39,7 +42,7 @@ const VisualizerPanel: React.FC<VisualizerPanelProps> = ({
           <h2 className="text-xl font-medium text-gray-200">Teleoperation</h2>
         </div>
         <div className="flex-1 bg-black rounded border border-gray-800 min-h-[50vh] lg:min-h-0">
-          <UrdfViewer />
+          <UrdfViewer robotModel={robotModel} />
         </div>
       </div>
       {rightSlot && (

@@ -1,3 +1,4 @@
+import { robotHardwareFields } from "@/lib/types";
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -159,6 +160,7 @@ const InferenceModal: React.FC<Props> = ({
     await new Promise((r) => setTimeout(r, 300));
     try {
       await startInference(baseUrl, fetchWithHeaders, {
+        ...robotHardwareFields(robot),
         follower_port: robot.follower_port,
         follower_config: robot.follower_config,
         policy_ref: selectedRef,

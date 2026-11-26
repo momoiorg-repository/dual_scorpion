@@ -1,3 +1,4 @@
+import { robotHardwareFields } from "@/lib/types";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -130,6 +131,7 @@ export const useRecording = (robot: RobotRecord | null) => {
 
     const recordingConfig = {
       leader_port: robot.leader_port,
+      ...robotHardwareFields(robot),
       follower_port: robot.follower_port,
       leader_config: robot.leader_config,
       follower_config: robot.follower_config,

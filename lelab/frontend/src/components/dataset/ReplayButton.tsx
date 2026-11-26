@@ -1,3 +1,4 @@
+import { robotHardwareFields } from "@/lib/types";
 import React, { useEffect, useRef, useState } from "react";
 import { Bot, Loader2, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,7 @@ const ReplayButton: React.FC<ReplayButtonProps> = ({ repoId, episodeIndex, onSta
       const res = await apiRequest<ReplayResponse>(baseUrl, fetchWithHeaders, "/start-replay", {
         method: "POST",
         body: {
+          ...robotHardwareFields(robot),
           follower_port: robot.follower_port,
           follower_config: robot.follower_config,
           dataset_repo_id: repoId,

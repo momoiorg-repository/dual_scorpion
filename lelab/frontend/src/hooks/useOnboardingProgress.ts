@@ -51,8 +51,8 @@ export function useOnboardingProgress(active: boolean): ProgressSnapshot {
       fetchWithHeaders(`${baseUrl}/robots`)
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
-      listLocalDatasets(baseUrl, fetchWithHeaders).catch(() => []),
-      listJobs(baseUrl, fetchWithHeaders, 20).catch(() => []),
+      listLocalDatasets(baseUrl, fetchWithHeaders).catch((): Awaited<ReturnType<typeof listLocalDatasets>> => []),
+      listJobs(baseUrl, fetchWithHeaders, 20).catch((): Awaited<ReturnType<typeof listJobs>> => []),
     ]);
 
     const records: RobotRecord[] = robotsBody?.robots ?? [];

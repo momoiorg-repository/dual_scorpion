@@ -24,7 +24,7 @@ interface DatasetPickerProps {
   children: React.ReactNode;
 }
 
-const REPO_ID_RE = /^[\w.\-]+\/[\w.\-]+$/;
+const REPO_ID_RE = /^[\w.-]+\/[\w.-]+$/;
 const NAME_RE = /^[A-Za-z0-9._-]+$/;
 
 const DatasetPicker: React.FC<DatasetPickerProps> = ({

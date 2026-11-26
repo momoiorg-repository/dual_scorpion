@@ -15,6 +15,8 @@
 import contextlib
 import importlib.util
 import logging
+import os
+import platform
 import queue
 import shutil
 import subprocess
@@ -47,6 +49,38 @@ def _build_install_cmd(package: str) -> list[str]:
     if shutil.which("uv"):
         return ["uv", "pip", "install", "--python", sys.executable, package]
     return [sys.executable, "-m", "pip", "install", package]
+
+
+def _workspace_install_cmd(package: str) -> list[str]:
+    extra = package.removeprefix("lerobot[").removesuffix("]")
+    if not package.startswith("lerobot["):
+        return _build_install_cmd(package)
+
+    from pathlib import Path
+
+    project = Path(__file__).resolve().parents[3]
+    if not (project / "uv.lock").is_file() or not shutil.which("uv"):
+        raise RuntimeError("Use uv sync from the Dual Scorpion checkout to install LeRobot extras.")
+
+    command = [
+        "uv",
+        "sync",
+        "--project",
+        str(project),
+        "--active",
+        "--inexact",
+        "--locked",
+        "--extra",
+        "lelab",
+        "--extra",
+        extra,
+    ]
+    if sys.platform == "linux" and platform.machine() == "x86_64":
+        from importlib.metadata import version
+
+        if "+cpu" in version("torch"):
+            command.extend(("--extra", "cpu"))
+    return command
 
 
 class ExtraStatus(BaseModel):
@@ -95,7 +129,8 @@ class InstallManager:
 
         try:
             self.process = subprocess.Popen(
-                _build_install_cmd(self.package),
+                _workspace_install_cmd(self.package),
+                env={**os.environ, "VIRTUAL_ENV": sys.prefix},
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,

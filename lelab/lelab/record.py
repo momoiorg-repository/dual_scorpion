@@ -32,6 +32,7 @@ from lerobot.teleoperators.so_leader import SO101LeaderConfig
 
 from .camera_config import lerobot_camera_settings, validate_camera_rotations
 from .episode_media import UnreadableDatasetError, ensure_episode_index
+from .hardware import MAX_SCORPION_FPS, HardwareRequest, scorpion_pair
 from .utils.config import setup_calibration_files, with_lelab_tag
 from .utils.devices import follower_lock, safe_disconnect_device
 
@@ -59,9 +60,9 @@ last_recording_info: dict[str, Any] | None = (
 )
 
 
-class RecordingRequest(BaseModel):
-    leader_port: str
-    follower_port: str
+class RecordingRequest(HardwareRequest):
+    leader_port: str = ""
+    follower_port: str = ""
     leader_config: str
     follower_config: str
     dataset_repo_id: str
@@ -177,27 +178,19 @@ def create_record_config(request: RecordingRequest) -> RecordConfig:
     """Create a RecordConfig from the recording request"""
     from lerobot.utils.constants import HF_LEROBOT_HOME
 
-    # Setup calibration files
-    leader_config_name, follower_config_name = setup_calibration_files(
-        request.leader_config, request.follower_config
-    )
-
-    # Convert the frontend camera dict into OpenCVCameraConfig objects. Backend
-    # defaults to the platform pin unless the request overrides it per camera.
     camera_configs = _build_camera_configs(request.cameras, _platform_backend())
-
-    # Create robot config
-    robot_config = SO101FollowerConfig(
-        port=request.follower_port,
-        id=follower_config_name,
-        cameras=camera_configs,
-    )
-
-    # Create teleop config
-    teleop_config = SO101LeaderConfig(
-        port=request.leader_port,
-        id=leader_config_name,
-    )
+    if request.robot_model == "dual_scorpion":
+        if not 1 <= request.fps <= MAX_SCORPION_FPS:
+            raise ValueError(f"Dual Scorpion recording supports up to {MAX_SCORPION_FPS} FPS.")
+        robot_config, teleop_config = scorpion_pair(request, cameras=camera_configs)
+    else:
+        leader_config_name, follower_config_name = setup_calibration_files(
+            request.leader_config, request.follower_config
+        )
+        robot_config = SO101FollowerConfig(
+            port=request.follower_port, id=follower_config_name, cameras=camera_configs
+        )
+        teleop_config = SO101LeaderConfig(port=request.leader_port, id=leader_config_name)
 
     # Create dataset config
     dataset_config = DatasetRecordConfig(
@@ -251,10 +244,14 @@ def handle_start_recording(request: RecordingRequest) -> dict[str, Any]:
 
     # Claim the active flag under the lock so two concurrent starts can't both
     # pass the precondition check.
+    from .calibrate import calibration_manager
+
     with follower_lock:
+        if calibration_manager.get_status().calibration_active:
+            return {"success": False, "message": "Calibration is currently active."}
         if recording_active:
             return {"success": False, "message": "Recording is already active"}
-        if _teleoperate.teleoperation_active:
+        if _teleoperate.teleoperation_busy():
             return {"success": False, "message": "Teleoperation is currently active. Stop it first."}
         if _rollout.inference_active:
             return {"success": False, "message": "Inference is currently active. Stop it first."}
@@ -853,46 +850,51 @@ def record_with_web_events(cfg: RecordConfig, web_events: dict) -> LeRobotDatase
     # through it still leaves buses and cameras open, and the teardown below is
     # what frees them for the next attempt (see issue #50).
     try:
-        try:
-            logger.info("🔧 ROBOT CONNECTION: Attempting to connect robot...")
-            robot.bus.connect()
-            logger.info("✅ ROBOT CONNECTION: Robot bus connected successfully")
-        except Exception as e:
-            logger.error(f"❌ ROBOT CONNECTION: Failed to connect robot: {e}")
-            raise
-
-        if teleop is not None:
+        if cfg.robot.type == "dual_scorpion_follower":
+            if teleop is not None:
+                teleop.connect(calibrate=False)
+            robot.connect(calibrate=False)
+        else:
             try:
-                logger.info("🔧 TELEOP CONNECTION: Attempting to connect teleoperator...")
-                teleop.bus.connect()
-                logger.info("✅ TELEOP CONNECTION: Teleoperator bus connected successfully")
+                logger.info("🔧 ROBOT CONNECTION: Attempting to connect robot...")
+                robot.bus.connect()
+                logger.info("✅ ROBOT CONNECTION: Robot bus connected successfully")
             except Exception as e:
-                logger.error(f"❌ TELEOP CONNECTION: Failed to connect teleoperator: {e}")
+                logger.error(f"❌ ROBOT CONNECTION: Failed to connect robot: {e}")
                 raise
 
-        # Feetech motors only store calibration registers with the torque off,
-        # which also opens their EEPROM lock.
-        logger.info("Writing calibration to motors...")
-        robot.bus.disable_torque()
-        robot.bus.write_calibration(robot.calibration)
-        if teleop is not None:
-            teleop.bus.disable_torque()
-            teleop.bus.write_calibration(teleop.calibration)
+            if teleop is not None:
+                try:
+                    logger.info("🔧 TELEOP CONNECTION: Attempting to connect teleoperator...")
+                    teleop.bus.connect()
+                    logger.info("✅ TELEOP CONNECTION: Teleoperator bus connected successfully")
+                except Exception as e:
+                    logger.error(f"❌ TELEOP CONNECTION: Failed to connect teleoperator: {e}")
+                    raise
 
-        try:
-            logger.info("🔧 CAMERA CONNECTION: Connecting cameras...")
-            for cam in robot.cameras.values():
-                cam.connect()
-            logger.info("✅ CAMERA CONNECTION: Cameras connected successfully")
-        except Exception as e:
-            logger.error(f"❌ CAMERA CONNECTION: Failed to connect cameras: {e}")
-            logger.error("💡 Make sure frontend camera streams are released before recording")
-            raise
+            # Feetech motors only store calibration registers with the torque off,
+            # which also opens their EEPROM lock.
+            logger.info("Writing calibration to motors...")
+            robot.bus.disable_torque()
+            robot.bus.write_calibration(robot.calibration)
+            if teleop is not None:
+                teleop.bus.disable_torque()
+                teleop.bus.write_calibration(teleop.calibration)
 
-        logger.info("Configuring motors...")
-        robot.configure()
-        if teleop is not None:
-            teleop.configure()
+            try:
+                logger.info("🔧 CAMERA CONNECTION: Connecting cameras...")
+                for cam in robot.cameras.values():
+                    cam.connect()
+                logger.info("✅ CAMERA CONNECTION: Cameras connected successfully")
+            except Exception as e:
+                logger.error(f"❌ CAMERA CONNECTION: Failed to connect cameras: {e}")
+                logger.error("💡 Make sure frontend camera streams are released before recording")
+                raise
+
+            logger.info("Configuring motors...")
+            robot.configure()
+            if teleop is not None:
+                teleop.configure()
         logger.info("✅ Devices ready")
 
         # Expose the connected robot so /camera-feed can stream its cameras'

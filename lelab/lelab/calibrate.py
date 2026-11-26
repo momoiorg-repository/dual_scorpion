@@ -37,8 +37,11 @@ from lerobot.teleoperators import (
 )
 from lerobot.utils.utils import init_logging
 
+from .hardware import RobotModel, scorpion_follower, scorpion_leader
 from .utils.config import is_valid_robot_name
-from .utils.devices import safe_disconnect_device
+from .utils.devices import follower_lock, safe_disconnect_device
+
+SCORPION_MIN_MOVEMENT_STEPS = 32
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +100,10 @@ class CalibrationRequest:
     device_type: Literal["robot", "teleop"]
     port: str
     config_file: str
-    robot_name: str | None = None  # When set, write port + config back into the robot record on success
+    robot_name: str | None = None  # Write back the port and calibration on success.
+    robot_model: RobotModel = "so101"
+    left_port: str = ""
+    right_port: str = ""
 
 
 class CalibrationManager:
@@ -154,7 +160,20 @@ class CalibrationManager:
             self.status.recorded_ranges = recorded_ranges
 
     def start_calibration(self, request: CalibrationRequest) -> dict[str, Any]:
-        """Start calibration process"""
+        """Start calibration while holding the same mutex as motor operations."""
+        from . import record, replay, rollout, teleoperate
+
+        with follower_lock:
+            if (
+                record.recording_active
+                or replay.replay_active
+                or rollout.inference_active
+                or teleoperate.teleoperation_busy()
+            ):
+                return {"success": False, "message": "Stop the current robot operation before calibrating."}
+            return self._start_calibration(request)
+
+    def _start_calibration(self, request: CalibrationRequest) -> dict[str, Any]:
         try:
             # config_file becomes the LeRobot device id, and LeRobot writes the calibration to
             # calibration_dir / f"{id}.json", so reject path-traversal characters (/, \, ..) first.
@@ -207,6 +226,15 @@ class CalibrationManager:
                 return {"success": False, "message": "No calibration active"}
 
             if self.status.status == "recording":
+                if self._current_request and self._current_request.robot_model == "dual_scorpion":
+                    ranges = self.get_status().recorded_ranges or {}
+                    if not ranges or any(
+                        row["max"] - row["min"] < SCORPION_MIN_MOVEMENT_STEPS for row in ranges.values()
+                    ):
+                        return {
+                            "success": False,
+                            "message": "Move every joint through its safe working range.",
+                        }
                 # Complete recording step
                 self._recording_active = False
                 self._step_complete.set()
@@ -236,11 +264,12 @@ class CalibrationManager:
             if self.calibration_thread and self.calibration_thread.is_alive():
                 self.calibration_thread.join(timeout=5.0)
 
-            # Ensure cleanup is called if thread didn't finish properly
             if self.calibration_thread and self.calibration_thread.is_alive():
-                logger.warning("Calibration thread did not finish within timeout, forcing cleanup")
+                return {
+                    "success": True,
+                    "message": "Stopping calibration. The serial ports are still in use.",
+                }
 
-            # Force cleanup and finish
             self._cleanup_and_finish("Calibration stopped", status="idle")
 
             logger.info("Calibration stop completed")
@@ -258,7 +287,12 @@ class CalibrationManager:
             logger.info(f"Starting calibration worker for {request.device_type}")
 
             # Create device configuration
-            if request.device_type == "robot":
+            if request.robot_model == "dual_scorpion":
+                factory = scorpion_follower if request.device_type == "robot" else scorpion_leader
+                config = factory(request.left_port, request.right_port, request.config_file, calibrating=True)
+                if (config.calibration_dir / f"{config.id}.json").exists():
+                    raise FileExistsError("Use a new configuration name for Dual Scorpion calibration.")
+            elif request.device_type == "robot":
                 from lerobot.robots.so_follower import SO101FollowerConfig
 
                 config = SO101FollowerConfig(port=request.port, id=request.config_file)
@@ -278,7 +312,12 @@ class CalibrationManager:
                 self.device = make_teleoperator_from_config(config)
 
             logger.info("Connecting to device...")
-            self.device.connect(calibrate=False)
+            if request.robot_model == "dual_scorpion":
+                # Configure and calibrate with torque disabled, without the follower's startup hold.
+                for _, bus in self._calibration_buses():
+                    bus.connect()
+            else:
+                self.device.connect(calibrate=False)
 
             if self.stop_calibration:
                 logger.info("Calibration stopped after device connection")
@@ -324,16 +363,30 @@ class CalibrationManager:
                 )
                 self._cleanup_and_finish("Calibration stopped", status="idle")
 
+    def _calibration_buses(self):
+        if self._current_request and self._current_request.robot_model == "dual_scorpion":
+            return (("right_", self.device.right_bus), ("left_", self.device.left_bus))
+        return (("", self.device.bus),)
+
+    def _positions(self):
+        return {
+            f"{prefix}{motor}": value
+            for prefix, bus in self._calibration_buses()
+            for motor, value in bus.sync_read("Present_Position", normalize=False).items()
+        }
+
     def _step_homing(self):
         """Auto-capture homing offsets from the device's current position."""
         logger.info("Setting homing offsets from current position")
 
         # Disable torque to allow manual movement during recording
-        self.device.bus.disable_torque()
-        self.device.bus.set_operating_mode("position")
-
-        # Resets the calibration, then writes the offsets that center each present position.
-        self._homing_offsets = self.device.bus.set_half_turn_homings()
+        self._homing_offsets = {}
+        for prefix, bus in self._calibration_buses():
+            bus.disable_torque()
+            bus.set_operating_mode("position")
+            self._homing_offsets.update(
+                {f"{prefix}{motor}": offset for motor, offset in bus.set_half_turn_homings().items()}
+            )
         logger.info(f"Calculated homing offsets: {self._homing_offsets}")
 
     def _step_range_recording(self):
@@ -344,7 +397,7 @@ class CalibrationManager:
         self._start_positions = {}
         for attempt in range(5):  # Try multiple times to get valid initial positions
             try:
-                positions = self.device.bus.sync_read("Present_Position", normalize=False)
+                positions = self._positions()
                 # Validate initial positions
                 valid_positions = {}
                 for motor, pos in positions.items():
@@ -387,7 +440,7 @@ class CalibrationManager:
         # Record positions until user completes step
         while not self._step_complete.is_set() and not self.stop_calibration:
             try:
-                positions = self.device.bus.sync_read("Present_Position", normalize=False)
+                positions = self._positions()
 
                 if positions:
                     # Validate the readings - filter out invalid/zero values
@@ -462,32 +515,20 @@ class CalibrationManager:
         """Complete the calibration and save results"""
         logger.info("Completing calibration...")
 
-        # Log motor information for debugging
-        logger.info("Motor configuration:")
-        for motor, m in self.device.bus.motors.items():
-            logger.info(f"  {motor}: ID={m.id}, Model={m.model}")
-
-        # Create calibration dict
-        calibration = {}
-        for motor, m in self.device.bus.motors.items():
-            calibration[motor] = MotorCalibration(
-                id=m.id,
+        calibration = {
+            f"{prefix}{name}": MotorCalibration(
+                id=motor.id,
                 drive_mode=0,
-                homing_offset=self._homing_offsets[motor],
-                range_min=self._mins[motor],
-                range_max=self._maxes[motor],
+                homing_offset=self._homing_offsets[f"{prefix}{name}"],
+                range_min=self._mins[f"{prefix}{name}"],
+                range_max=self._maxes[f"{prefix}{name}"],
             )
-            logger.info(
-                f"Calibration for {motor}: "
-                f"ID={m.id}, "
-                f"homing_offset={self._homing_offsets[motor]}, "
-                f"range_min={self._mins[motor]}, "
-                f"range_max={self._maxes[motor]}"
-            )
-
-        # Write and save calibration
+            for prefix, bus in self._calibration_buses()
+            for name, motor in bus.motors.items()
+        }
+        for prefix, bus in self._calibration_buses():
+            bus.write_calibration({name: calibration[f"{prefix}{name}"] for name in bus.motors})
         self.device.calibration = calibration
-        self.device.bus.write_calibration(calibration)
         self.device._save_calibration()
 
         logger.info(f"Calibration saved to {self.device.calibration_fpath}")
@@ -498,10 +539,14 @@ class CalibrationManager:
         if request is not None and request.robot_name:
             from .utils.config import save_robot_record
 
-            if request.device_type == "teleop":
-                patch = {"leader_port": request.port, "leader_config": f"{request.config_file}.json"}
+            side = "leader" if request.device_type == "teleop" else "follower"
+            patch = {f"{side}_config": f"{request.config_file}.json"}
+            if request.robot_model == "dual_scorpion":
+                patch.update(
+                    {f"{side}_left_port": request.left_port, f"{side}_right_port": request.right_port}
+                )
             else:
-                patch = {"follower_port": request.port, "follower_config": f"{request.config_file}.json"}
+                patch[f"{side}_port"] = request.port
             try:
                 save_robot_record(request.robot_name, patch, allow_create=False)
             except Exception as e:

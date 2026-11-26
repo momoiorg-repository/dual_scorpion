@@ -1,3 +1,4 @@
+import { robotHardwareFields } from "@/lib/types";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "@/contexts/ApiContext";
@@ -39,6 +40,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leader_port: robot.leader_port,
+          ...robotHardwareFields(robot),
           follower_port: robot.follower_port,
           leader_config: robot.leader_config,
           follower_config: robot.follower_config,
@@ -53,7 +55,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
           title: "Teleoperation Started",
           description: data.message || `Started teleoperation for ${robot.name}.`,
         });
-        navigate("/teleoperation");
+        navigate("/teleoperation", { state: { robot_model: robot.robot_model } });
       } else {
         toast({
           title: "Error Starting Teleoperation",
