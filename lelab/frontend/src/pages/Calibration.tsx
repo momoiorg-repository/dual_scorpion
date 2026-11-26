@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,8 +43,11 @@ import { useApi } from "@/contexts/ApiContext";
 import { isMotorRangeComplete } from "@/lib/calibrationTargets";
 import CameraConfiguration from "@/components/recording/CameraConfiguration";
 import { CameraConfig, loadCameraConfigs, cameraConfigurationError } from "@/lib/cameraConfig";
+import { filterSelectableSerialPorts } from "@/lib/serialPorts";
 
 import { type RobotModel, type RobotRecord, scorpionPortFields } from "@/hooks/useRobots";
+
+type ScorpionPortField = (typeof scorpionPortFields)[number][0];
 
 const DISCONTINUITY_ERROR_PREFIX = "Motor discontinuity detected";
 
@@ -88,13 +91,17 @@ const Calibration = () => {
   const [port, setPort] = useState<string>("");
   const [robot, setRobot] = useState<RobotRecord | null>(null);
   const [detectedPorts, setDetectedPorts] = useState<string[]>([]);
+  const selectablePorts = useMemo(
+    () => filterSelectableSerialPorts(detectedPorts),
+    [detectedPorts]
+  );
   const dualScorpion = robot?.robot_model === "dual_scorpion";
   const deviceRole = deviceType === "robot" ? "follower" : "leader";
   const leftPort = robot?.[`${deviceRole}_left_port`] ?? "";
   const rightPort = robot?.[`${deviceRole}_right_port`] ?? "";
   const canCalibrate = dualScorpion ? Boolean(leftPort && rightPort) : Boolean(port);
 
-  const updateRobot = async (patch: Partial<RobotRecord>) => {
+  const updateRobot = useCallback(async (patch: Partial<RobotRecord>) => {
     if (!robotName) return;
     try {
       const response = await fetchWithHeaders(`${baseUrl}/robots/${encodeURIComponent(robotName)}`, {
@@ -108,18 +115,25 @@ const Calibration = () => {
     } catch (error) {
       toast({ title: "Configuration error", description: String(error), variant: "destructive" });
     }
-  };
+  }, [robotName, baseUrl, fetchWithHeaders, toast]);
 
-  const scanSerialPorts = async () => {
+  const scanSerialPorts = useCallback(async (silent = false) => {
     try {
       const response = await fetchWithHeaders(`${baseUrl}/available-ports`);
       if (!response.ok) throw new Error("Could not detect serial ports.");
       const data = await response.json();
       setDetectedPorts(data.ports ?? []);
     } catch (error) {
-      toast({ title: "Serial ports", description: String(error), variant: "destructive" });
+      if (!silent) {
+        toast({ title: "Serial ports", description: String(error), variant: "destructive" });
+      }
     }
-  };
+  }, [baseUrl, fetchWithHeaders, toast]);
+
+  useEffect(() => {
+    if (!dualScorpion) return;
+    void scanSerialPorts(true);
+  }, [dualScorpion, scanSerialPorts]);
   const [cameras, setCameras] = useState<CameraConfig[]>([]);
   // Off by default so merely opening the calibration page never grabs a camera.
   // The user explicitly starts a scan, which is when cameras are turned on,
@@ -209,6 +223,9 @@ const Calibration = () => {
   const [detectionRobotType, setDetectionRobotType] = useState<
     "leader" | "follower"
   >("leader");
+  const [detectionTargetField, setDetectionTargetField] =
+    useState<ScorpionPortField | null>(null);
+  const [detectionTargetLabel, setDetectionTargetLabel] = useState<string>("");
 
   const [calibrationStatus, setCalibrationStatus] = useState<CalibrationStatus>(
     {
@@ -481,7 +498,16 @@ const Calibration = () => {
 
   const handlePortDetection = () => {
     const robotType = deviceType === "robot" ? "follower" : "leader";
+    setDetectionTargetField(null);
+    setDetectionTargetLabel("");
     setDetectionRobotType(robotType);
+    setShowPortDetection(true);
+  };
+
+  const handleScorpionPortDetection = (field: ScorpionPortField, label: string) => {
+    setDetectionTargetField(field);
+    setDetectionTargetLabel(label.replace(/ port$/i, ""));
+    setDetectionRobotType(field.startsWith("follower_") ? "follower" : "leader");
     setShowPortDetection(true);
   };
 
@@ -575,6 +601,12 @@ const Calibration = () => {
   };
 
   const handlePortDetected = (detectedPort: string) => {
+    if (detectionTargetField) {
+      const targetField = detectionTargetField;
+      setRobot((prev) => (prev ? { ...prev, [targetField]: detectedPort } : prev));
+      void updateRobot({ [targetField]: detectedPort });
+      return;
+    }
     setPort(detectedPort);
     persistPort(detectedPort);
   };
@@ -712,25 +744,77 @@ const Calibration = () => {
 
               {dualScorpion && robot ? (
                 <div className="space-y-3">
-                  <Button variant="outline" size="sm" onClick={scanSerialPorts}>Detect serial ports</Button>
-                  <datalist id="scorpion-serial-ports">
-                    {detectedPorts.map((detected) => <option key={detected} value={detected} />)}
-                  </datalist>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {scorpionPortFields.map(([field, label]) => (
-                      <div key={field} className="space-y-1">
-                        <Label htmlFor={field}>{label}</Label>
-                        <Input
-                          id={field}
-                          list="scorpion-serial-ports"
-                          value={robot[field] ?? ""}
-                          disabled={calibrationStatus.calibration_active}
-                          onChange={(event) => setRobot({ ...robot, [field]: event.target.value })}
-                          onBlur={(event) => updateRobot({ [field]: event.target.value.trim() })}
-                          className="border-slate-600 bg-slate-700 text-white"
-                        />
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-300">Serial Ports</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void scanSerialPorts(false)}
+                      disabled={calibrationStatus.calibration_active}
+                      className="border-slate-600 bg-slate-700 text-slate-200 hover:bg-slate-600"
+                    >
+                      Detect serial ports
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    {scorpionPortFields.map(([field, label]) => {
+                      const value = robot[field] ?? "";
+                      return (
+                        <div key={field} className="space-y-1">
+                          <Label htmlFor={field}>{label}</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id={field}
+                              value={value}
+                              placeholder="/dev/ttyACM0"
+                              disabled={calibrationStatus.calibration_active}
+                              onChange={(event) => {
+                                const nextVal = event.target.value;
+                                setRobot((prev) => (prev ? { ...prev, [field]: nextVal } : prev));
+                              }}
+                              onBlur={(event) => void updateRobot({ [field]: event.target.value.trim() })}
+                              className="flex-1 border-slate-600 bg-slate-700 text-white"
+                            />
+                            <Select
+                              value={selectablePorts.includes(value) ? value : ""}
+                              onValueChange={(selected) => {
+                                setRobot((prev) => (prev ? { ...prev, [field]: selected } : prev));
+                                void updateRobot({ [field]: selected });
+                              }}
+                              disabled={calibrationStatus.calibration_active || selectablePorts.length === 0}
+                            >
+                              <SelectTrigger
+                                aria-label={`Select ${label}`}
+                                className="w-[104px] border-slate-600 bg-slate-700 text-slate-200"
+                              >
+                                <span className="truncate text-xs">
+                                  {selectablePorts.length > 0 ? "Select" : "No ports"}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                                {selectablePorts.map((detected) => (
+                                  <SelectItem
+                                    key={detected}
+                                    value={detected}
+                                    className="font-mono text-xs hover:bg-slate-700"
+                                  >
+                                    {detected}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <PortDetectionButton
+                              onClick={() => handleScorpionPortDetection(field, label)}
+                              robotType={field.startsWith("follower_") ? "follower" : "leader"}
+                              disabled={calibrationStatus.calibration_active}
+                              ariaLabel={`Find ${label}`}
+                              className="h-10 border-slate-600 bg-slate-700 text-slate-300 hover:border-blue-500 hover:bg-slate-600 hover:text-blue-400"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   {robot.verified_urdf_mapping_available && (
                     <>
@@ -1172,6 +1256,8 @@ const Calibration = () => {
         open={showPortDetection}
         onOpenChange={setShowPortDetection}
         robotType={detectionRobotType}
+        targetLabel={detectionTargetLabel || undefined}
+        skipLegacySave={Boolean(detectionTargetField)}
         onPortDetected={handlePortDetected}
       />
     </div>

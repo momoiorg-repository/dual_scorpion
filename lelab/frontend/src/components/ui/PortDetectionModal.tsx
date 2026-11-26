@@ -15,6 +15,8 @@ interface PortDetectionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   robotType: "leader" | "follower";
+  targetLabel?: string;
+  skipLegacySave?: boolean;
   onPortDetected: (port: string) => void;
 }
 
@@ -24,8 +26,11 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
   open,
   onOpenChange,
   robotType,
+  targetLabel,
+  skipLegacySave = false,
   onPortDetected,
 }) => {
+  const displayTarget = targetLabel || robotType;
   const [step, setStep] = useState<"detecting" | "success" | "error">(
     "detecting"
   );
@@ -73,12 +78,14 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
 
         if (data.status === "success") {
           setDetectedPort(data.port);
-          await savePort(data.port);
+          if (!skipLegacySave) {
+            await savePort(data.port);
+          }
           if (cancelledRef.current) return;
           setStep("success");
           toast({
             title: "Port Detected Successfully",
-            description: `${robotType} port detected: ${data.port}`,
+            description: `${displayTarget} port detected: ${data.port}`,
           });
           successTimerRef.current = window.setTimeout(() => {
             if (cancelledRef.current) return;
@@ -89,7 +96,11 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
         }
 
         const message =
-          typeof data.message === "string" ? data.message : "";
+          typeof data.message === "string"
+            ? data.message
+            : typeof data.detail === "string"
+            ? data.detail
+            : "";
         if (message.includes("Timed out")) continue;
         throw new Error(message || "Failed to detect port");
       }
@@ -152,10 +163,10 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             <Loader2 className="w-16 h-16 text-blue-500 mx-auto animate-spin" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-white">
-                Unplug the {robotType} arm
+                Unplug the {displayTarget} arm
               </h3>
               <p className="text-gray-400">
-                Disconnect the {robotType} robot arm from USB. The port will be
+                Disconnect the {displayTarget} robot arm from USB. The port will be
                 detected automatically.
               </p>
             </div>
@@ -229,7 +240,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             Port Detection
           </DialogTitle>
           <DialogDescription className="text-gray-400 text-center">
-            Detect the USB port for your {robotType} arm
+            Detect the USB port for your {displayTarget} arm
           </DialogDescription>
         </DialogHeader>
 

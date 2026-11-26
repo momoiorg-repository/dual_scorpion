@@ -6,17 +6,23 @@ interface PortDetectionButtonProps {
   onClick: () => void;
   robotType?: "leader" | "follower";
   className?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
 }
 
 const PortDetectionButton: React.FC<PortDetectionButtonProps> = ({
   onClick,
   robotType,
   className = "",
+  disabled = false,
+  ariaLabel,
 }) => {
   return (
     <Button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
       variant="outline"
       size="sm"
       className={`
@@ -27,7 +33,7 @@ const PortDetectionButton: React.FC<PortDetectionButtonProps> = ({
         transition-all duration-200
         ${className}
       `}
-      title={`Find ${robotType || "robot"} port automatically`}
+      title={ariaLabel || `Find ${robotType || "robot"} port automatically`}
     >
       <Search className="w-3 h-3 mr-1" />
       Find
