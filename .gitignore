@@ -35,6 +35,7 @@ develop-eggs/
 *.egg
 MANIFEST
 lib/
+!/lelab/frontend/src/lib/
 lib64/
 
 # PyInstaller
@@ -180,6 +181,9 @@ outputs/
 *.urdf
 !telegrip_teleoperation/URDF/dual_scorpion/*.urdf
 *.xml
+!/lelab/frontend/public/so-101-urdf/urdf/so101_new_calib.urdf
+!/lelab/frontend/public/so-101-urdf/joints_properties.xml
+!/lelab/frontend/public/so-101-urdf/package.xml
 *.part
 
 # Locally measured mocopi camera/head calibrations and hardware joint mappings; never commit personal measurements.
@@ -213,3 +217,5 @@ head-map*.msg
 /DS_URDF_IK/build/
 /DS_URDF_IK/install/
 /DS_URDF_IK/log/
+
+.venv-lelab/

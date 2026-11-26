@@ -462,8 +462,85 @@ def test_fit_joint_from_reference_requires_bidirectional_motion():
     assert any("other joints" in failure for failure in other_moved["failures"])
 
 
-@pytest.mark.skipif(not LOCAL_DATASET.is_dir(), reason="local full-CAD joint dataset is not present")
+def _make_joint_dataset(src_root, model_hash):
+    from lerobot.configs.video import RGBEncoderConfig
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    # Build a synthetic source kinematic joint dataset (14-dim q_model + head image + kinematic cols).
+    joint_names = [f"{s}_joint{i}.pos" for s in ("right", "left") for i in range(7)]
+    src_ds = LeRobotDataset.create(
+        repo_id="local/src-joint-test",
+        fps=15,
+        features={
+            "observation.images.head": {
+                "dtype": "video",
+                "shape": (3, 48, 64),
+                "names": ["channels", "height", "width"],
+            },
+            "observation.state": {"dtype": "float32", "shape": (14,), "names": joint_names},
+            "action": {"dtype": "float32", "shape": (14,), "names": joint_names},
+            "observation.robot.target_pose": {"dtype": "float32", "shape": (14,), "names": None},
+            "observation.robot.status": {"dtype": "float32", "shape": (6,), "names": None},
+            "observation.robot.collision": {"dtype": "float32", "shape": (2,), "names": None},
+            "observation.robot.warning": {"dtype": "float32", "shape": (2,), "names": None},
+            "observation.sim.frame": {"dtype": "int64", "shape": (2,), "names": None},
+            "observation.robot.plan_time_s": {"dtype": "float64", "shape": (1,), "names": None},
+        },
+        root=src_root,
+        robot_type="dual_scorpion_kinematic",
+        use_videos=True,
+        rgb_encoder=RGBEncoderConfig(vcodec="h264"),
+    )
+    q_frames = [
+        np.zeros(14, dtype=np.float32),
+        np.linspace(1.0, 7.0, 14, dtype=np.float32),
+        np.linspace(2.0, 10.0, 14, dtype=np.float32),
+        np.linspace(3.0, 12.0, 14, dtype=np.float32),
+    ]
+    for idx, (s0, s1) in enumerate(zip(q_frames[:-1], q_frames[1:], strict=True)):
+        img = np.full((3, 48, 64), 0.5, dtype=np.float32)
+        src_ds.add_frame(
+            {
+                "task": "pick cup",
+                "observation.images.head": img,
+                "observation.state": s0,
+                "action": s1,
+                "observation.robot.target_pose": np.tile(
+                    np.array([0.25, 0.0, 0.3, 0.0, 0.0, 0.0, 1.0], dtype=np.float32), 2
+                ),
+                "observation.robot.status": np.array([1, 0, 0, 1, 0, 0], dtype=np.float32),
+                "observation.robot.collision": np.zeros(2, dtype=np.float32),
+                "observation.robot.warning": np.zeros(2, dtype=np.float32),
+                "observation.sim.frame": np.array([idx, idx], dtype=np.int64),
+                "observation.robot.plan_time_s": np.array([idx / 15.0], dtype=np.float64),
+            }
+        )
+    src_ds.save_episode()
+    src_ds.finalize()
+    src_meta = {
+        "schema": "dual_scorpion.mocopi.kinematic_joint_dataset.v1",
+        "repo_id": "local/src-joint-test",
+        "model_kind": "full_mujoco",
+        "robot_state_source": "kinematic_simulation_not_real_encoders",
+        "joint_names": joint_names,
+        "joint_unit": "degree",
+        "gripper_recorded": False,
+        "gripper_commanded": False,
+        "gripper_feature_included": False,
+        "quaternion_order": "xyzw",
+        "mujoco_model_sha256": model_hash,
+        "obstacles": [],
+        "ik": {"preview_max_joint_step_deg": 20.0},
+    }
+    (src_root / "meta" / "mocopi_joint_dataset.json").write_text(json.dumps(src_meta), encoding="utf-8")
+    return src_meta, q_frames
+
+
 def test_replay_dataset_refuses_unverified_or_incomplete_mapping(tmp_path):
+    pytest.importorskip("datasets")
+    model_hash = file_sha256(full_model_path(load_config(CONFIG)["robot"]))
+    dataset = tmp_path / "dataset"
+    _make_joint_dataset(dataset, model_hash)
     calibration_path = tmp_path / "robot-test.json"
     calibration_path.write_text(
         json.dumps(
@@ -494,7 +571,7 @@ def test_replay_dataset_refuses_unverified_or_incomplete_mapping(tmp_path):
     with pytest.raises(ValueError, match="not verified"):
         replay_joint_dataset(
             load_config(CONFIG),
-            LOCAL_DATASET,
+            dataset,
             mapping_path=mapping_path,
             robot_id="robot-test",
             calibration_dir=tmp_path,
@@ -512,17 +589,26 @@ def test_replay_dataset_refuses_unverified_or_incomplete_mapping(tmp_path):
     with pytest.raises(ValueError, match="per-joint"):
         replay_joint_dataset(
             load_config(CONFIG),
-            LOCAL_DATASET,
+            dataset,
             mapping_path=mapping_path,
             robot_id="robot-test",
             calibration_dir=tmp_path,
         )
 
 
-@pytest.mark.skipif(not LOCAL_DATASET.is_dir(), reason="local full-CAD joint dataset is not present")
-def test_local_episode_loading_and_dry_run(tmp_path):
-    episode = load_joint_episode(LOCAL_DATASET)
-    assert len(episode.frames) == 249
+@pytest.mark.parametrize("use_local_dataset", [False, True])
+def test_local_episode_loading_and_dry_run(tmp_path, use_local_dataset):
+    pytest.importorskip("datasets")
+    config = load_config(CONFIG)
+    model_hash = file_sha256(full_model_path(config["robot"]))
+    dataset = LOCAL_DATASET if use_local_dataset else tmp_path / "dataset"
+    if use_local_dataset:
+        if not dataset.is_dir():
+            pytest.skip("local full-CAD joint dataset is not present")
+    else:
+        _make_joint_dataset(dataset, model_hash)
+    episode = load_joint_episode(dataset)
+    assert len(episode.frames) == (249 if use_local_dataset else 4)
     assert episode.frames[-1].final_action and episode.frames[-1].target_pose["left"] is None
     calibration_path = tmp_path / "robot-test.json"
     calibration_path.write_text(
@@ -542,16 +628,21 @@ def test_local_episode_loading_and_dry_run(tmp_path):
     )
     mapping_path = tmp_path / "mapping.yaml"
     mapping_path.write_text(yaml.safe_dump(_mapping_document("robot-test", file_sha256(calibration_path))))
-    before = dataset_fingerprint(LOCAL_DATASET, "mocopi_joint_dataset.json")
+    before = dataset_fingerprint(dataset, "mocopi_joint_dataset.json")
+    if episode.metadata["mujoco_model_sha256"] != model_hash:
+        with pytest.raises(ValueError, match="MuJoCo model differs"):
+            replay_joint_dataset(config, dataset, mapping_path=mapping_path, robot_id="robot-test", calibration_dir=tmp_path)
+        assert dataset_fingerprint(dataset, "mocopi_joint_dataset.json") == before
+        return
     result = replay_joint_dataset(
-        load_config(CONFIG),
-        LOCAL_DATASET,
+        config,
+        dataset,
         mapping_path=mapping_path,
         robot_id="robot-test",
         calibration_dir=tmp_path,
     )
     assert result["mode"] == "validation_only"
-    assert result["frames"] == 249
+    assert result["frames"] == len(episode.frames)
     assert result["validation"]["preview_step_limit_deg"] == 20.0
     assert result["gripper_commanded"] is False
     assert result["joint_inspection"]["all_joints_verified"] is True
@@ -559,7 +650,7 @@ def test_local_episode_loading_and_dry_run(tmp_path):
     assert result["pose_context"]["calibration_zero"]["right"]["motor_deg"] == [0.0] * 7
     assert len(result["joint_inspection"]["left_right_pairing"]) == 7
     assert result["unverified"]["joints"] == []
-    assert dataset_fingerprint(LOCAL_DATASET, "mocopi_joint_dataset.json") == before
+    assert dataset_fingerprint(dataset, "mocopi_joint_dataset.json") == before
 
 
 def test_dry_run_rejects_missing_or_unverified_joint_records(tmp_path):
@@ -1623,9 +1714,10 @@ def _run_cli(monkeypatch, args):
 
 def test_cli_workflows_and_dataset_immutability(tmp_path, monkeypatch, capsys):
     pytest.importorskip("mujoco")
-    if not LOCAL_DATASET.is_dir():
-        pytest.skip("local full-CAD joint dataset is not present")
-    before_fp = dataset_fingerprint(LOCAL_DATASET, manifest_name="mocopi_joint_dataset.json")
+    pytest.importorskip("datasets")
+    dataset = tmp_path / "dataset"
+    _make_joint_dataset(dataset, file_sha256(full_model_path(load_config(CONFIG)["robot"])))
+    before_fp = dataset_fingerprint(dataset, manifest_name="mocopi_joint_dataset.json")
     cal_dir, created_buses = _install_mock_feetech_bus(
         monkeypatch,
         tmp_path,
@@ -1689,7 +1781,7 @@ def test_cli_workflows_and_dataset_immutability(tmp_path, monkeypatch, capsys):
     partial_doc = yaml.safe_load(partial_out.read_text(encoding="utf-8"))
     assert partial_doc["verified"] is False
 
-    # 3. CLI inspect-dataset-mapping --check-start on local dataset preserves torque and outputs JSON.
+    # 3. CLI inspect-dataset-mapping --check-start on the current-model dataset preserves torque and outputs JSON.
     inspect_out = tmp_path / "cli-inspect.json"
     _run_cli(
         monkeypatch,
@@ -1698,7 +1790,7 @@ def test_cli_workflows_and_dataset_immutability(tmp_path, monkeypatch, capsys):
             str(CONFIG),
             "inspect-dataset-mapping",
             "--dataset",
-            str(LOCAL_DATASET),
+            str(dataset),
             "--mapping",
             str(partial_out),
             "--robot-id",
@@ -1752,7 +1844,7 @@ def test_cli_workflows_and_dataset_immutability(tmp_path, monkeypatch, capsys):
             str(CONFIG),
             "replay-dataset",
             "--dataset",
-            str(LOCAL_DATASET),
+            str(dataset),
             "--mapping",
             str(verified_out),
             "--robot-id",
@@ -1775,7 +1867,7 @@ def test_cli_workflows_and_dataset_immutability(tmp_path, monkeypatch, capsys):
             assert all(flag is False for flag in bus.disconnect_calls)
 
     # 5. Dataset directory files & hashes remain strictly unmodified.
-    after_fp = dataset_fingerprint(LOCAL_DATASET, manifest_name="mocopi_joint_dataset.json")
+    after_fp = dataset_fingerprint(dataset, manifest_name="mocopi_joint_dataset.json")
     assert before_fp == after_fp
 
 
@@ -1894,7 +1986,8 @@ def test_lift_first_and_auto_initial_transition_clears_table_obstacle(tmp_path):
     obs = [
         {
             "name": "cup_block",
-            "center_m": [0.27, 0.16, 0.02],
+            # Same right-shoulder-relative location with the 300 mm crossbar.
+            "center_m": [0.195, 0.16, 0.02],
             "half_size_m": [0.06, 0.06, 0.05],
             "rotation_deg": [0.0, 0.0, 0.0],
         }
@@ -1992,74 +2085,8 @@ def test_export_ft_dataset_maps_to_16dim_follower_and_validates_replay_report(tm
     mapping_path = tmp_path / "verified-mapping.yaml"
     mapping_path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
-    # Build a synthetic source kinematic joint dataset (14-dim q_model + head image + kinematic cols).
     src_root = tmp_path / "src_joint_ds"
-    joint_names = [f"{s}_joint{i}.pos" for s in ("right", "left") for i in range(7)]
-    src_ds = LeRobotDataset.create(
-        repo_id="local/src-joint-test",
-        fps=15,
-        features={
-            "observation.images.head": {
-                "dtype": "video",
-                "shape": (3, 48, 64),
-                "names": ["channels", "height", "width"],
-            },
-            "observation.state": {"dtype": "float32", "shape": (14,), "names": joint_names},
-            "action": {"dtype": "float32", "shape": (14,), "names": joint_names},
-            "observation.robot.target_pose": {"dtype": "float32", "shape": (14,), "names": None},
-            "observation.robot.status": {"dtype": "float32", "shape": (6,), "names": None},
-            "observation.robot.collision": {"dtype": "float32", "shape": (2,), "names": None},
-            "observation.robot.warning": {"dtype": "float32", "shape": (2,), "names": None},
-            "observation.sim.frame": {"dtype": "int64", "shape": (2,), "names": None},
-            "observation.robot.plan_time_s": {"dtype": "float64", "shape": (1,), "names": None},
-        },
-        root=src_root,
-        robot_type="dual_scorpion_kinematic",
-        use_videos=True,
-        vcodec="h264",
-    )
-    q_frames = [
-        np.zeros(14, dtype=np.float32),
-        np.linspace(1.0, 7.0, 14, dtype=np.float32),
-        np.linspace(2.0, 10.0, 14, dtype=np.float32),
-        np.linspace(3.0, 12.0, 14, dtype=np.float32),
-    ]
-    for idx, (s0, s1) in enumerate(zip(q_frames[:-1], q_frames[1:], strict=True)):
-        img = np.full((3, 48, 64), 0.5, dtype=np.float32)
-        src_ds.add_frame(
-            {
-                "task": "pick cup",
-                "observation.images.head": img,
-                "observation.state": s0,
-                "action": s1,
-                "observation.robot.target_pose": np.tile(
-                    np.array([0.25, 0.0, 0.3, 0.0, 0.0, 0.0, 1.0], dtype=np.float32), 2
-                ),
-                "observation.robot.status": np.array([1, 0, 0, 1, 0, 0], dtype=np.float32),
-                "observation.robot.collision": np.zeros(2, dtype=np.float32),
-                "observation.robot.warning": np.zeros(2, dtype=np.float32),
-                "observation.sim.frame": np.array([idx, idx], dtype=np.int64),
-                "observation.robot.plan_time_s": np.array([idx / 15.0], dtype=np.float64),
-            }
-        )
-    src_ds.save_episode()
-    src_ds.finalize()
-    src_meta = {
-        "schema": "dual_scorpion.mocopi.kinematic_joint_dataset.v1",
-        "repo_id": "local/src-joint-test",
-        "model_kind": "full_mujoco",
-        "robot_state_source": "kinematic_simulation_not_real_encoders",
-        "joint_names": joint_names,
-        "joint_unit": "degree",
-        "gripper_recorded": False,
-        "gripper_commanded": False,
-        "gripper_feature_included": False,
-        "quaternion_order": "xyzw",
-        "mujoco_model_sha256": model_hash,
-        "obstacles": [],
-        "ik": {"preview_max_joint_step_deg": 20.0},
-    }
-    (src_root / "meta" / "mocopi_joint_dataset.json").write_text(json.dumps(src_meta), encoding="utf-8")
+    src_meta, q_frames = _make_joint_dataset(src_root, model_hash)
     before_fp = dataset_fingerprint(src_root, "mocopi_joint_dataset.json")
 
     cal_dir = tmp_path / "cal_dir"

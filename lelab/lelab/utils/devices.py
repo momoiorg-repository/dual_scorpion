@@ -1,0 +1,51 @@
+"""Device ownership and cleanup helpers for LeRobot hardware wrappers.
+
+Serial ports are a trust boundary on Windows: if a normal disconnect fails
+while disabling torque, the COM handle can stay open until the Python process
+exits. These helpers preserve LeRobot's normal disconnect behavior, then force
+close the underlying port/cameras as a last resort.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from typing import Any
+
+# Recording, teleoperation, inference and replay all drive the follower: each
+# start handler checks the others' flags and claims its own under this lock.
+follower_lock = threading.Lock()
+
+
+def safe_disconnect_device(device: Any, logger: logging.Logger, context: str = "cleanup") -> None:
+    """Disconnect a LeRobot device and force-release resources on failure."""
+    if device is None:
+        return
+
+    try:
+        device.disconnect()
+        return
+    except Exception as exc:
+        logger.warning("Error disconnecting device during %s: %s", context, exc)
+
+    _force_close_device_resources(device, logger)
+
+
+def _force_close_device_resources(device: Any, logger: logging.Logger) -> None:
+    """Best-effort release for serial/camera resources after disconnect fails."""
+    bus = getattr(device, "bus", None)
+    if bus is not None:
+        # SerialMotorsBus.disconnect() closes the port even when disabling the torque fails.
+        try:
+            bus.disconnect()
+            logger.info("Released serial port after disconnect failure")
+        except Exception as exc:
+            logger.warning("Serial port released, but disabling the torque failed: %s", exc)
+
+    cameras = getattr(device, "cameras", None)
+    if isinstance(cameras, dict):
+        for cam in cameras.values():
+            try:
+                cam.disconnect()
+            except Exception as exc:
+                logger.warning("Failed to disconnect camera after device cleanup failure: %s", exc)

@@ -215,6 +215,9 @@ def test_doctor_reports_full_model_and_lfs_state(monkeypatch, capsys, tmp_path):
     # Camera probing is unrelated here and can be slow or unavailable.
     monkeypatch.setattr(cli, "camera_list", lambda: [])
     cfg = load_config(CONFIG)
+    cfg["robot"]["visual_urdf"] = str(
+        Path(full_model_path(cfg["robot"])).parents[1] / "urdf" / "scorpion.urdf"
+    )
     cli.doctor(cfg)
     report = json.loads(capsys.readouterr().out)
     assert report["mujoco_importable"] is True

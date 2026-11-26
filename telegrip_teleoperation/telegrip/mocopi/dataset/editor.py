@@ -175,6 +175,7 @@ def apply_dataset_selection(selection_path, output, repo_id):
     if output.exists():
         raise FileExistsError(f"Edited dataset output already exists: {output}")
 
+    from lerobot.configs.video import RGBEncoderConfig
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     destination = LeRobotDataset.create(
@@ -184,7 +185,7 @@ def apply_dataset_selection(selection_path, output, repo_id):
         root=output,
         robot_type="human_mocopi",
         use_videos=True,
-        vcodec="h264",
+        rgb_encoder=RGBEncoderConfig(vcodec="h264"),
         image_writer_threads=2,
     )
     edited_manifest = deepcopy(manifest)

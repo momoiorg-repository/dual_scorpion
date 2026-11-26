@@ -91,6 +91,8 @@ tests are in the [Universal Robot Policy guide](docs/robot_policy/README.md).
 - [Universal robot policy inference](#universal-robot-policy-inference)
 - [Highlights](#highlights)
 - [Quickstart](#quickstart)
+- [Upstream Versions](#upstream-versions)
+- [LeLab](#lelab)
 - [Parts for Dual Scorpion Leader and Follower](#parts-for-dual-scorpion-leader-and-follower)
 - [Hardware Bring-Up](#hardware-bring-up)
 - [Configuration](#configuration)
@@ -116,7 +118,7 @@ tests are in the [Universal Robot Policy guide](docs/robot_policy/README.md).
 ```bash
 git clone https://github.com/momoiorg-repository/dual_scorpion.git
 cd dual_scorpion
-uv sync --locked --all-packages --extra dual_scorpion
+uv sync --locked --package lerobot --package dual-scorpion-telegrip --extra dual_scorpion
 ```
 
 ### Optional: authenticate with Hugging Face
@@ -124,6 +126,41 @@ uv sync --locked --all-packages --extra dual_scorpion
 hf auth login
 export HF_USER=<your-hf-username>
 ```
+
+## Upstream Versions
+
+| Component | Version | Upstream Commit |
+|---|---|---|
+| LeRobot | [v0.7.0](https://github.com/huggingface/lerobot/releases/tag/v0.7.0) | `410c095eacc0011d998a73383eb94abed2715af0` |
+| LeLab | [0.1.0, main](https://github.com/huggingface/leLab/tree/1894ab5ba1a73f8ecea4400426c272739494d104) | `1894ab5ba1a73f8ecea4400426c272739494d104` |
+
+LeRobot v0.7.0 is the release used by this LeLab revision. The `lelab/`
+sources are tracked directly, with their own Apache 2.0 license. The uv
+workspace uses the same editable `src/lerobot` for LeLab and the CLI.
+
+## LeLab
+
+Install with Python 3.12 or newer and Node.js 22.12 or newer. From the
+repository root, on Linux x86-64 for CPU verification, run:
+
+```bash
+uv sync --locked --all-packages --extra dual_scorpion --extra lelab --extra cpu
+git lfs pull --include="dual_scorpion_Full_urdf/urdf/meshes/visual/*.stl"
+npm --prefix lelab/frontend ci --ignore-scripts
+npm --prefix lelab/frontend run build
+uv run --no-sync lelab --no-open
+```
+
+Open [LeLab on localhost](http://localhost:8000). Create or select a robot,
+open its configuration, and choose **Dual Scorpion**. Configure separate left
+and right ports for the physical Leader and Follower, then select the
+calibration for each pair. The same app supports SO-101. The dataset browser
+and training UI accept compatible LeRobot v3.0 datasets.
+
+The [Japanese LeLab guide](docs/LELAB_INTEGRATION.md) covers calibration,
+teleoperation, dataset compatibility, the 300 mm URDF, training, rollout,
+and local and GitHub Actions tests. The normal integration workflow uses
+CPU tests and hardware mocks.
 
 ## Parts for Dual Scorpion Leader and Follower
 
