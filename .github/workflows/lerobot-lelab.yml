@@ -2,7 +2,7 @@ name: LeRobot and LeLab
 
 on:
   push:
-    branches: [feat/lerobot-upgrade-lelab]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
@@ -86,9 +86,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Sync the workspace with CPU wheels
-        run: >-
-          uv sync --locked --all-packages --extra cpu --extra mocopi --extra test
-          --extra grpcio-dep --extra pi --extra lelab-test
+        shell: bash
+        run: |
+          extras=(--extra cpu --extra test --extra grpcio-dep --extra pi --extra lelab-test)
+          if [[ -d telegrip_teleoperation/telegrip/mocopi ]]; then
+            extras+=(--extra mocopi)
+          fi
+          uv sync --locked --all-packages "${extras[@]}"
       - name: Verify Python dependencies
         run: |
           uv pip check
@@ -103,22 +107,29 @@ jobs:
               print(module.__name__, module.__version__, module.__file__)
           PY
       - name: Test LeRobot and Scorpion
-        run: >-
-          uv run --no-sync pytest -q -rs --timeout=120
-          tests/datasets/test_dataset_metadata.py
-          tests/datasets/test_dataset_writer.py
-          tests/motors/test_feetech.py
-          tests/processor/test_normalize_processor.py
-          tests/robots/test_dual_scorpion_follower.py
-          tests/teleoperators/test_dual_scorpion_leader.py
-          tests/teleoperators/test_mocopi*.py
-          tests/teleoperators/test_agent_harness.py
-          tests/remote_policy
-          tests/scripts/test_dual_scorpion_cli_registration.py
-          tests/test_rollout.py
-          tests/test_rollout_action_ordering.py
-          tests/policies/pi0_pi05/test_pi05_vision_inference.py
-          tests/policies/pi0_pi05/test_pi05_training_time_rtc.py
+        shell: bash
+        run: |
+          shopt -s nullglob
+          tests=(
+            tests/datasets/test_dataset_metadata.py
+            tests/datasets/test_dataset_writer.py
+            tests/motors/test_feetech.py
+            tests/processor/test_normalize_processor.py
+            tests/robots/test_dual_scorpion_follower.py
+            tests/teleoperators/test_dual_scorpion_leader.py
+            tests/scripts/test_dual_scorpion_cli_registration.py
+            tests/test_rollout.py
+            tests/test_rollout_action_ordering.py
+            tests/policies/pi0_pi05/test_pi05_vision_inference.py
+            tests/policies/pi0_pi05/test_pi05_training_time_rtc.py
+            tests/teleoperators/test_mocopi*.py
+          )
+          for optional in tests/teleoperators/test_agent_harness.py tests/remote_policy; do
+            if [[ -e "$optional" ]]; then
+              tests+=("$optional")
+            fi
+          done
+          uv run --no-sync pytest -q -rs --timeout=120 "${tests[@]}"
       - name: Test LeLab and the shared LeRobot CLI
         working-directory: lelab
         run: uv run --no-sync pytest -o addopts="" -q -rs --timeout=120 tests

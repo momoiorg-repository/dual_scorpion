@@ -81,6 +81,19 @@ def test_dual_scorpion_record_config(tmp_path, monkeypatch):
         )
 
 
+def test_stored_mapping_allows_raw_view_on_branches_without_mapping_tools(monkeypatch):
+    from lelab import scorpion_view
+
+    monkeypatch.setattr(scorpion_view, "supports_verified_view_mapping", lambda: False)
+    positions = {"right_joint0.pos": 12.0}
+    mapping = scorpion_view.read_view_mapping("prior-branch.yaml", robot=None)
+
+    frame = scorpion_view.scorpion_joint_frame(positions, mapping)
+
+    assert frame["joints"] == {}
+    assert frame["motor_positions"] == positions
+
+
 def test_teleoperation_streams_joints_and_reserves_ports(client, fake_pair):
     follower, leader = fake_pair
     with client.websocket_connect("/ws/joint-data") as websocket:

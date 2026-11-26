@@ -732,15 +732,19 @@ const Calibration = () => {
                       </div>
                     ))}
                   </div>
-                  <Label htmlFor="scorpion-view-mapping">Verified URDF mapping (optional)</Label>
-                  <Input
-                    id="scorpion-view-mapping"
-                    placeholder="Mapping YAML filename"
-                    value={robot.view_mapping ?? ""}
-                    onChange={(event) => setRobot({ ...robot, view_mapping: event.target.value })}
-                    onBlur={(event) => updateRobot({ view_mapping: event.target.value.trim() })}
-                    className="border-slate-600 bg-slate-700 text-white"
-                  />
+                  {robot.verified_urdf_mapping_available && (
+                    <>
+                      <Label htmlFor="scorpion-view-mapping">Verified URDF mapping (optional)</Label>
+                      <Input
+                        id="scorpion-view-mapping"
+                        placeholder="Mapping YAML filename"
+                        value={robot.view_mapping ?? ""}
+                        onChange={(event) => setRobot({ ...robot, view_mapping: event.target.value })}
+                        onBlur={(event) => updateRobot({ view_mapping: event.target.value.trim() })}
+                        className="border-slate-600 bg-slate-700 text-white"
+                      />
+                    </>
+                  )}
                 </div>
               ) : (
               <div className="space-y-2">

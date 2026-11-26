@@ -141,7 +141,7 @@ Install with Python 3.12 or newer and Node.js 22.12 or newer. From the
 repository root, on Linux x86-64 for CPU verification, run:
 
 ```bash
-uv sync --locked --all-packages --extra dual_scorpion --extra lelab-test --extra cpu
+uv sync --locked --all-packages --extra dual_scorpion --extra lelab --extra cpu
 git lfs pull --include="dual_scorpion_Full_urdf/urdf/meshes/visual/*.stl"
 npm --prefix lelab/frontend ci --ignore-scripts
 npm --prefix lelab/frontend run build
@@ -151,9 +151,8 @@ uv run --no-sync lelab --no-open
 Open [LeLab on localhost](http://localhost:8000). Create or select a robot,
 open its configuration, and choose **Dual Scorpion**. Configure separate left
 and right ports for the physical Leader and Follower, then select the
-calibration for each pair. The same app supports SO-101. Mocopi capture and
-conversion remain available through the project CLI. The dataset browser and
-training UI accept compatible LeRobot v3.0 datasets created by either workflow.
+calibration for each pair. The same app supports SO-101. The dataset browser
+and training UI accept compatible LeRobot v3.0 datasets.
 
 The [Japanese LeLab guide](docs/LELAB_INTEGRATION.md) covers calibration,
 teleoperation, dataset compatibility, the 300 mm URDF, training, rollout,

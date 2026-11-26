@@ -75,7 +75,7 @@ from .rollout import (
     handle_start_inference,
     handle_stop_inference,
 )
-from .scorpion_view import SCORPION_MODEL_DIR
+from .scorpion_view import SCORPION_MODEL_DIR, supports_verified_view_mapping
 
 # Import our custom teleoperation functionality
 from .teleoperate import (
@@ -1387,7 +1387,11 @@ def get_robot_config(robot_type: RobotSideLiteral, available_configs: str = ""):
 
 def _record_with_clean(record: dict) -> dict:
     """Attach `is_clean` to a record for API responses."""
-    return {**record, "is_clean": is_robot_record_clean(record)}
+    return {
+        **record,
+        "is_clean": is_robot_record_clean(record),
+        "verified_urdf_mapping_available": supports_verified_view_mapping(),
+    }
 
 
 @app.get("/robots")

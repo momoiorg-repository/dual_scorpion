@@ -6,9 +6,14 @@ from pathlib import Path
 SCORPION_MODEL_DIR = Path(__file__).resolve().parents[2] / "dual_scorpion_Full_urdf"
 
 
+def supports_verified_view_mapping() -> bool:
+    mocopi = SCORPION_MODEL_DIR.parent / "telegrip_teleoperation/telegrip/mocopi"
+    return (mocopi / "dataset/hardware_dataset.py").is_file()
+
+
 def read_view_mapping(filename, robot):
     """Load a verified Full CAD mapping and optional measured gripper endpoints."""
-    if not filename:
+    if not filename or not supports_verified_view_mapping():
         return {}
     if Path(filename).name != filename or Path(filename).suffix not in {".yaml", ".yml"}:
         raise ValueError("Use the name of a mapping YAML in config/mocopi/hardware.")
@@ -19,9 +24,11 @@ def read_view_mapping(filename, robot):
 
     path = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware" / filename
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    validate_mapping_for_robot(
-        document, robot, model_sha256=file_sha256(SCORPION_MODEL_DIR / "mujoco/scorpion.xml")
-    )
+    if not isinstance(document, dict) or document.get("mujoco_model_sha256") != file_sha256(
+        SCORPION_MODEL_DIR / "mujoco/scorpion.xml"
+    ):
+        raise ValueError("Mapping MuJoCo model hash differs from the selected model or is missing")
+    validate_mapping_for_robot(document, robot)
     return document
 
 

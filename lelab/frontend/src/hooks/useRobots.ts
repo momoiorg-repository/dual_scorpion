@@ -20,6 +20,7 @@ export interface RobotRecord {
   follower_left_port?: string;
   follower_right_port?: string;
   view_mapping?: string;
+  verified_urdf_mapping_available?: boolean;
   name: string;
   leader_port: string;
   follower_port: string;

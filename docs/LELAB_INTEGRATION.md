@@ -2,11 +2,10 @@
 
 ## ソフトウェアの準備
 
-この手順は Dual Scorpion の作業ディレクトリから実行します。開発ブランチを取得し、Python 3.12 以降と Node.js 22.12 以降を用意してください。CI は Python 3.12 と Node.js 22.23.4 を使います。
+この手順は使用するブランチに切り替えた状態で、Dual Scorpion の作業ディレクトリから実行します。Python 3.12 以降と Node.js 22.12 以降を用意してください。CI は Python 3.12 と Node.js 22.23.4 を使います。
 
 ```bash
 git fetch origin
-git switch feat/lerobot-upgrade-lelab
 git pull --ff-only
 export UV_PROJECT_ENVIRONMENT="$PWD/.venv-lelab"
 uv sync --locked --all-packages --extra dual_scorpion --extra lelab
@@ -38,7 +37,7 @@ LeLab は一度に1つのロボット操作を受け付けます。Dual Scorpion
 ## 収録、可視化、再生
 
 - **収録**ではデータセット名、タスク、FPS、エピソード数を設定します。カメラを確認して開始し、画面のエピソード確定操作でテイクを保存します。終了後にフレーム数とカメラを確認します。Hub へのアップロードは任意です。
-- **Dataset Viewer** ではエピソードの動画、フレーム、関節の動きを確認できます。Scorpion のエピソードで **Show joint viewer** を開くと、同期済みの300 mmモデルを表示します。実機側の角度を URDF と照合するには、ロボット設定の **Verified URDF mapping** に `config/mocopi/hardware/` 内の実測済みマッピングのファイル名を指定します。左右のグリッパーを動かして表示する場合は、同じ YAML の `view_gripper_deg.left` と `view_gripper_deg.right` にそれぞれ `closed` と `open` の実測モデル角を度で記録します。未マッピングの関節は画面で実測の数値を確認できます。
+- **Dataset Viewer** ではエピソードの動画、フレーム、関節の動きを確認できます。Scorpion のエピソードで **Show joint viewer** を開くと、同期済みの300 mmモデルを表示します。Hardware Dataset 機能のあるブランチでは、ロボット設定の **Verified URDF mapping** に `config/mocopi/hardware/` 内の実測済みマッピング名を指定して、実機側の角度を URDF と照合できます。左右のグリッパーを動かして表示する場合は、同じ YAML の `view_gripper_deg.left` と `view_gripper_deg.right` にそれぞれ `closed` と `open` の実測モデル角を度で記録します。未マッピングの関節は画面で実測の数値を確認できます。
 - **Replay** は物理 Follower を動かします。対象は関節名が一致する16次元収録です。実行前にエピソードの先頭姿勢へ両腕を合わせてください。開始差が腕で2°、グリッパーで5ポイントを超えると再生を停止します。再生中は **Stop** で中断できます。
 
 LeLab は標準の `HF_LEROBOT_HOME` 配下に置かれた LeRobot v3.0 データセットを検出します。既存の Mocopi 変換データを使う場合は、そのツリーを新しい名前でキャッシュの `local/` 配下にコピーできます。
@@ -61,7 +60,7 @@ cp -aT "$legacy_source" "$migration_dir/dataset" && \
 
 `$migration_dir/dataset/meta/info.json` の `codebase_version` が `v3.0` であることと、エピソード数・フレーム数を確認します。変換したディレクトリを `$cache_dir/local/` 配下の新しい名前にコピーすると Dataset Viewer から開けます。
 
-Full CAD の14次元データはモデル内の関節角を記録します。旧モデルのデータを300 mm モデルで実機再生する前に、[Mocopi ガイド](../MOCOPI_DATASET_GUIDE.md#full-cadの14関節データを実機で再生する) に沿って元の記録から別の出力先へ軌道を生成し、モデルと較正に対応する実測マッピングを作成します。モデルハッシュの照合はこの移行中も有効です。
+Mocopi の Full CAD 14次元データはモデル内の関節角を記録します。Hardware Dataset 機能のあるブランチで、`MOCOPI_DATASET_GUIDE.md` に沿って元の記録から別の出力先へ軌道を生成し、300 mm モデルと較正に対応する実測マッピングを作成します。モデルハッシュの照合はこの移行中も有効です。
 
 ## Training と Rollout
 
@@ -78,25 +77,22 @@ uv run --no-sync lerobot-record --help
 uv run --no-sync lerobot-replay --help
 uv run --no-sync lerobot-train --help
 uv run --no-sync lerobot-rollout --help
-uv run --no-sync robot-policy --help
-uv run --no-sync python -m telegrip.mocopi.dataset --help
 ```
 
 LeRobot v0.7.0 の学習 CLI は `--trackio.*` を使用します。収録時に RGB コーデックを指定する場合は `--dataset.rgb_encoder.vcodec=h264` を使います。既存の CLI 学習結果を使う場合は **Import model** からチェックポイントを参照します。[LeRobot v0.7.0 リリースノート](https://github.com/huggingface/lerobot/releases/tag/v0.7.0)
 
 ## CI とローカルテスト
 
-GitHub Actions の **LeRobot and LeLab** は開発ブランチへの push、PR、手動起動に対応します。変更パスで Python と Frontend の実行範囲を判定し、共通依存関係では両方を実行します。終了時の **Integration checks** は両ジョブの結果を確認します。Python と npm は各ロックファイルを使ってキャッシュし、同じブランチの古い実行をキャンセルします。[ワークフロー](../.github/workflows/lerobot-lelab.yml)
+GitHub Actions の **LeRobot and LeLab** は各ブランチへの push、PR、手動起動に対応します。変更パスで Python と Frontend の実行範囲を判定し、共通依存関係では両方を実行します。各ブランチにある Mocopi、Agent Harness、Remote Policy のテストも対象です。終了時の **Integration checks** は両ジョブの結果を確認します。Python と npm は各ロックファイルを使ってキャッシュし、同じブランチの古い実行をキャンセルします。[ワークフロー](../.github/workflows/lerobot-lelab.yml)
 
 ```bash
-uv sync --locked --all-packages --extra cpu --extra mocopi --extra test --extra grpcio-dep --extra pi --extra lelab-test
+uv sync --locked --all-packages --extra cpu --extra dual_scorpion --extra test --extra lelab-test
 HF_HUB_OFFLINE=1 LEROBOT_TEST_DEVICE=cpu uv run --no-sync pytest -q \
   tests/robots/test_dual_scorpion_follower.py tests/teleoperators/test_dual_scorpion_leader.py \
-  tests/scripts/test_dual_scorpion_cli_registration.py tests/teleoperators/test_mocopi*.py \
-  tests/teleoperators/test_agent_harness.py tests/remote_policy
+  tests/scripts/test_dual_scorpion_cli_registration.py
 (cd lelab && HF_HUB_OFFLINE=1 uv run --no-sync pytest -q tests)
 (cd lelab/frontend && npm exec -- tsc --noEmit -p tsconfig.app.json && npm run lint && npm test && npm run build)
-gh run list --workflow lerobot-lelab.yml --branch feat/lerobot-upgrade-lelab
+gh run list --workflow lerobot-lelab.yml --branch "$(git branch --show-current)"
 ```
 
 ROS の pytest プラグインを読み込む端末では、テストコマンドの先頭に `env -u PYTHONPATH` を付けます。通常 CI は Ubuntu、CPU、Mock を使います。実機を使用する検証と GPU 学習は現場で実施します。[GitHub Actions の実行履歴](https://github.com/momoiorg-repository/dual_scorpion/actions/workflows/lerobot-lelab.yml)
