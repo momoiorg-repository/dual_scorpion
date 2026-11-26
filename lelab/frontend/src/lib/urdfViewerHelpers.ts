@@ -3,10 +3,9 @@ import {
   Object3D,
   PerspectiveCamera,
   Vector3,
-  Color,
-  AmbientLight,
   DirectionalLight,
   GridHelper,
+  HemisphereLight,
   Scene,
 } from "three";
 import { toast } from "@/components/ui/sonner";
@@ -31,6 +30,9 @@ export interface URDFViewerElement extends HTMLElement {
   redraw: () => void;
   up: string;
   scene: Scene;
+  showCollision?: boolean;
+  ambientLight?: HemisphereLight;
+  directionalLight?: DirectionalLight;
 }
 
 /** Object3D.name of the ground grid added in createUrdfViewer, for lookup by fitGridToRobot. */
@@ -60,15 +62,19 @@ export function createUrdfViewer(
   viewer.setAttribute("auto-redraw", "true");
   // viewer.setAttribute("display-shadow", ""); // Enable shadows
 
-  // Add ambient light to the scene
-  const ambientLight = new AmbientLight(0xd6d6d6, 1); // Increased intensity to 0.4
-  viewer.scene.add(ambientLight);
-
-  // Add directional light for better shadows and depth
-  const directionalLight = new DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(5, 30, 5);
-  directionalLight.castShadow = true;
-  viewer.scene.add(directionalLight);
+  // urdf-viewer already constructs a HemisphereLight (0.5) + DirectionalLight (Math.PI).
+  // Adding extra full-intensity lights blows out light-grey STL meshes to pure white,
+  // so tune the built-in lights and add only a gentle opposite fill light for depth.
+  if (viewer.ambientLight) {
+    viewer.ambientLight.intensity = 0.7;
+  }
+  if (viewer.directionalLight) {
+    viewer.directionalLight.intensity = 1.45;
+    viewer.directionalLight.position.set(4, 10, 4);
+  }
+  const fillLight = new DirectionalLight(0xdbeafe, 0.45);
+  fillLight.position.set(-4, -3, -4);
+  viewer.scene.add(fillLight);
 
   // Ground grid, for a sense of scale and distance while teleoperating.
   // Added directly to `scene` (not `world`), which stays in three.js's
@@ -131,6 +137,12 @@ export function setupMeshLoader(
     ) => {
       // Apply URL modifier if available (for custom uploads)
       const modifiedPath = urlModifierFunc ? urlModifierFunc(path) : path;
+
+      // Skip hundreds of hidden collision meshes unless collision display is active.
+      if (!viewer.showCollision && /\/meshes\/collision\//i.test(modifiedPath)) {
+        done(new Object3D());
+        return;
+      }
 
       // If loading fails, log the error but continue
       try {

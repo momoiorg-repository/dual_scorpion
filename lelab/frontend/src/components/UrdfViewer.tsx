@@ -21,12 +21,63 @@ import {
   setupModelLoading,
   URDFViewerElement,
 } from "@/lib/urdfViewerHelpers";
+import {
+  DEFAULT_SCORPION_VISUAL_MAPPING,
+  computeScorpionUrdfJoints,
+  loadLocalVisualMapping,
+  normalizeVisualMapping,
+  type ScorpionVisualMapping,
+} from "@/lib/scorpionVisualMapping";
 
 // Register the URDFManipulator as a custom element if it hasn't been already
 if (typeof window !== "undefined" && !customElements.get("urdf-viewer")) {
   customElements.define("urdf-viewer", URDFManipulator);
 }
 import * as THREE from "three";
+
+const SCORPION_LINK_COLORS: Record<string, number> = {
+  base_link: 0x475569,
+  r_link_1: 0x64748b,
+  r_link_2: 0x94a3b8,
+  r_link_3: 0x64748b,
+  r_link_4: 0x94a3b8,
+  r_link_5: 0x64748b,
+  r_link_6: 0x94a3b8,
+  r_link_7: 0x64748b,
+  r_link_8: 0xf59e0b,
+  l_link_1: 0x64748b,
+  l_link_2: 0x94a3b8,
+  l_link_3: 0x64748b,
+  l_link_4: 0x94a3b8,
+  l_link_5: 0x64748b,
+  l_link_6: 0x94a3b8,
+  l_link_7: 0x64748b,
+  l_link_8: 0x38bdf8,
+};
+
+function tintScorpionRobot(robot: THREE.Object3D): void {
+  robot.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    let cursor: THREE.Object3D | null = mesh;
+    let linkName: string | null = null;
+    while (cursor) {
+      if (cursor.name && cursor.name in SCORPION_LINK_COLORS) {
+        linkName = cursor.name;
+        break;
+      }
+      cursor = cursor.parent;
+    }
+    if (!linkName) return;
+    const tint = SCORPION_LINK_COLORS[linkName];
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((mat) => {
+      if (mat && "color" in mat && mat.color instanceof THREE.Color) {
+        mat.color.setHex(tint);
+      }
+    });
+  });
+}
 
 // Extend the interface for the URDF viewer element to include background property
 interface UrdfViewerElement extends HTMLElement {
@@ -37,13 +88,15 @@ interface UrdfViewerElement extends HTMLElement {
 interface Props {
   robotModel?: RobotModel;
   recordedFrame?: { joints: Record<string, number>; motor_positions: Record<string, number> };
+  visualMapping?: ScorpionVisualMapping;
 }
 
-const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame }) => {
-  const { baseUrl } = useApi();
+const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame, visualMapping }) => {
+  const { baseUrl, fetchWithHeaders } = useApi();
   const scorpion = robotModel === "dual_scorpion";
   const containerRef = useRef<HTMLDivElement>(null);
   const [highlightedJoint, setHighlightedJoint] = useState<string | null>(null);
+  const [loadedRobotMapping, setLoadedRobotMapping] = useState<ScorpionVisualMapping | null>(null);
   const { registerUrdfProcessor, alternativeUrdfModels, isDefaultModel } =
     useUrdf();
 
@@ -51,28 +104,65 @@ const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame }) =>
   const viewerRef = useRef<URDFViewerElement | null>(null);
   const hasInitializedRef = useRef<boolean>(false);
 
+  useEffect(() => {
+    if (!scorpion || visualMapping) return;
+    let selectedName: string | null = null;
+    try {
+      selectedName = localStorage.getItem("lelab.selectedRobot");
+    } catch {
+      selectedName = null;
+    }
+    const local = loadLocalVisualMapping(selectedName);
+    if (local) setLoadedRobotMapping(local);
+    if (!selectedName) return;
+    let cancelled = false;
+    fetchWithHeaders(`${baseUrl}/robots/${encodeURIComponent(selectedName)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.robot?.visual_mapping) return;
+        setLoadedRobotMapping(normalizeVisualMapping(data.robot.visual_mapping));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [scorpion, visualMapping, baseUrl, fetchWithHeaders]);
+
+  const activeVisualMapping =
+    visualMapping ?? loadedRobotMapping ?? DEFAULT_SCORPION_VISUAL_MAPPING;
+
   // Real-time joint updates via WebSocket
   const { isConnected, motorPositions, mappedJoints } = useRealTimeJoints({
     viewerRef,
     enabled: isDefaultModel && !recordedFrame,
     robotModel,
+    visualMapping: scorpion ? activeVisualMapping : undefined,
   });
   const isWebSocketConnected = isConnected && (!scorpion || Object.keys(motorPositions).length > 0);
   const positions = recordedFrame?.motor_positions ?? motorPositions;
-  const jointsMapped = recordedFrame ? Object.keys(recordedFrame.joints).length : mappedJoints;
+  const backendProvidedJoints = Boolean(recordedFrame && Object.keys(recordedFrame.joints).length > 0);
+  const effectiveRecordedJoints = useMemo(() => {
+    if (!recordedFrame) return null;
+    if (Object.keys(recordedFrame.joints).length > 0) return recordedFrame.joints;
+    if (scorpion && Object.keys(recordedFrame.motor_positions).length > 0) {
+      return computeScorpionUrdfJoints(recordedFrame.motor_positions, activeVisualMapping);
+    }
+    return recordedFrame.joints;
+  }, [recordedFrame, scorpion, activeVisualMapping]);
+  const jointsMapped = effectiveRecordedJoints ? Object.keys(effectiveRecordedJoints).length : mappedJoints;
 
   useEffect(() => {
-    if (!recordedFrame) return;
+    if (!effectiveRecordedJoints) return;
     const viewer = viewerRef.current;
     const showFrame = () => {
-      for (const [joint, value] of Object.entries(recordedFrame.joints)) {
+      for (const [joint, value] of Object.entries(effectiveRecordedJoints)) {
         viewer?.setJointValue?.(joint, value);
       }
     };
     showFrame();
     viewer?.addEventListener("urdf-processed", showFrame);
     return () => viewer?.removeEventListener("urdf-processed", showFrame);
-  }, [recordedFrame]);
+  }, [effectiveRecordedJoints]);
 
   // Add state for custom URDF path
   const [customUrdfPath, setCustomUrdfPath] = useState<string | null>(null);
@@ -262,6 +352,9 @@ const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame }) =>
     // Setup animation event handler for the default model or when hasAnimation is true
     const onModelProcessed = () => {
       hasInitializedRef.current = true;
+      if (scorpion && viewer.robot) {
+        tintScorpionRobot(viewer.robot);
+      }
       if ("setJointValue" in viewer) {
         // Clear any existing animation
         if (cleanupAnimationRef.current) {
@@ -321,8 +414,13 @@ const UrdfViewer: React.FC<Props> = ({ robotModel = "so101", recordedFrame }) =>
               </div>
             ))}
           </div>
+          {recordedFrame && !backendProvidedJoints && jointsMapped > 0 && (
+            <p className="mt-1 text-[11px] text-sky-300">
+              Visual preview mapping active (no CAD verification required).
+            </p>
+          )}
           {jointsMapped < Object.keys(positions).length && (
-            <p className="mt-2 text-amber-300">A verified mapping is needed to animate the remaining joints.</p>
+            <p className="mt-1 text-amber-300">A verified mapping is needed to animate the remaining joints.</p>
           )}
         </div>
       )}

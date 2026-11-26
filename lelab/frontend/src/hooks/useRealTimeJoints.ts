@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { URDFViewerElement } from "@/lib/urdfViewerHelpers";
 import { useApi } from "@/contexts/ApiContext";
 import type { RobotModel } from "@/hooks/useRobots";
+import { computeScorpionUrdfJoints, type ScorpionVisualMapping } from "@/lib/scorpionVisualMapping";
 
 interface JointData {
   type: "joint_update";
@@ -16,6 +17,7 @@ interface UseRealTimeJointsProps {
   enabled?: boolean;
   websocketUrl?: string;
   robotModel?: RobotModel;
+  visualMapping?: ScorpionVisualMapping;
 }
 
 const INITIAL_RECONNECT_DELAY_MS = 1000;
@@ -26,6 +28,7 @@ export const useRealTimeJoints = ({
   enabled = true,
   websocketUrl,
   robotModel = "so101",
+  visualMapping,
 }: UseRealTimeJointsProps) => {
   const { wsBaseUrl } = useApi();
   const finalWebSocketUrl = websocketUrl || `${wsBaseUrl}/ws/joint-data`;
@@ -34,6 +37,8 @@ export const useRealTimeJoints = ({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const intentionallyClosedRef = useRef(false);
+  const visualMappingRef = useRef<ScorpionVisualMapping | undefined>(visualMapping);
+  visualMappingRef.current = visualMapping;
   const [isConnected, setIsConnected] = useState(false);
   const [motorPositions, setMotorPositions] = useState<Record<string, number>>({});
   const [mappedJoints, setMappedJoints] = useState(0);
@@ -84,10 +89,19 @@ export const useRealTimeJoints = ({
         try {
           const data = JSON.parse(event.data) as JointData;
           if (data.type === "joint_update" && data.joints && (data.robot_model ?? "so101") === robotModel) {
-            updateJointValues(data.joints);
+            const backendJoints = data.joints;
+            const rawMotors = data.motor_positions ?? {};
+            const effectiveJoints =
+              robotModel === "dual_scorpion" &&
+              Object.keys(backendJoints).length === 0 &&
+              Object.keys(rawMotors).length > 0 &&
+              visualMappingRef.current
+                ? computeScorpionUrdfJoints(rawMotors, visualMappingRef.current)
+                : backendJoints;
+            updateJointValues(effectiveJoints);
             if (robotModel === "dual_scorpion") {
-              setMotorPositions(data.motor_positions ?? {});
-              setMappedJoints(Object.keys(data.joints).length);
+              setMotorPositions(rawMotors);
+              setMappedJoints(Object.keys(effectiveJoints).length);
             }
           }
         } catch (error) {

@@ -382,6 +382,8 @@ def get_robot_record(name: str) -> dict | None:
         record["robot_model"] = "dual_scorpion"
         record.update({field: data.get(field, "") for field in SCORPION_PORT_FIELDS})
         record["view_mapping"] = data.get("view_mapping", "")
+        if isinstance(data.get("visual_mapping"), dict):
+            record["visual_mapping"] = data["visual_mapping"]
     record["name"] = name
     return record
 
@@ -442,10 +444,15 @@ def _save_robot_record(name: str, data: dict, allow_create: bool) -> bool:
                 record[field] = data[field]
             else:
                 record.setdefault(field, "")
+        if "visual_mapping" in data:
+            if data["visual_mapping"] is None:
+                record.pop("visual_mapping", None)
+            elif isinstance(data["visual_mapping"], dict):
+                record["visual_mapping"] = data["visual_mapping"]
     elif data.get("robot_model") == "so101":
         from ..hardware import SCORPION_PORT_FIELDS
 
-        for field in ("robot_model", *SCORPION_PORT_FIELDS, "view_mapping"):
+        for field in ("robot_model", *SCORPION_PORT_FIELDS, "view_mapping", "visual_mapping"):
             record.pop(field, None)
     record["name"] = name
 

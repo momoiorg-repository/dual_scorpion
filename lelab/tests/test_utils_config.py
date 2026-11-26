@@ -194,3 +194,18 @@ def test_with_lelab_tag_dedupes() -> None:
 
     # Caller-supplied LeLab is not duplicated, and order is preserved.
     assert with_lelab_tag(["robotics", LELAB_TAG, "lerobot"]) == ["robotics", LELAB_TAG, "lerobot"]
+
+
+def test_dual_scorpion_visual_mapping_persists_and_clears(tmp_lerobot_home: Path) -> None:
+    from lelab.utils import config as cfg
+
+    mapping = {"right": {"sign": [-1] * 7, "offset_deg": [0.0] * 7}, "left": {"sign": [1] * 7, "offset_deg": [0.0] * 7}}
+    cfg.save_robot_record("scorp", {"robot_model": "dual_scorpion", "visual_mapping": mapping}, allow_create=True)
+    loaded = cfg.get_robot_record("scorp")
+    assert loaded is not None
+    assert loaded["visual_mapping"] == mapping
+
+    cfg.save_robot_record("scorp", {"visual_mapping": None}, allow_create=False)
+    cleared = cfg.get_robot_record("scorp")
+    assert cleared is not None
+    assert "visual_mapping" not in cleared

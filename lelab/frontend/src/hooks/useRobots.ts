@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { useApi } from "@/contexts/ApiContext";
 import { useToast } from "@/hooks/use-toast";
 import { CameraConfig, cameraConfigurationError, loadCameraConfigs } from "@/lib/cameraConfig";
+import type { ScorpionVisualMapping } from "@/lib/scorpionVisualMapping";
 
 export type RobotModel = "so101" | "dual_scorpion";
 
@@ -20,6 +21,7 @@ export interface RobotRecord {
   follower_left_port?: string;
   follower_right_port?: string;
   view_mapping?: string;
+  visual_mapping?: ScorpionVisualMapping | null;
   verified_urdf_mapping_available?: boolean;
   name: string;
   leader_port: string;
