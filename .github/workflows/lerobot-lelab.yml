@@ -90,7 +90,18 @@ jobs:
           uv sync --locked --all-packages --extra cpu --extra mocopi --extra test
           --extra grpcio-dep --extra pi --extra lelab-test
       - name: Verify Python dependencies
-        run: uv pip check
+        run: |
+          uv pip check
+          uv run --no-sync python - <<'PY'
+          from pathlib import Path
+
+          import lelab
+          import lerobot
+
+          for module, source in [(lerobot, "src/lerobot"), (lelab, "lelab/lelab")]:
+              assert Path(module.__file__).resolve().parent == Path(source).resolve()
+              print(module.__name__, module.__version__, module.__file__)
+          PY
       - name: Test LeRobot and Scorpion
         run: >-
           uv run --no-sync pytest -q --timeout=120
