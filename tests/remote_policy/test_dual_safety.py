@@ -59,7 +59,7 @@ def _scene(tmp_path):
 def test_dual_arm_motion_needs_fresh_local_capture_and_exact_one_shot_grant(tmp_path, monkeypatch):
     pytest.importorskip("telegrip")
     pytest.importorskip("pybullet")
-    pytest.importorskip("scservo_sdk")
+    pytest.importorskip("rustypot")
     from telegrip.mocopi.agent.cameras import CameraService
     from telegrip.mocopi.agent.robot import RealRobotAdapter, RobotReading
     from telegrip.mocopi.agent.safety import AuthorizationError

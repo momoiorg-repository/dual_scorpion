@@ -111,6 +111,7 @@ def export_joint_dataset(
     The robot state at frame t is the kinematic configuration in the plan;
     action is the next planned configuration. Neither is a motor reading.
     """
+    from lerobot.configs.video import RGBEncoderConfig
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
     source_root, output_root = Path(dataset_path).resolve(), Path(output).resolve()
@@ -263,7 +264,7 @@ def export_joint_dataset(
         root=output_root,
         robot_type="dual_scorpion_kinematic",
         use_videos=True,
-        vcodec="h264",
+        rgb_encoder=RGBEncoderConfig(vcodec="h264"),
         image_writer_threads=2,
     )
     result = {

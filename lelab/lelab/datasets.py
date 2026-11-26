@@ -1,0 +1,757 @@
+# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import base64
+import logging
+import os
+import re
+import shutil
+import tempfile
+import threading
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from huggingface_hub.errors import HfHubHTTPError
+
+from lerobot.datasets import LeRobotDataset
+from lerobot.datasets.dataset_tools import delete_episodes, merge_datasets, modify_tasks
+
+from . import episode_media
+from .utils.hf_auth import cached_whoami, shared_hf_api
+
+logger = logging.getLogger(__name__)
+
+LOCAL_DATASET_NAMESPACE = "local"
+_DATASET_NAME_RE = re.compile(r"[A-Za-z0-9._-]+$")
+
+
+def _lerobot_cache_root() -> Path:
+    return episode_media.lerobot_cache_root()
+
+
+def _is_dataset_dir(path: Path) -> bool:
+    """A directory is a LeRobot dataset iff <dir>/meta/info.json exists."""
+    try:
+        return (path / "meta" / "info.json").is_file()
+    except OSError:
+        return False
+
+
+def _dir_mtime_iso(path: Path) -> str | None:
+    try:
+        ts = path.stat().st_mtime
+        return datetime.fromtimestamp(ts, tz=UTC).isoformat()
+    except OSError:
+        return None
+
+
+def list_local_datasets() -> list[dict[str, Any]]:
+    """Scan the LeRobot cache for local datasets (dirs containing meta/info.json).
+
+    Walks one level deep: a top-level dataset dir is recorded as "<name>"; if a
+    top-level dir is not itself a dataset, each subdir that is a dataset is
+    recorded as "<top>/<sub>". Does not descend further.
+    """
+    root = _lerobot_cache_root()
+    if not root.is_dir():
+        return []
+
+    out: list[dict[str, Any]] = []
+    try:
+        top_entries = list(root.iterdir())
+    except OSError as e:
+        logger.warning(f"Could not read LeRobot cache root {root}: {e}")
+        return []
+
+    for top in top_entries:
+        try:
+            if not top.is_dir():
+                continue
+        except OSError:
+            continue
+
+        if _is_dataset_dir(top):
+            out.append(
+                {
+                    "repo_id": top.name,
+                    "last_modified": _dir_mtime_iso(top),
+                    "private": False,
+                }
+            )
+            continue
+
+        # Not a dataset itself — descend one level.
+        try:
+            sub_entries = list(top.iterdir())
+        except OSError:
+            continue
+        for sub in sub_entries:
+            try:
+                if not sub.is_dir():
+                    continue
+            except OSError:
+                continue
+            if _is_dataset_dir(sub):
+                out.append(
+                    {
+                        "repo_id": f"{top.name}/{sub.name}",
+                        "last_modified": _dir_mtime_iso(sub),
+                        "private": False,
+                    }
+                )
+
+    out.sort(key=lambda d: d["last_modified"] or "", reverse=True)
+    return out
+
+
+def list_user_datasets() -> list[dict[str, Any]]:
+    info = cached_whoami()
+    if info is None:
+        return []
+
+    authors = [info["name"]] + [o["name"] for o in info.get("orgs", [])]
+    api = shared_hf_api()
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for author in authors:
+        try:
+            for ds in api.list_datasets(author=author, filter="LeRobot", limit=200):
+                if ds.id in seen:
+                    continue
+                seen.add(ds.id)
+                out.append(
+                    {
+                        "repo_id": ds.id,
+                        "last_modified": ds.last_modified.isoformat() if ds.last_modified else None,
+                        "private": bool(getattr(ds, "private", False)),
+                    }
+                )
+        except HfHubHTTPError as e:
+            logger.warning(f"list_datasets({author}) failed: {e}")
+
+    out.sort(key=lambda d: d["last_modified"] or "", reverse=True)
+    return out
+
+
+def list_local_datasets_with_source() -> list[dict[str, Any]]:
+    """Local-cache datasets tagged with source="local" — a pure filesystem scan.
+
+    Same entry shape as `list_all_datasets`, but never contacts the Hub. For
+    lightweight callers that only need to know what exists on disk (e.g. a
+    poller) and must not add Hub API load.
+    """
+    return [{**d, "source": "local"} for d in list_local_datasets()]
+
+
+def list_all_datasets() -> list[dict[str, Any]]:
+    """Merged listing: Hub datasets + local cache, with `source` field.
+
+    A repo_id present in both lists is collapsed to one entry with
+    source="both" and last_modified set to the more recent of the two.
+    """
+    hub = list_user_datasets()
+    local = list_local_datasets()
+
+    merged: dict[str, dict[str, Any]] = {}
+    for item in hub:
+        merged[item["repo_id"]] = {**item, "source": "hub"}
+    for item in local:
+        rid = item["repo_id"]
+        if rid in merged:
+            existing = merged[rid]
+            existing["source"] = "both"
+            # Keep the newer timestamp; ISO strings sort lexically.
+            a = existing.get("last_modified") or ""
+            b = item.get("last_modified") or ""
+            existing["last_modified"] = max(a, b) or None
+        else:
+            merged[rid] = {**item, "source": "local"}
+
+    out = list(merged.values())
+    out.sort(key=lambda d: d["last_modified"] or "", reverse=True)
+    return out
+
+
+def handle_merge_local_datasets(source_repo_ids: list[str], output_name: str) -> dict[str, Any]:
+    """Merge local datasets into a new local dataset without touching sources."""
+    source_repo_ids = [repo_id.strip() for repo_id in source_repo_ids]
+    if len(source_repo_ids) < 2:
+        raise ValueError("Select at least two local datasets to merge")
+    if len(set(source_repo_ids)) != len(source_repo_ids):
+        raise ValueError("Select each source dataset only once")
+
+    output_name = output_name.strip()
+    if not _DATASET_NAME_RE.fullmatch(output_name):
+        raise ValueError("Output name may contain only letters, numbers, '.', '_' and '-'")
+
+    output_repo_id = f"{LOCAL_DATASET_NAMESPACE}/{output_name}"
+    cache_root = _lerobot_cache_root()
+    output_dir = (cache_root / output_repo_id).resolve()
+    if cache_root not in output_dir.parents:
+        raise ValueError("Invalid output dataset path")
+    if output_dir.exists():
+        raise ValueError(f"A local dataset already exists at {output_repo_id}")
+
+    try:
+        for repo_id in source_repo_ids:
+            episode_media.ensure_episode_index(repo_id)
+    except episode_media.UnreadableDatasetError as exc:
+        raise ValueError(str(exc)) from exc
+
+    source_dirs = [episode_media.resolve_dataset_dir(repo_id) for repo_id in source_repo_ids]
+    datasets = [
+        LeRobotDataset(repo_id=repo_id, root=source_dir)
+        for repo_id, source_dir in zip(source_repo_ids, source_dirs, strict=True)
+    ]
+
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_parent = Path(tempfile.mkdtemp(prefix=f".{output_name}.merge-", dir=output_dir.parent))
+    staging_output = staging_parent / "dataset"
+    try:
+        merged = merge_datasets(datasets, output_repo_id=output_repo_id, output_dir=staging_output)
+        staging_output.rename(output_dir)
+    except Exception:
+        shutil.rmtree(staging_parent, ignore_errors=True)
+        raise
+    else:
+        shutil.rmtree(staging_parent, ignore_errors=True)
+
+    return {
+        "success": True,
+        "repo_id": output_repo_id,
+        "num_episodes": merged.num_episodes,
+        "total_frames": merged.num_frames,
+    }
+
+
+def _swap_dirs(replacements: list[tuple[Path, Path]], backup_dir: Path) -> None:
+    """Replace each live dir with its staged copy; a failure restores the ones already swapped."""
+    done: list[tuple[Path, Path | None]] = []
+    try:
+        for i, (live, staged) in enumerate(replacements):
+            backup = backup_dir / f"old{i}" if live.exists() else None
+            if backup is not None:
+                live.rename(backup)
+            done.append((live, backup))
+            staged.rename(live)
+    except OSError:
+        for live, backup in reversed(done):
+            shutil.rmtree(live, ignore_errors=True)
+            if backup is not None:
+                backup.rename(live)
+        raise
+
+
+def handle_move_episodes(
+    repo_id: str,
+    episode_indices: list[int],
+    output_name: str | None = None,
+    target_repo_id: str | None = None,
+) -> dict[str, Any]:
+    """Move episodes out of a local dataset into a new or an existing local dataset.
+
+    Every rewritten dataset is built in a staging dir first, so a failure leaves
+    the source and the target as they were. The source is then swapped for the
+    copy without the moved episodes, which renumbers the episodes left in it. An
+    existing target is merged with the moved episodes, which keeps its own
+    episodes first and refuses a target whose fps, features or robot type differ.
+    """
+    with _exclusive_rewrite(*(r for r in (repo_id, target_repo_id) if r)):
+        return _move_episodes(repo_id, episode_indices, output_name, target_repo_id)
+
+
+def _move_episodes(
+    repo_id: str,
+    episode_indices: list[int],
+    output_name: str | None = None,
+    target_repo_id: str | None = None,
+) -> dict[str, Any]:
+    episode_indices = sorted(set(episode_indices))
+    if not episode_indices:
+        raise ValueError("Select at least one episode to move")
+    if (output_name is None) == (target_repo_id is None):
+        raise ValueError("Choose either a new dataset name or an existing target dataset")
+
+    cache_root = _lerobot_cache_root()
+    target_dir: Path | None = None
+    if target_repo_id is not None:
+        if target_repo_id == repo_id:
+            raise ValueError("The target must be a different dataset than the source")
+        try:
+            episode_media.ensure_episode_index(target_repo_id)
+        except episode_media.UnreadableDatasetError as exc:
+            raise ValueError(str(exc)) from exc
+        target_dir = episode_media.resolve_dataset_dir(target_repo_id)
+        destination_repo_id = target_repo_id
+        destination_dir = target_dir
+        staging_prefix = f".{target_dir.name}.move-"
+    else:
+        output_name = output_name.strip()
+        if not _DATASET_NAME_RE.fullmatch(output_name):
+            raise ValueError("Output name may contain only letters, numbers, '.', '_' and '-'")
+        destination_repo_id = f"{LOCAL_DATASET_NAMESPACE}/{output_name}"
+        destination_dir = (cache_root / destination_repo_id).resolve()
+        if cache_root not in destination_dir.parents:
+            raise ValueError("Invalid output dataset path")
+        if destination_dir.exists():
+            raise ValueError(f"A local dataset already exists at {destination_repo_id}")
+        staging_prefix = f".{output_name}.move-"
+
+    try:
+        episode_media.ensure_episode_index(repo_id)
+    except episode_media.UnreadableDatasetError as exc:
+        raise ValueError(str(exc)) from exc
+    source_dir = episode_media.resolve_dataset_dir(repo_id)
+    dataset = LeRobotDataset(repo_id=repo_id, root=source_dir)
+
+    total = dataset.meta.total_episodes
+    invalid = [i for i in episode_indices if not 0 <= i < total]
+    if invalid:
+        raise ValueError(f"Episodes not in {repo_id}: {invalid}")
+    kept = [i for i in range(total) if i not in episode_indices]
+    if not kept:
+        raise ValueError("Cannot move every episode; at least one must stay in the dataset")
+
+    destination_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=staging_prefix, dir=destination_dir.parent))
+    try:
+        moved = delete_episodes(dataset, kept, output_dir=staging / "moved", repo_id=destination_repo_id)
+        delete_episodes(dataset, episode_indices, output_dir=staging / "kept", repo_id=repo_id)
+        if target_dir is not None:
+            target = LeRobotDataset(repo_id=target_repo_id, root=target_dir)
+            merge_datasets([target, moved], output_repo_id=target_repo_id, output_dir=staging / "merged")
+            destination_staged = staging / "merged"
+        else:
+            destination_staged = staging / "moved"
+        _swap_dirs(
+            [(source_dir, staging / "kept"), (destination_dir, destination_staged)],
+            backup_dir=staging,
+        )
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    return {
+        "success": True,
+        "repo_id": destination_repo_id,
+        "moved_episodes": len(episode_indices),
+        "remaining_episodes": len(kept),
+    }
+
+
+_HUB_MIRRORED_GLOBS = ["meta/**", "data/**", "videos/**"]
+
+
+def _hub_failure_reason(exc: Exception, repo_id: str) -> str:
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status == 401:
+        return "you are not logged in to the Hub"
+    if status == 403:
+        return f"you have no write access to {repo_id}"
+    return str(exc) or type(exc).__name__
+
+
+def _push_edit_to_hub(repo_id: str, root: Path) -> tuple[bool, str | None]:
+    """Mirror the local copy of the dataset folders to its Hub repo when it has one.
+
+    `meta/`, `data/` and `videos/` are uploaded and the files the local copy no
+    longer has are deleted, in one commit, so a Hub copy that had diverged (episodes
+    moved out, episodes recorded without a push) ends up consistent. Unchanged files
+    are dropped from the commit by huggingface_hub, so videos are hashed, not re-sent.
+    The card and `.gitattributes` are outside those globs and stay as they are.
+
+    Returns (pushed, error).
+    """
+    if repo_id.split("/")[0] == LOCAL_DATASET_NAMESPACE:
+        return False, None
+    api = shared_hf_api()
+    try:
+        if not api.repo_exists(repo_id, repo_type="dataset"):
+            return False, None
+        api.upload_folder(
+            repo_id=repo_id,
+            repo_type="dataset",
+            folder_path=root,
+            allow_patterns=_HUB_MIRRORED_GLOBS,
+            delete_patterns=_HUB_MIRRORED_GLOBS,
+            commit_message="Edit episode tasks",
+        )
+    except Exception as exc:
+        logger.warning("Hub update of %s failed: %s", repo_id, exc)
+        return False, _hub_failure_reason(exc, repo_id)
+    return True, None
+
+
+def _rewrite_tasks(
+    repo_id: str, source_dir: Path, default_task: str | None, episode_tasks: dict[int, str]
+) -> None:
+    """Apply task edits with one `modify_tasks` call on a staged copy swapped in on success.
+
+    `modify_tasks` rewrites the dataset in place, so a failure here would leave
+    the source half written. Only `meta/` and `data/` are rewritten, so everything
+    else (videos, images) is hard-linked into the copy where the filesystem allows it.
+    """
+
+    def copy_or_link(src: str, dst: str) -> None:
+        if Path(src).relative_to(source_dir).parts[0] in ("meta", "data"):
+            shutil.copy2(src, dst)
+        else:
+            try:
+                os.link(src, dst)
+            except OSError:  # e.g. a filesystem without hard links
+                shutil.copy2(src, dst)
+
+    staging = Path(tempfile.mkdtemp(prefix=f".{source_dir.name}.task-", dir=source_dir.parent))
+    edited_dir = staging / "edited"
+    try:
+        shutil.copytree(source_dir, edited_dir, copy_function=copy_or_link)
+        dataset = LeRobotDataset(repo_id=repo_id, root=edited_dir)
+        modify_tasks(dataset, new_task=default_task, episode_tasks=episode_tasks or None)
+        source_dir.rename(staging / "old")
+        try:
+            edited_dir.rename(source_dir)
+        except OSError:
+            (staging / "old").rename(source_dir)
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+class _TaskEdits:
+    """Task edits of one dataset, applied in order by a single worker thread."""
+
+    def __init__(self) -> None:
+        # An "apply to all" edit sets `default_task` and drops every per-episode edit queued before it.
+        self.default_task: str | None = None
+        self.episode_tasks: dict[int, str] = {}
+        self.running = False
+        self.dirty = False  # written locally, not yet mirrored to the Hub
+        self.local_error: str | None = None
+        self.hub_error: str | None = None
+        self.hub_updated = False
+
+    def queued(self) -> bool:
+        return self.default_task is not None or bool(self.episode_tasks)
+
+
+_task_edits: dict[str, _TaskEdits] = {}
+_task_edits_lock = threading.Lock()
+_moving: set[str] = set()
+
+
+def _task_edits_busy(repo_id: str) -> bool:
+    edits = _task_edits.get(repo_id)
+    return edits is not None and (edits.running or edits.queued())
+
+
+@contextmanager
+def _exclusive_rewrite(*repo_ids: str):
+    """Keep task edits and moves from rewriting the same dataset at the same time."""
+    with _task_edits_lock:
+        for repo_id in repo_ids:
+            if repo_id in _moving or _task_edits_busy(repo_id):
+                raise ValueError(f"{repo_id} is being edited, try again in a moment")
+        _moving.update(repo_ids)
+    try:
+        yield
+    finally:
+        with _task_edits_lock:
+            _moving.difference_update(repo_ids)
+
+
+def _task_edits_worker(repo_id: str, source_dir: Path, edits: _TaskEdits) -> None:
+    while True:
+        with _task_edits_lock:
+            if not edits.queued():
+                edits.running = False
+                return
+            default_task, episode_tasks = edits.default_task, edits.episode_tasks
+            edits.default_task, edits.episode_tasks = None, {}
+        try:
+            _rewrite_tasks(repo_id, source_dir, default_task, episode_tasks)
+            edits.dirty = True
+        except Exception as exc:
+            logger.exception("Task edit of %s failed", repo_id)
+            edits.local_error = str(exc) or type(exc).__name__
+        # One Hub commit per burst: push only once nothing more is queued.
+        if edits.dirty and not edits.queued():
+            edits.hub_updated, edits.hub_error = _push_edit_to_hub(repo_id, source_dir)
+            edits.dirty = False
+
+
+def handle_set_episode_task(repo_id: str, task: str, episode_index: int | None = None) -> dict[str, Any]:
+    """Queue a task edit for one episode of a local dataset, or for every episode when `episode_index` is None.
+
+    The edit is validated now and written in the background: edits queued while a
+    rewrite runs are merged into the next one (the latest wins per episode, and an
+    edit of every episode replaces what was queued before it). Once the queue is
+    idle the dataset is mirrored to the Hub if it lives there too. Poll
+    `handle_episode_task_status` for the outcome.
+    """
+    task = task.strip()
+    if not task:
+        raise ValueError("The task cannot be empty")
+
+    try:
+        episode_media.ensure_episode_index(repo_id)
+    except episode_media.UnreadableDatasetError as exc:
+        raise ValueError(str(exc)) from exc
+    source_dir = episode_media.resolve_dataset_dir(repo_id)
+
+    total = episode_media.read_info(source_dir).get("total_episodes", 0)
+    if episode_index is not None and not 0 <= episode_index < total:
+        raise ValueError(f"Episode {episode_index} is not in {repo_id}")
+
+    with _task_edits_lock:
+        if repo_id in _moving:
+            raise ValueError(f"{repo_id} is being edited, try again in a moment")
+        edits = _task_edits.setdefault(repo_id, _TaskEdits())
+        if episode_index is None:
+            edits.default_task, edits.episode_tasks = task, {}
+        else:
+            edits.episode_tasks[episode_index] = task
+        if not edits.running:
+            edits.running = True
+            threading.Thread(
+                target=_task_edits_worker, args=(repo_id, source_dir, edits), daemon=True
+            ).start()
+    return {"success": True, "repo_id": repo_id, "queued": True}
+
+
+def handle_episode_task_status(repo_id: str) -> dict[str, Any]:
+    """Progress of the queued task edits of a dataset; the outcome is reported once, when it is idle."""
+    with _task_edits_lock:
+        edits = _task_edits.get(repo_id)
+        if edits is None:
+            return {"success": True, "pending": False}
+        if edits.running or edits.queued():
+            return {"success": True, "pending": True}
+        outcome = {
+            "success": True,
+            "pending": False,
+            "local_error": edits.local_error,
+            "hub_error": edits.hub_error,
+            "hub_updated": edits.hub_updated,
+        }
+        del _task_edits[repo_id]
+        return outcome
+
+
+# ── episode browsing ────────────────────────────────────────────────────────
+#
+# Everything below reads a *local* dataset only. Browsing a Hub-only dataset
+# would mean pulling its videos down first, so the frontend offers the episode
+# browser for entries whose `source` is "local" or "both" and keeps sending
+# Hub-only ones to the visualize_dataset Space.
+
+
+def handle_list_episodes(repo_id: str) -> dict[str, Any]:
+    """Episode listing for one local dataset: per-episode length, duration, tasks."""
+    try:
+        dataset_dir = episode_media.resolve_dataset_dir(repo_id)
+        info = episode_media.read_info(dataset_dir)
+        cameras = episode_media.list_cameras(dataset_dir)
+        rows = episode_media.read_episode_index(dataset_dir)
+    except episode_media.DatasetNotFoundError as e:
+        return {"success": False, "message": str(e)}
+    except Exception as e:
+        logger.warning(f"Could not list episodes for {repo_id}: {e}")
+        return {"success": False, "message": f"Could not read dataset: {e}"}
+
+    if not rows and info.get("total_episodes"):
+        return {
+            "success": False,
+            "message": f"{repo_id} has no episode index: the recording was interrupted before it finished writing.",
+        }
+
+    # Video features are shaped [height, width, channels]. Recording more
+    # episodes must reuse these resolutions, as inference reuses a checkpoint's.
+    image_features = {}
+    for name in cameras:
+        height, width, _channels = info["features"][f"{episode_media.VIDEO_KEY_PREFIX}{name}"]["shape"]
+        image_features[name] = {"height": height, "width": width}
+
+    return {
+        "success": True,
+        "repo_id": repo_id,
+        "fps": info.get("fps"),
+        "robot_type": info.get("robot_type"),
+        "total_episodes": info.get("total_episodes", len(rows)),
+        "total_frames": info.get("total_frames"),
+        "image_features": image_features,
+        "episodes": [
+            {
+                "episode_index": r.episode_idx,
+                "length": r.length,
+                "duration_s": r.duration_s,
+                "tasks": list(r.tasks),
+            }
+            for r in rows
+        ],
+    }
+
+
+def handle_episode_detail(repo_id: str, episode_index: int) -> dict[str, Any]:
+    """One episode: its per-camera video windows, plus neighbours for paging.
+
+    Each camera reports its own ``from_timestamp``. They agree in practice, but
+    the player must not assume that — a secondary camera is synced by mapping
+    through *its own* offset, not by copying the driver's ``currentTime``.
+    """
+    try:
+        dataset_dir = episode_media.resolve_dataset_dir(repo_id)
+        info = episode_media.read_info(dataset_dir)
+        rows = episode_media.read_episode_index(dataset_dir)
+    except episode_media.DatasetNotFoundError as e:
+        return {"success": False, "message": str(e)}
+    except Exception as e:
+        logger.warning(f"Could not read episode {episode_index} of {repo_id}: {e}")
+        return {"success": False, "message": f"Could not read dataset: {e}"}
+
+    row = next((r for r in rows if r.episode_idx == episode_index), None)
+    if row is None:
+        return {"success": False, "message": f"Episode {episode_index} not found in {repo_id}"}
+
+    cameras: list[dict[str, Any]] = []
+    for cam in episode_media.list_cameras(dataset_dir):
+        try:
+            loc = episode_media.locate_episode_video(dataset_dir, episode_index, camera=cam)
+        except episode_media.EpisodeNotFoundError as e:
+            logger.warning(f"{repo_id} ep{episode_index}: camera {cam} unavailable: {e}")
+            continue
+        cameras.append(
+            {
+                "name": cam,
+                "from_timestamp": loc.from_timestamp,
+                "to_timestamp": loc.to_timestamp,
+                "chunk": loc.chunk,
+                "file_index": loc.file_index,
+            }
+        )
+
+    indices = [r.episode_idx for r in rows]
+    position = indices.index(episode_index)
+
+    return {
+        "success": True,
+        "repo_id": repo_id,
+        "episode_index": episode_index,
+        "length": row.length,
+        "duration_s": row.duration_s,
+        "tasks": list(row.tasks),
+        "fps": info.get("fps"),
+        "robot_type": info.get("robot_type"),
+        "cameras": cameras,
+        "prev_episode": indices[position - 1] if position > 0 else None,
+        "next_episode": indices[position + 1] if position < len(indices) - 1 else None,
+        "total_episodes": len(indices),
+    }
+
+
+def load_episode_frame_png(
+    repo_id: str, episode_index: int, camera: str | None, frame_index: int, max_width: int | None
+) -> bytes:
+    """One decoded frame as PNG bytes. Raises on any miss; the route maps to 404.
+
+    The bounds check matters on a packed mp4: episodes sit back to back in one
+    file, so an out-of-range ``frame_index`` would otherwise decode cleanly —
+    and serve a frame of the *next* episode with a 200.
+    """
+    dataset_dir = episode_media.resolve_dataset_dir(repo_id)
+    rows = episode_media.read_episode_index(dataset_dir)
+    row = next((r for r in rows if r.episode_idx == episode_index), None)
+    if frame_index < 0 or (row and row.length and frame_index >= row.length):
+        raise episode_media.EpisodeNotFoundError(
+            f"Frame {frame_index} out of range for episode {episode_index}"
+            + (f" (length {row.length})" if row and row.length else "")
+        )
+    location = episode_media.locate_episode_video(dataset_dir, episode_index, camera=camera)
+    return episode_media.extract_frame_png(location, frame_index, max_width=max_width)
+
+
+def handle_episode_thumbnails(
+    repo_id: str, episode_index: int, camera: str | None, count: int
+) -> dict[str, Any]:
+    """``count`` evenly-spaced thumbnails for the film strip, decoded in one pass."""
+    try:
+        dataset_dir = episode_media.resolve_dataset_dir(repo_id)
+        location = episode_media.locate_episode_video(dataset_dir, episode_index, camera=camera)
+        rows = episode_media.read_episode_index(dataset_dir)
+    except (episode_media.DatasetNotFoundError, episode_media.EpisodeNotFoundError) as e:
+        return {"success": False, "message": str(e)}
+
+    row = next((r for r in rows if r.episode_idx == episode_index), None)
+    length = row.length if row and row.length else 0
+    if length <= 0:
+        return {"success": False, "message": f"Episode {episode_index} has no frames"}
+
+    count = max(1, min(count, length))
+    # Evenly spaced across the whole episode, inclusive of both ends: a strip
+    # that stops short of the last frame hides how an episode finishes, which is
+    # usually the part you are checking.
+    last = length - 1
+    indices = [0] if count == 1 else sorted({round(i * last / (count - 1)) for i in range(count)})
+
+    try:
+        # (frame_index, png) pairs — a frame that fails to decode is absent, not
+        # a positional gap, so the surviving tiles keep their true frame labels.
+        thumbnails = episode_media.extract_thumbnails(location, indices)
+    except episode_media.EpisodeNotFoundError as e:
+        return {"success": False, "message": str(e)}
+
+    return {
+        "success": True,
+        "episode_index": episode_index,
+        "camera": location.camera,
+        "thumbnails": [
+            {
+                "frame_index": idx,
+                "data_uri": "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
+            }
+            for idx, png in thumbnails
+        ],
+    }
+
+
+def locate_video_file(repo_id: str, camera: str, chunk: int, file_index: int) -> Path:
+    """On-disk mp4 for one camera's chunk/file. Raises on any miss; the route 404s.
+
+    Addressed by *file* rather than by episode on purpose. Several episodes share
+    one mp4, so a file-addressed URL stays byte-identical as the viewer pages
+    between them — the browser reuses the already-buffered video and the player
+    only seeks. Keying on the episode instead would give each one its own URL for
+    the same bytes, forcing a reload and dropping playback on every switch.
+    """
+    dataset_dir = episode_media.resolve_dataset_dir(repo_id)
+    return episode_media.resolve_video_file(dataset_dir, camera, chunk, file_index)
+
+
+def handle_episode_motion(repo_id: str, episode_index: int) -> dict[str, Any]:
+    """Per-frame aggregate joint motion for one episode."""
+    try:
+        dataset_dir = episode_media.resolve_dataset_dir(repo_id)
+        trace = episode_media.episode_motion_trace(dataset_dir, episode_index)
+    except (episode_media.DatasetNotFoundError, episode_media.EpisodeNotFoundError) as e:
+        return {"success": False, "message": str(e)}
+    except Exception as e:
+        logger.warning(f"Could not read motion for {repo_id} ep{episode_index}: {e}")
+        return {"success": False, "message": f"Could not read action stream: {e}"}
+
+    return {
+        "success": True,
+        "episode_index": episode_index,
+        "motion": trace,
+        "max_motion": max(trace) if trace else 0.0,
+    }

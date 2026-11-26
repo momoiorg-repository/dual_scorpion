@@ -28,6 +28,7 @@ class ReplayGeometry:
             side: [model.joint(f"joint{i}_{suffix}").id for i in range(7)] for side, suffix in SUFFIX.items()
         }
         self.link_vertices = {}
+        self.geom_vertices = {}
         arm_geom_ids = []
         for suffix in SUFFIX.values():
             for index in range(1, 9):
@@ -40,9 +41,9 @@ class ReplayGeometry:
                         mesh = model.geom_dataid[geom_id]
                         start, count = model.mesh_vertadr[mesh], model.mesh_vertnum[mesh]
                         rotation = Rotation.from_quat(model.geom_quat[geom_id], scalar_first=True)
-                        vertices.append(
-                            rotation.apply(model.mesh_vert[start : start + count]) + model.geom_pos[geom_id]
-                        )
+                        points = rotation.apply(model.mesh_vert[start : start + count]) + model.geom_pos[geom_id]
+                        self.geom_vertices[geom_id] = points
+                        vertices.append(points)
                     else:
                         raise ValueError(
                             f"Unsupported arm collision geometry: {model.geom(int(geom_id)).name}"
@@ -168,11 +169,21 @@ class ReplayGeometry:
         for index in np.argsort(bounds):
             if bounds[index] >= clearance:
                 break
+            geom_id = int(self.arm_geom_ids[index])
             distance = sim.mujoco.mj_geomDistance(
-                sim.model, sim.data, int(self.arm_geom_ids[index]), obstacle_id, max(clearance, 1e-6), None
+                sim.model, sim.data, geom_id, obstacle_id, max(clearance, 1e-6), None
             )
             if not np.isfinite(distance):
                 raise ValueError("MuJoCo returned a non-finite obstacle distance")
+            if distance == 0.0:
+                # Mesh–box distance can round to zero even for disjoint shapes.
+                # A separating box axis proves at least this much clearance.
+                body = sim.model.geom_bodyid[geom_id]
+                world = self.geom_vertices[geom_id] @ sim.data.xmat[body].reshape(3, 3).T + sim.data.xpos[body]
+                local = (world - positions[obstacle_id]) @ sim.data.geom_xmat[obstacle_id].reshape(3, 3)
+                half_size = sim.model.geom_size[obstacle_id, :3]
+                gap = np.maximum(local.min(axis=0) - half_size, -half_size - local.max(axis=0))
+                distance = max(0.0, float(np.max(gap)))
             clearance = min(clearance, distance)
         return clearance
 

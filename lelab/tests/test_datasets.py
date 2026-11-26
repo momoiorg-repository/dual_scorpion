@@ -1,0 +1,998 @@
+# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Tests for lelab.datasets — local cache walk, merge logic, episode browsing."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from .test_episode_media import _write_dataset
+
+
+@pytest.fixture
+def browsable_dataset(tmp_lerobot_home: Path) -> str:
+    """A real v3.0 dataset on disk: 3 episodes, 2 cameras, 10fps."""
+    _write_dataset(tmp_lerobot_home, "acme/demo", episodes=[(0, 12), (1, 8), (2, 15)])
+    return "acme/demo"
+
+
+def _make_dataset(root: Path, repo_id: str) -> None:
+    """Create the minimal layout `_is_dataset_dir` recognizes."""
+    d = root / repo_id
+    (d / "meta").mkdir(parents=True)
+    (d / "meta" / "info.json").write_text("{}")
+
+
+def test_list_local_datasets_empty_when_root_missing(
+    tmp_lerobot_home: Path,
+) -> None:
+    # tmp_lerobot_home creates the cache; remove it so the function sees the
+    # "missing root" branch.
+    import shutil
+
+    from lelab.datasets import list_local_datasets
+
+    shutil.rmtree(tmp_lerobot_home)
+    assert list_local_datasets() == []
+
+
+def test_list_local_datasets_finds_top_level_dataset(
+    tmp_lerobot_home: Path,
+) -> None:
+    from lelab.datasets import list_local_datasets
+
+    _make_dataset(tmp_lerobot_home, "pusht")
+    result = list_local_datasets()
+    repo_ids = [d["repo_id"] for d in result]
+    assert "pusht" in repo_ids
+
+
+def test_list_local_datasets_finds_nested_user_dataset(
+    tmp_lerobot_home: Path,
+) -> None:
+    from lelab.datasets import list_local_datasets
+
+    _make_dataset(tmp_lerobot_home, "alice/pusht")
+    result = list_local_datasets()
+    repo_ids = [d["repo_id"] for d in result]
+    assert "alice/pusht" in repo_ids
+
+
+def test_list_local_datasets_skips_non_dataset_dirs(
+    tmp_lerobot_home: Path,
+) -> None:
+    from lelab.datasets import list_local_datasets
+
+    (tmp_lerobot_home / "calibration").mkdir(exist_ok=True)
+    (tmp_lerobot_home / "ports").mkdir(exist_ok=True)
+    _make_dataset(tmp_lerobot_home, "real_dataset")
+
+    result = list_local_datasets()
+    repo_ids = [d["repo_id"] for d in result]
+    assert "real_dataset" in repo_ids
+    assert "calibration" not in repo_ids
+    assert "ports" not in repo_ids
+
+
+def test_list_user_datasets_returns_empty_when_not_logged_in(
+    tmp_lerobot_home: Path,
+) -> None:
+    from lelab.datasets import list_user_datasets
+
+    with patch("lelab.datasets.cached_whoami", return_value=None):
+        assert list_user_datasets() == []
+
+
+def test_list_local_datasets_with_source_tags_local_without_hub(
+    tmp_lerobot_home: Path,
+) -> None:
+    from lelab.datasets import list_local_datasets_with_source
+
+    _make_dataset(tmp_lerobot_home, "pusht")
+
+    # The local-only listing must never consult the Hub.
+    with patch("lelab.datasets.list_user_datasets") as hub:
+        result = list_local_datasets_with_source()
+        hub.assert_not_called()
+
+    by_id = {d["repo_id"]: d for d in result}
+    assert by_id["pusht"]["source"] == "local"
+
+
+def test_list_all_datasets_merges_hub_and_local(
+    tmp_lerobot_home: Path,
+) -> None:
+    from lelab.datasets import list_all_datasets
+
+    _make_dataset(tmp_lerobot_home, "alice/pusht")
+
+    with patch(
+        "lelab.datasets.list_user_datasets",
+        return_value=[
+            {"repo_id": "alice/pusht", "last_modified": "2026-01-01T00:00:00Z", "private": False},
+            {"repo_id": "alice/aloha", "last_modified": "2026-02-01T00:00:00Z", "private": True},
+        ],
+    ):
+        result = list_all_datasets()
+
+    by_id = {d["repo_id"]: d for d in result}
+    assert by_id["alice/pusht"]["source"] == "both"
+    assert by_id["alice/aloha"]["source"] == "hub"
+
+
+def test_merge_local_datasets_creates_new_dataset_without_touching_sources(
+    tmp_lerobot_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    _write_dataset(tmp_lerobot_home, "alice/first", episodes=[(0, 4)], cameras=())
+    _write_dataset(tmp_lerobot_home, "bob/second", episodes=[(0, 4)], cameras=())
+    calls = []
+
+    class FakeDataset:
+        def __init__(self, repo_id: str, root: Path) -> None:
+            self.repo_id = repo_id
+            self.root = root
+
+    class FakeMergedDataset:
+        num_episodes = 7
+        num_frames = 70
+
+    def fake_merge(datasets, output_repo_id: str, output_dir: Path):
+        calls.append((datasets, output_repo_id, output_dir))
+        (output_dir / "meta").mkdir(parents=True)
+        (output_dir / "meta" / "info.json").write_text("{}")
+        return FakeMergedDataset()
+
+    monkeypatch.setattr(datasets_mod, "LeRobotDataset", FakeDataset)
+    monkeypatch.setattr(datasets_mod, "merge_datasets", fake_merge)
+
+    result = datasets_mod.handle_merge_local_datasets(["alice/first", "bob/second"], "combined")
+
+    assert result == {"success": True, "repo_id": "local/combined", "num_episodes": 7, "total_frames": 70}
+    assert [dataset.repo_id for dataset in calls[0][0]] == ["alice/first", "bob/second"]
+    assert calls[0][1] == "local/combined"
+    assert (tmp_lerobot_home / "local" / "combined" / "meta" / "info.json").is_file()
+    assert (tmp_lerobot_home / "alice" / "first" / "meta" / "info.json").is_file()
+    assert (tmp_lerobot_home / "bob" / "second" / "meta" / "info.json").is_file()
+
+
+def test_merge_local_datasets_reports_unreadable_source(tmp_lerobot_home: Path) -> None:
+    """A recording interrupted before finalize has no episode index; LeRobot
+    would take it for a Hub dataset and 404."""
+    from lelab.datasets import handle_merge_local_datasets
+
+    _write_dataset(tmp_lerobot_home, "alice/first", episodes=[(0, 4)], cameras=())
+    _make_dataset(tmp_lerobot_home, "bob/second")
+
+    with pytest.raises(ValueError, match="bob/second has no readable episodes"):
+        handle_merge_local_datasets(["alice/first", "bob/second"], "combined")
+
+
+@pytest.mark.parametrize(
+    ("source_repo_ids", "output_name", "message"),
+    [
+        (["alice/first"], "combined", "at least two"),
+        (["alice/first", "alice/first"], "combined", "only once"),
+        (["alice/first", "bob/second"], "not/a-name", "Output name"),
+    ],
+)
+def test_merge_local_datasets_rejects_invalid_request(
+    tmp_lerobot_home: Path, source_repo_ids: list[str], output_name: str, message: str
+) -> None:
+    from lelab.datasets import handle_merge_local_datasets
+
+    with pytest.raises(ValueError, match=message):
+        handle_merge_local_datasets(source_repo_ids, output_name)
+
+
+def test_merge_local_datasets_rejects_existing_output(tmp_lerobot_home: Path) -> None:
+    from lelab.datasets import handle_merge_local_datasets
+
+    _make_dataset(tmp_lerobot_home, "local/combined")
+    with pytest.raises(ValueError, match="already exists"):
+        handle_merge_local_datasets(["alice/first", "bob/second"], "combined")
+
+
+def test_merge_local_datasets_cleans_staging_output_on_failure(
+    tmp_lerobot_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    _write_dataset(tmp_lerobot_home, "alice/first", episodes=[(0, 4)], cameras=())
+    _write_dataset(tmp_lerobot_home, "bob/second", episodes=[(0, 4)], cameras=())
+    monkeypatch.setattr(datasets_mod, "LeRobotDataset", lambda repo_id, root: object())
+
+    def failing_merge(datasets, output_repo_id: str, output_dir: Path):
+        output_dir.mkdir(parents=True)
+        raise RuntimeError("incompatible features")
+
+    monkeypatch.setattr(datasets_mod, "merge_datasets", failing_merge)
+
+    with pytest.raises(RuntimeError, match="incompatible features"):
+        datasets_mod.handle_merge_local_datasets(["alice/first", "bob/second"], "combined")
+
+    assert not (tmp_lerobot_home / "local" / "combined").exists()
+    assert not list((tmp_lerobot_home / "local").glob(".combined.merge-*"))
+    assert (tmp_lerobot_home / "alice" / "first" / "meta" / "info.json").is_file()
+    assert (tmp_lerobot_home / "bob" / "second" / "meta" / "info.json").is_file()
+
+
+def test_merge_route_returns_result_and_maps_validation_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    monkeypatch.setattr(
+        datasets_mod,
+        "handle_merge_local_datasets",
+        lambda source_repo_ids, output_name: {
+            "success": True,
+            "repo_id": "local/combined",
+            "num_episodes": 3,
+            "total_frames": 30,
+        },
+    )
+    response = client.post(
+        "/datasets/merge", json={"source_repo_ids": ["alice/one", "alice/two"], "output_name": "combined"}
+    )
+    assert response.status_code == 200
+    assert response.json()["repo_id"] == "local/combined"
+
+    monkeypatch.setattr(
+        datasets_mod, "handle_merge_local_datasets", lambda *_: (_ for _ in ()).throw(ValueError("bad input"))
+    )
+    response = client.post("/datasets/merge", json={"source_repo_ids": [], "output_name": "combined"})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "bad input"
+
+
+def _record_dataset(repo_id: str, episodes: int, fps: int = 10) -> Path:
+    """Write a finished LeRobot dataset whose episode i has every value set to i."""
+    import numpy as np
+
+    from lerobot.datasets import LeRobotDataset
+
+    features = {"action": {"dtype": "float32", "shape": (1,), "names": ["a"]}}
+    dataset = LeRobotDataset.create(repo_id, fps=fps, features=features, use_videos=False)
+    for ep in range(episodes):
+        for _ in range(3):
+            dataset.add_frame({"action": np.full(1, ep, dtype=np.float32), "task": f"task {ep}"})
+        dataset.save_episode()
+    dataset.finalize()
+    return dataset.root
+
+
+def _episode_tasks(repo_id: str) -> list[str]:
+    from lelab import episode_media
+    from lerobot.datasets import LeRobotDataset
+
+    dataset = LeRobotDataset(repo_id=repo_id, root=episode_media.resolve_dataset_dir(repo_id))
+    return [dataset.meta.episodes[i]["tasks"][0] for i in range(dataset.meta.total_episodes)]
+
+
+def test_move_episodes_splits_the_source_into_a_new_dataset(tmp_lerobot_home: Path) -> None:
+    from lelab.datasets import handle_move_episodes
+
+    _record_dataset("alice/demo", episodes=4)
+
+    result = handle_move_episodes("alice/demo", [1, 3], "rejected")
+
+    assert result == {
+        "success": True,
+        "repo_id": "local/rejected",
+        "moved_episodes": 2,
+        "remaining_episodes": 2,
+    }
+    assert _episode_tasks("local/rejected") == ["task 1", "task 3"]
+    assert _episode_tasks("alice/demo") == ["task 0", "task 2"]
+    assert not list((tmp_lerobot_home / "local").glob(".rejected.move-*"))
+
+
+@pytest.mark.parametrize(
+    ("episode_indices", "output_name", "message"),
+    [
+        ([], "rejected", "at least one episode"),
+        ([0], "not/a-name", "Output name"),
+        ([5], "rejected", r"Episodes not in alice/demo: \[5\]"),
+        ([0, 1], "rejected", "Cannot move every episode"),
+    ],
+)
+def test_move_episodes_rejects_invalid_request(
+    tmp_lerobot_home: Path, episode_indices: list[int], output_name: str, message: str
+) -> None:
+    from lelab.datasets import handle_move_episodes
+
+    _record_dataset("alice/demo", episodes=2)
+    with pytest.raises(ValueError, match=message):
+        handle_move_episodes("alice/demo", episode_indices, output_name)
+    assert _episode_tasks("alice/demo") == ["task 0", "task 1"]
+
+
+def test_move_episodes_merges_into_an_existing_dataset(tmp_lerobot_home: Path) -> None:
+    from lelab.datasets import handle_move_episodes
+
+    _record_dataset("alice/demo", episodes=4)
+    _record_dataset("bob/target", episodes=2)
+
+    result = handle_move_episodes("alice/demo", [1, 3], target_repo_id="bob/target")
+
+    assert result == {
+        "success": True,
+        "repo_id": "bob/target",
+        "moved_episodes": 2,
+        "remaining_episodes": 2,
+    }
+    assert _episode_tasks("bob/target") == ["task 0", "task 1", "task 1", "task 3"]
+    assert _episode_tasks("alice/demo") == ["task 0", "task 2"]
+    assert not list((tmp_lerobot_home / "bob").glob(".target.move-*"))
+
+
+def test_move_episodes_refuses_an_incompatible_target(tmp_lerobot_home: Path) -> None:
+    from lelab.datasets import handle_move_episodes
+
+    _record_dataset("alice/demo", episodes=3)
+    _record_dataset("bob/target", episodes=2, fps=20)
+
+    with pytest.raises(ValueError, match="Same fps is expected"):
+        handle_move_episodes("alice/demo", [1], target_repo_id="bob/target")
+
+    assert _episode_tasks("alice/demo") == ["task 0", "task 1", "task 2"]
+    assert _episode_tasks("bob/target") == ["task 0", "task 1"]
+    assert not list((tmp_lerobot_home / "bob").glob(".target.move-*"))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({}, "either a new dataset name or an existing target"),
+        (
+            {"output_name": "x", "target_repo_id": "bob/target"},
+            "either a new dataset name or an existing target",
+        ),
+        ({"target_repo_id": "alice/demo"}, "different dataset than the source"),
+    ],
+)
+def test_move_episodes_rejects_an_ambiguous_destination(
+    tmp_lerobot_home: Path, kwargs: dict[str, str], message: str
+) -> None:
+    from lelab.datasets import handle_move_episodes
+
+    _record_dataset("alice/demo", episodes=2)
+    with pytest.raises(ValueError, match=message):
+        handle_move_episodes("alice/demo", [0], **kwargs)
+
+
+def test_move_episodes_rejects_existing_output(tmp_lerobot_home: Path) -> None:
+    from lelab.datasets import handle_move_episodes
+
+    _make_dataset(tmp_lerobot_home, "local/rejected")
+    with pytest.raises(ValueError, match="already exists"):
+        handle_move_episodes("alice/demo", [0], "rejected")
+
+
+def test_move_episodes_leaves_source_untouched_on_failure(
+    tmp_lerobot_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    _record_dataset("alice/demo", episodes=3)
+    real_delete = datasets_mod.delete_episodes
+
+    def failing_second_copy(dataset, episode_indices, output_dir, repo_id):
+        if repo_id == "alice/demo":
+            output_dir.mkdir(parents=True)
+            raise RuntimeError("disk full")
+        return real_delete(dataset, episode_indices, output_dir=output_dir, repo_id=repo_id)
+
+    monkeypatch.setattr(datasets_mod, "delete_episodes", failing_second_copy)
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        datasets_mod.handle_move_episodes("alice/demo", [1], "rejected")
+
+    assert _episode_tasks("alice/demo") == ["task 0", "task 1", "task 2"]
+    assert not (tmp_lerobot_home / "local" / "rejected").exists()
+    assert not list((tmp_lerobot_home / "local").glob(".rejected.move-*"))
+
+
+def test_move_episodes_route_refuses_while_recording(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod, record
+
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(
+        datasets_mod, "handle_move_episodes", lambda *_: pytest.fail("must not edit while recording")
+    )
+
+    response = client.post(
+        "/datasets/move-episodes", json={"repo_id": "alice/demo", "episode_indices": [0], "output_name": "x"}
+    )
+    assert response.status_code == 409
+
+
+def test_move_episodes_route_maps_validation_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    monkeypatch.setattr(
+        datasets_mod, "handle_move_episodes", lambda *_: (_ for _ in ()).throw(ValueError("bad input"))
+    )
+    response = client.post(
+        "/datasets/move-episodes", json={"repo_id": "alice/demo", "episode_indices": [0], "output_name": "x"}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "bad input"
+
+
+def test_move_episodes_route_forwards_an_existing_target(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    calls = []
+    monkeypatch.setattr(
+        datasets_mod, "handle_move_episodes", lambda *args: calls.append(args) or {"success": True}
+    )
+    response = client.post(
+        "/datasets/move-episodes",
+        json={"repo_id": "alice/demo", "episode_indices": [0], "target_repo_id": "bob/target"},
+    )
+    assert response.status_code == 200
+    assert calls == [("alice/demo", [0], None, "bob/target")]
+
+
+@pytest.mark.parametrize("episode_indices", [[], [-1]])
+def test_move_episodes_route_rejects_bad_indices_before_editing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, episode_indices: list[int]
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    monkeypatch.setattr(datasets_mod, "handle_move_episodes", lambda *_: pytest.fail("must not edit"))
+    response = client.post(
+        "/datasets/move-episodes",
+        json={"repo_id": "alice/demo", "episode_indices": episode_indices, "output_name": "x"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.fixture
+def fake_hub(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """A Hub API where no repo exists; the tests that edit tasks must never reach the real Hub."""
+    from lelab import datasets as datasets_mod
+
+    api = MagicMock()
+    api.repo_exists.return_value = False
+    monkeypatch.setattr(datasets_mod, "shared_hf_api", lambda: api)
+    return api
+
+
+def _edit_tasks(repo_id: str, *edits: tuple[str, int | None]) -> dict:
+    """Queue edits, wait for the worker to go idle and return the reported outcome."""
+    import time
+
+    from lelab.datasets import handle_episode_task_status, handle_set_episode_task
+
+    for task, episode_index in edits:
+        handle_set_episode_task(repo_id, task, episode_index)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        status = handle_episode_task_status(repo_id)
+        if not status["pending"]:
+            return status
+        time.sleep(0.02)
+    pytest.fail("task edits did not finish")
+
+
+@pytest.fixture(autouse=True)
+def _idle_task_edits():
+    from lelab import datasets as datasets_mod
+
+    yield
+    datasets_mod._task_edits.clear()
+    datasets_mod._moving.clear()
+
+
+def test_set_episode_task_relabels_one_episode(tmp_lerobot_home: Path, fake_hub: MagicMock) -> None:
+    root = _record_dataset("alice/demo", episodes=3)
+    # Stands in for the videos, which the edit must link rather than copy.
+    (root / "videos").mkdir()
+    (root / "videos" / "clip.mp4").write_bytes(b"frames")
+    inode = (root / "videos" / "clip.mp4").stat().st_ino
+
+    status = _edit_tasks("alice/demo", ("  pick the bowl ", 1))
+
+    assert status["local_error"] is None
+    assert status["hub_updated"] is False
+    assert _episode_tasks("alice/demo") == ["task 0", "pick the bowl", "task 2"]
+    assert (root / "videos" / "clip.mp4").stat().st_ino == inode
+    assert not list((tmp_lerobot_home / "alice").glob(".demo.task-*"))
+
+
+def test_set_episode_task_relabels_every_episode(tmp_lerobot_home: Path, fake_hub: MagicMock) -> None:
+    _record_dataset("alice/demo", episodes=3)
+
+    _edit_tasks("alice/demo", ("pick the bowl", None))
+
+    assert _episode_tasks("alice/demo") == ["pick the bowl"] * 3
+
+
+def test_set_episode_task_returns_before_the_write(
+    tmp_lerobot_home: Path, fake_hub: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from lelab import datasets as datasets_mod
+
+    _record_dataset("alice/demo", episodes=2)
+    gate = threading.Event()
+    real_rewrite = datasets_mod._rewrite_tasks
+    monkeypatch.setattr(datasets_mod, "_rewrite_tasks", lambda *args: (gate.wait(30), real_rewrite(*args))[1])
+
+    result = datasets_mod.handle_set_episode_task("alice/demo", "pick the bowl", 0)
+
+    assert result["queued"] is True
+    assert datasets_mod.handle_episode_task_status("alice/demo") == {"success": True, "pending": True}
+    assert _episode_tasks("alice/demo") == ["task 0", "task 1"]
+    gate.set()
+    _edit_tasks("alice/demo")
+    assert _episode_tasks("alice/demo") == ["pick the bowl", "task 1"]
+
+
+def test_edits_queued_during_a_rewrite_are_merged_into_one_and_pushed_once(
+    tmp_lerobot_home: Path, fake_hub: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from lelab import datasets as datasets_mod
+
+    _record_dataset("alice/demo", episodes=4)
+    fake_hub.repo_exists.return_value = True
+    started, gate = threading.Event(), threading.Event()
+    calls = []
+    real_rewrite = datasets_mod._rewrite_tasks
+
+    def gated_rewrite(repo_id, source_dir, default_task, episode_tasks):
+        calls.append((default_task, dict(episode_tasks)))
+        started.set()
+        gate.wait(30)
+        real_rewrite(repo_id, source_dir, default_task, episode_tasks)
+
+    monkeypatch.setattr(datasets_mod, "_rewrite_tasks", gated_rewrite)
+
+    datasets_mod.handle_set_episode_task("alice/demo", "first", 0)
+    assert started.wait(30)
+    datasets_mod.handle_set_episode_task("alice/demo", "second", 1)
+    datasets_mod.handle_set_episode_task("alice/demo", "everything", None)
+    datasets_mod.handle_set_episode_task("alice/demo", "third", 2)
+    datasets_mod.handle_set_episode_task("alice/demo", "fourth", 2)
+    gate.set()
+    status = _edit_tasks("alice/demo")
+
+    # "everything" replaces the queued per-episode edits; later edits override it; latest wins.
+    assert calls == [(None, {0: "first"}), ("everything", {2: "fourth"})]
+    assert _episode_tasks("alice/demo") == ["everything", "everything", "fourth", "everything"]
+    assert status["hub_updated"] is True
+    fake_hub.upload_folder.assert_called_once()
+    kwargs = fake_hub.upload_folder.call_args.kwargs
+    assert kwargs["allow_patterns"] == ["meta/**", "data/**", "videos/**"]
+    assert kwargs["delete_patterns"] == ["meta/**", "data/**", "videos/**"]
+
+
+def test_set_episode_task_does_not_contact_the_hub_for_a_local_namespace(
+    tmp_lerobot_home: Path, fake_hub: MagicMock
+) -> None:
+    _record_dataset("local/demo", episodes=2)
+
+    status = _edit_tasks("local/demo", ("pick the bowl", None))
+
+    assert status["hub_updated"] is False
+    fake_hub.repo_exists.assert_not_called()
+    fake_hub.upload_folder.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("status_code", "reason"),
+    [(401, "not logged in"), (403, "no write access to alice/demo"), (500, "hub exploded")],
+)
+def test_set_episode_task_keeps_the_local_edit_when_the_hub_push_fails(
+    tmp_lerobot_home: Path, fake_hub: MagicMock, status_code: int, reason: str
+) -> None:
+    _record_dataset("alice/demo", episodes=2)
+    fake_hub.repo_exists.return_value = True
+    error = RuntimeError("hub exploded")
+    error.response = SimpleNamespace(status_code=status_code)
+    fake_hub.upload_folder.side_effect = error
+
+    status = _edit_tasks("alice/demo", ("pick the bowl", None))
+
+    assert status["hub_updated"] is False
+    assert reason in status["hub_error"]
+    assert status["local_error"] is None
+    assert _episode_tasks("alice/demo") == ["pick the bowl"] * 2
+
+
+@pytest.mark.parametrize(
+    ("task", "episode_index", "message"),
+    [(" ", 0, "cannot be empty"), ("pick", 3, "Episode 3 is not in alice/demo")],
+)
+def test_set_episode_task_rejects_invalid_request(
+    tmp_lerobot_home: Path, task: str, episode_index: int, message: str
+) -> None:
+    from lelab.datasets import handle_set_episode_task
+
+    _record_dataset("alice/demo", episodes=3)
+    with pytest.raises(ValueError, match=message):
+        handle_set_episode_task("alice/demo", task, episode_index)
+    assert _episode_tasks("alice/demo") == ["task 0", "task 1", "task 2"]
+
+
+def test_set_episode_task_reports_a_failed_write_and_leaves_the_source_untouched(
+    tmp_lerobot_home: Path, fake_hub: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    _record_dataset("alice/demo", episodes=2)
+    fake_hub.repo_exists.return_value = True
+    real_modify = datasets_mod.modify_tasks
+
+    def failing_modify(dataset, **kwargs):
+        real_modify(dataset, **kwargs)
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(datasets_mod, "modify_tasks", failing_modify)
+
+    status = _edit_tasks("alice/demo", ("pick the bowl", None))
+
+    assert status["local_error"] == "disk full"
+    assert status["hub_updated"] is False
+    fake_hub.upload_folder.assert_not_called()
+    assert _episode_tasks("alice/demo") == ["task 0", "task 1"]
+    assert not list((tmp_lerobot_home / "alice").glob(".demo.task-*"))
+
+
+def test_moves_and_task_edits_of_the_same_dataset_exclude_each_other(
+    tmp_lerobot_home: Path, fake_hub: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from lelab import datasets as datasets_mod
+
+    _record_dataset("alice/demo", episodes=3)
+    gate = threading.Event()
+    real_rewrite = datasets_mod._rewrite_tasks
+    monkeypatch.setattr(datasets_mod, "_rewrite_tasks", lambda *args: (gate.wait(30), real_rewrite(*args))[1])
+    datasets_mod.handle_set_episode_task("alice/demo", "pick the bowl", 0)
+
+    with pytest.raises(ValueError, match="being edited"):
+        datasets_mod.handle_move_episodes("alice/demo", [1], "rejected")
+    gate.set()
+    _edit_tasks("alice/demo")
+
+    # Mid-move, an edit of the same dataset is refused.
+    with datasets_mod._exclusive_rewrite("alice/demo"), pytest.raises(ValueError, match="being edited"):
+        datasets_mod.handle_set_episode_task("alice/demo", "x", 0)
+
+
+def test_episode_task_route_refuses_while_recording(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod, record
+
+    monkeypatch.setattr(record, "recording_active", True)
+    monkeypatch.setattr(
+        datasets_mod, "handle_set_episode_task", lambda *_: pytest.fail("must not edit while recording")
+    )
+
+    response = client.post("/datasets/episode-task", json={"repo_id": "alice/demo", "task": "pick"})
+    assert response.status_code == 409
+
+
+@pytest.mark.parametrize("body", [{"task": ""}, {"task": "pick", "episode_index": -1}])
+def test_episode_task_route_rejects_bad_request_before_editing(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, body: dict
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    monkeypatch.setattr(datasets_mod, "handle_set_episode_task", lambda *_: pytest.fail("must not edit"))
+    response = client.post("/datasets/episode-task", json={"repo_id": "alice/demo", **body})
+    assert response.status_code == 422
+
+
+def test_episode_task_route_maps_validation_error(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lelab import datasets as datasets_mod
+
+    monkeypatch.setattr(
+        datasets_mod, "handle_set_episode_task", lambda *_: (_ for _ in ()).throw(ValueError("bad input"))
+    )
+    response = client.post(
+        "/datasets/episode-task", json={"repo_id": "alice/demo", "task": "pick", "episode_index": 0}
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "bad input"
+
+
+# ── episode browsing ────────────────────────────────────────────────────────
+#
+# The handlers are covered end-to-end through the routes, so the query-param
+# contract and the 404 mapping for binary endpoints are checked too. The
+# dataset fixture builds a real v3.0 layout (see tests/test_episode_media.py).
+
+
+def test_list_episodes_unknown_dataset(client: TestClient, tmp_lerobot_home: Path) -> None:
+    r = client.get("/dataset-episodes", params={"repo_id": "nope/nope"})
+    assert r.status_code == 200
+    assert r.json()["success"] is False
+
+
+def test_list_episodes_returns_rows(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get("/dataset-episodes", params={"repo_id": browsable_dataset})
+    body = r.json()
+    assert body["success"] is True
+    assert body["fps"] == 10
+    # Same shape as a checkpoint's image_features, so cameras bind the same way.
+    assert body["image_features"] == {
+        "top": {"height": 24, "width": 32},
+        "wrist": {"height": 24, "width": 32},
+    }
+    assert [e["episode_index"] for e in body["episodes"]] == [0, 1, 2]
+
+
+def test_list_episodes_reports_failure_when_index_missing(
+    client: TestClient, tmp_lerobot_home: Path, browsable_dataset: str
+) -> None:
+    import shutil
+
+    shutil.rmtree(tmp_lerobot_home / browsable_dataset / "meta" / "episodes")
+    r = client.get("/dataset-episodes", params={"repo_id": browsable_dataset})
+    assert r.status_code == 200
+    assert r.json()["success"] is False
+
+
+def test_episode_detail_reports_neighbours(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get("/dataset-episode", params={"repo_id": browsable_dataset, "episode_index": 1})
+    body = r.json()
+    assert body["success"] is True
+    assert body["prev_episode"] == 0
+    assert body["next_episode"] == 2
+    assert {c["name"] for c in body["cameras"]} == {"top", "wrist"}
+
+
+def test_episode_detail_unknown_episode(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get("/dataset-episode", params={"repo_id": browsable_dataset, "episode_index": 99})
+    assert r.status_code == 200
+    assert r.json()["success"] is False
+
+
+def test_frame_route_returns_png(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get(
+        "/dataset-frame",
+        params={"repo_id": browsable_dataset, "episode_index": 0, "camera": "top", "frame_index": 2},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:4] == b"\x89PNG"
+
+
+def test_frame_route_404s_on_traversal(client: TestClient, tmp_lerobot_home: Path) -> None:
+    r = client.get("/dataset-frame", params={"repo_id": "../../etc", "episode_index": 0})
+    assert r.status_code == 404
+
+
+def test_frame_route_404s_on_unknown_episode(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get("/dataset-frame", params={"repo_id": browsable_dataset, "episode_index": 99})
+    assert r.status_code == 404
+
+
+def test_frame_route_404s_past_episode_end(client: TestClient, browsable_dataset: str) -> None:
+    """Episodes are packed back to back in one mp4, so an out-of-range frame
+    index decodes *cleanly* — into the next episode's footage. It must 404,
+    not quietly serve a neighbour's frame with a 200."""
+    # Episode 0 has 12 frames (0..11). Frame 14 would land on episode 1's
+    # footage; the huge and negative indices are the fuzzing cases.
+    for bad in (12, 14, 10_000_000, -1):
+        r = client.get(
+            "/dataset-frame",
+            params={
+                "repo_id": browsable_dataset,
+                "episode_index": 0,
+                "camera": "top",
+                "frame_index": bad,
+            },
+        )
+        assert r.status_code == 404, f"frame_index={bad} must 404, got {r.status_code}"
+
+    # The boundary itself still works: the last real frame decodes.
+    r = client.get(
+        "/dataset-frame",
+        params={"repo_id": browsable_dataset, "episode_index": 0, "camera": "top", "frame_index": 11},
+    )
+    assert r.status_code == 200
+    assert r.content[:4] == b"\x89PNG"
+
+
+def test_frame_route_404s_past_end_without_a_usable_length(
+    client: TestClient, browsable_dataset: str, tmp_lerobot_home: Path
+) -> None:
+    """A row with no usable ``length`` never reaches the route's length check;
+    the video window must still bound the decode."""
+    import pyarrow.parquet as pq
+
+    p = tmp_lerobot_home / browsable_dataset / "meta" / "episodes" / "chunk-000" / "file-000.parquet"
+    pq.write_table(pq.read_table(p).drop_columns(["length"]), p)
+
+    r = client.get(
+        "/dataset-frame",
+        params={"repo_id": browsable_dataset, "episode_index": 0, "camera": "top", "frame_index": 14},
+    )
+    assert r.status_code == 404
+    # In-window frames still decode.
+    r = client.get(
+        "/dataset-frame",
+        params={"repo_id": browsable_dataset, "episode_index": 0, "camera": "top", "frame_index": 2},
+    )
+    assert r.status_code == 200
+
+
+def test_frame_route_tolerates_nonpositive_max_width(client: TestClient, browsable_dataset: str) -> None:
+    for max_width in (0, -5):
+        r = client.get(
+            "/dataset-frame",
+            params={
+                "repo_id": browsable_dataset,
+                "episode_index": 0,
+                "camera": "top",
+                "frame_index": 0,
+                "max_width": max_width,
+            },
+        )
+        assert r.status_code == 200, f"max_width={max_width} must be a no-op, got {r.status_code}"
+
+
+def test_frame_route_404s_on_nul_byte_repo_id(client: TestClient) -> None:
+    r = client.get("/dataset-frame", params={"repo_id": "acme\x00etc", "episode_index": 0})
+    assert r.status_code == 404
+
+
+def test_video_route_is_inline_and_range_capable(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get(
+        "/dataset-video", params={"repo_id": browsable_dataset, "camera": "top", "chunk": 0, "file": 0}
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "video/mp4"
+    # "attachment" would make the browser download the file instead of playing it.
+    assert "inline" in r.headers["content-disposition"]
+    assert r.headers.get("accept-ranges") == "bytes"
+
+
+def test_video_route_serves_a_range(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get(
+        "/dataset-video",
+        params={"repo_id": browsable_dataset, "camera": "top", "chunk": 0, "file": 0},
+        headers={"Range": "bytes=0-31"},
+    )
+    assert r.status_code == 206
+    assert len(r.content) == 32
+
+
+def test_video_url_is_shared_by_episodes_in_one_file(client: TestClient, browsable_dataset: str) -> None:
+    """Every episode of this dataset lives in one mp4, so they must share a URL.
+
+    The video route is addressed by chunk/file precisely so the player can page
+    between episodes without the src changing — an episode-addressed URL would
+    hand the browser a new identifier for the same bytes, forcing a reload and
+    dropping playback on every switch.
+    """
+    detail = [
+        client.get("/dataset-episode", params={"repo_id": browsable_dataset, "episode_index": i}).json()
+        for i in (0, 1, 2)
+    ]
+    top = [next(c for c in d["cameras"] if c["name"] == "top") for d in detail]
+    assert {(c["chunk"], c["file_index"]) for c in top} == {(0, 0)}
+    # ...while each still reports its own window inside that shared file.
+    assert len({c["from_timestamp"] for c in top}) == 3
+
+
+def test_video_route_404s_on_unknown_camera(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get(
+        "/dataset-video", params={"repo_id": browsable_dataset, "camera": "nope", "chunk": 0, "file": 0}
+    )
+    assert r.status_code == 404
+
+
+def test_video_route_404s_on_missing_file(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get(
+        "/dataset-video", params={"repo_id": browsable_dataset, "camera": "top", "chunk": 9, "file": 9}
+    )
+    assert r.status_code == 404
+
+
+def test_thumbnails_span_the_whole_episode(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get(
+        "/dataset-thumbnails",
+        params={"repo_id": browsable_dataset, "episode_index": 0, "camera": "top", "count": 4},
+    )
+    body = r.json()
+    assert body["success"] is True
+    frames = [t["frame_index"] for t in body["thumbnails"]]
+    # Episode 0 is 12 frames: the strip must reach the last one, not stop short.
+    assert frames[0] == 0
+    assert frames[-1] == 11
+    assert all(t["data_uri"].startswith("data:image/png;base64,") for t in body["thumbnails"])
+
+
+def test_thumbnails_clamped_to_episode_length(client: TestClient, browsable_dataset: str) -> None:
+    # Episode 1 has 8 frames; asking for 50 must not invent any.
+    r = client.get(
+        "/dataset-thumbnails",
+        params={"repo_id": browsable_dataset, "episode_index": 1, "count": 50},
+    )
+    assert len(r.json()["thumbnails"]) <= 8
+
+
+def test_thumbnails_drop_a_bad_frame_without_relabelling(
+    client: TestClient, browsable_dataset: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A frame that fails to decode is omitted, not swapped under a wrong label.
+
+    End-to-end guard for the whole strip: on a corrupt recording, a tile must
+    never show one frame's image under another frame's number — clicking it
+    would seek the player to a position the picture never depicted.
+    """
+    import lelab.episode_media as em
+
+    real_decode = em._decode_at
+    calls = {"n": 0}
+
+    def flaky_decode(container, stream, target_s):
+        calls["n"] += 1
+        if calls["n"] == 2:  # drop the second requested frame
+            return None
+        return real_decode(container, stream, target_s)
+
+    monkeypatch.setattr(em, "_decode_at", flaky_decode)
+
+    r = client.get(
+        "/dataset-thumbnails",
+        params={"repo_id": browsable_dataset, "episode_index": 0, "camera": "top", "count": 4},
+    )
+    body = r.json()
+    assert body["success"] is True
+    frames = [t["frame_index"] for t in body["thumbnails"]]
+    # One tile missing, the rest keep their true indices and stay sorted — no
+    # later frame slides down into the dropped one's slot.
+    assert len(frames) == 3
+    assert frames == sorted(frames)
+    assert frames[-1] == 11  # last frame still labelled 11, not shifted
+
+
+def test_motion_route_returns_one_value_per_frame(client: TestClient, browsable_dataset: str) -> None:
+    r = client.get("/dataset-motion", params={"repo_id": browsable_dataset, "episode_index": 0})
+    body = r.json()
+    assert body["success"] is True
+    assert len(body["motion"]) == 12
+    assert body["motion"][0] == 0.0
+
+
+def test_motion_route_unknown_dataset(client: TestClient, tmp_lerobot_home: Path) -> None:
+    r = client.get("/dataset-motion", params={"repo_id": "nope/nope", "episode_index": 0})
+    assert r.json()["success"] is False
