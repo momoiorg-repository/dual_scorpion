@@ -27,11 +27,12 @@ from huggingface_hub import hf_hub_download
 from huggingface_hub.constants import CONFIG_NAME
 from huggingface_hub.errors import HfHubHTTPError
 
-from lerobot.configs.types import PolicyFeature
 from lerobot.optim.optimizers import OptimizerConfig
 from lerobot.optim.schedulers import LRSchedulerConfig
 from lerobot.utils.device_utils import auto_select_torch_device, is_torch_device_available
 from lerobot.utils.hub import HubMixin
+
+from .types import PolicyFeature
 
 T = TypeVar("T", bound="RewardModelConfig")
 logger = logging.getLogger(__name__)
@@ -55,6 +56,8 @@ class RewardModelConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
     device: str | None = None
 
     pretrained_path: str | None = None
+    # Optional Hub revision (commit hash, branch, or tag) to pin the pretrained reward model version.
+    pretrained_revision: str | None = None
 
     push_to_hub: bool = False
     repo_id: str | None = None
@@ -78,20 +81,20 @@ class RewardModelConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
         return choice_name
 
     @property
-    def observation_delta_indices(self) -> list | None:  # type: ignore[type-arg]
+    def observation_delta_indices(self) -> list[int] | None:
         return None
 
     @property
-    def action_delta_indices(self) -> list | None:  # type: ignore[type-arg]
+    def action_delta_indices(self) -> list[int] | None:
         return None
 
     @property
-    def reward_delta_indices(self) -> list | None:  # type: ignore[type-arg]
+    def reward_delta_indices(self) -> list[int] | None:
         return None
 
-    @abc.abstractmethod
-    def get_optimizer_preset(self) -> OptimizerConfig:
-        raise NotImplementedError
+    def get_optimizer_preset(self) -> OptimizerConfig | None:
+        """Default optimizer for this reward model, or ``None`` for zero-shot models."""
+        return None
 
     def get_scheduler_preset(self) -> LRSchedulerConfig | None:
         return None
@@ -100,8 +103,10 @@ class RewardModelConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
         pass
 
     def _save_pretrained(self, save_directory: Path) -> None:
-        with open(save_directory / CONFIG_NAME, "w") as f, draccus.config_type("json"):
-            draccus.dump(self, f, indent=4)
+        # Encode against the base class so draccus includes the choice "type" key,
+        # which `from_pretrained` needs to resolve the concrete subclass.
+        with open(save_directory / CONFIG_NAME, "w") as f:
+            json.dump(draccus.encode(self, RewardModelConfig), f, indent=4)
 
     @classmethod
     def from_pretrained(
@@ -132,8 +137,6 @@ class RewardModelConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
                     revision=revision,
                     cache_dir=cache_dir,
                     force_download=force_download,
-                    proxies=proxies,
-                    resume_download=resume_download,
                     token=token,
                     local_files_only=local_files_only,
                 )
@@ -160,4 +163,12 @@ class RewardModelConfig(draccus.ChoiceRegistry, HubMixin, abc.ABC):
 
         cli_overrides = reward_kwargs.pop("cli_overrides", [])
         with draccus.config_type("json"):
-            return draccus.parse(orig_config.__class__, config_file, args=cli_overrides)
+            config = draccus.parse(orig_config.__class__, config_file, args=cli_overrides)
+
+        # Same backfill as PreTrainedConfig.from_pretrained: config.json does not
+        # carry the source path, and direct callers (PreTrainedRewardModel,
+        # make_reward_model) branch on pretrained_path — e.g. RobometerRewardModel
+        # would take its "fresh model" branch instead of loading the checkpoint.
+        config.pretrained_path = model_id
+        config.pretrained_revision = revision
+        return config

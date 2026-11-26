@@ -43,3 +43,6 @@ class DualScorpionFollowerConfig(RobotConfig):
 
     # Set to `True` for backward compatibility with previous policies/dataset
     use_degrees: bool = True
+
+    # Non-interactive callers can require the saved calibration to match both buses.
+    require_calibrated: bool = False
