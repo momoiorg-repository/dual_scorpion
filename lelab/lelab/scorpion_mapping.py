@@ -156,7 +156,7 @@ def _to_visual_mapping(document: dict) -> dict | None:
             "sign": signs,
             "offset_deg": offsets,
             "gripper_closed_deg": float(limits.get("closed", 0.0)),
-            "gripper_open_deg": float(limits.get("open", 45.0)),
+            "gripper_open_deg": float(limits.get("open", -45.0)),
         }
     return out
 

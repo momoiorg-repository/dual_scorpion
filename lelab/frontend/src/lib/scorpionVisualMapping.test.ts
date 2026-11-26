@@ -17,8 +17,8 @@ describe("scorpionVisualMapping", () => {
     const joints = computeScorpionUrdfJoints(positions, DEFAULT_SCORPION_VISUAL_MAPPING);
     expect(joints.joint0_R).toBeCloseTo((-30 * Math.PI) / 180, 6);
     expect(joints.joint0_L).toBeCloseTo((15 * Math.PI) / 180, 6);
-    expect(joints.joint7_R).toBeCloseTo((22.5 * Math.PI) / 180, 6);
-    expect(joints.joint7_L).toBeCloseTo((45 * Math.PI) / 180, 6);
+    expect(joints.joint7_R).toBeCloseTo((-22.5 * Math.PI) / 180, 6);
+    expect(joints.joint7_L).toBeCloseTo((-45 * Math.PI) / 180, 6);
   });
 
   test("zeroArmToPositions sets offsets to current frame angles so output becomes 0 rad", () => {

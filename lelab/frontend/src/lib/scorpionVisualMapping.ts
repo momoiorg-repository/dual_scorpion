@@ -28,13 +28,13 @@ export const DEFAULT_SCORPION_VISUAL_MAPPING: ScorpionVisualMapping = {
     sign: [-1, 1, -1, 1, 1, -1, -1],
     offset_deg: [0, 0, 0, 0, 0, 0, 0],
     gripper_closed_deg: 0,
-    gripper_open_deg: 45,
+    gripper_open_deg: -45,
   },
   left: {
     sign: [1, -1, 1, -1, -1, 1, -1],
     offset_deg: [0, 0, 0, 0, 0, 0, 0],
     gripper_closed_deg: 0,
-    gripper_open_deg: 45,
+    gripper_open_deg: -45,
   },
 };
 

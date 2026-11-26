@@ -29,7 +29,10 @@ let mockPositions: Record<string, number> = {
   "right_joint6.pos": 0.0,
   "right_gripper.pos": 0,
 };
-const savedBodies: Array<{ joints?: Record<string, { expected_model_direction: number; motor_reference_deg: number }> }> = [];
+const savedBodies: Array<{
+  joints?: Record<string, { expected_model_direction: number; motor_reference_deg: number }>;
+  view_gripper_deg?: Record<string, { closed: number; open: number }>;
+}> = [];
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
@@ -164,12 +167,16 @@ test("ScorpionMappingWizardModal records whole-arm Pose 1 + Pose 2, allows Live 
   // Should transition straight to Live 確認 with all 7 right-arm joints verified
   expect(document.body.textContent).toContain("完了関節: 7 / 14");
 
-  // Flip joint0 direction in Live Mirror and re-zero joint0
+  // Flip joint0 direction and swap gripper open/closed in Live Mirror
   const flipBtn = [...document.body.querySelectorAll("button")].find((b) =>
     b.textContent?.includes("向き反転"),
   );
+  const swapGripperBtn = [...document.body.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("開閉入れ替え"),
+  );
   await act(async () => {
     flipBtn?.click();
+    swapGripperBtn?.click();
     await Promise.resolve();
   });
 
@@ -185,6 +192,7 @@ test("ScorpionMappingWizardModal records whole-arm Pose 1 + Pose 2, allows Live 
   expect(savedBodies).toHaveLength(1);
   expect(Object.keys(savedBodies[0].joints ?? {})).toHaveLength(7);
   expect(savedBodies[0].joints?.right_joint0?.expected_model_direction).toBe(-1);
+  expect(savedBodies[0].view_gripper_deg?.right).toEqual({ closed: -45, open: 0 });
   expect(onSaved).toHaveBeenCalledWith("follower-mapping.yaml");
 
   act(() => root.unmount());

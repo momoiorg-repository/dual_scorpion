@@ -76,12 +76,12 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
   const [animatePose, setAnimatePose] = useState(false);
   const [animPhase, setAnimPhase] = useState<"pose1" | "pose2">("pose2");
   const [countdown, setCountdown] = useState<{ target: "pose1" | "pose2"; left: number } | null>(null);
-  const [gripperPreview, setGripperPreview] = useState<"closed" | "open">("closed");
+  const [gripperPreview, setGripperPreview] = useState<"live" | "closed" | "open">("live");
 
   const [captures, setCaptures] = useState<Record<string, JointCapture>>({});
   const [gripperLimits, setGripperLimits] = useState<
-    Record<ArmSide, { closed?: number; open?: number }>
-  >({ right: {}, left: {} });
+    Record<ArmSide, { closed: number; open: number }>
+  >({ right: { closed: 0, open: -45 }, left: { closed: 0, open: -45 } });
 
   const connectedRef = useRef(false);
   connectedRef.current = connected;
@@ -344,7 +344,12 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
 
   const targetUrdfJoints = useMemo(() => {
     if (stage === "live") {
-      return computeScorpionUrdfJoints(positions, liveVisualMapping);
+      const live = computeScorpionUrdfJoints(positions, liveVisualMapping);
+      if (gripperPreview !== "live") {
+        const suffix = side === "right" ? "R" : "L";
+        live[`joint7_${suffix}`] = ((gripperPreview === "open" ? -45 : 0) * Math.PI) / 180;
+      }
+      return live;
     }
     const joints: Record<string, number> = {};
     for (const s of ["right", "left"] as const) {
@@ -362,12 +367,12 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
       }
       const gripDeg =
         s === side && stage === "pose2" && focusJoint === null && animPhase === "pose2"
-          ? 40
+          ? -45
           : 0;
       joints[`joint7_${suffix}`] = (gripDeg * Math.PI) / 180;
     }
     return joints;
-  }, [stage, side, focusJoint, focusDir, animPhase, positions, liveVisualMapping]);
+  }, [stage, side, focusJoint, focusDir, animPhase, positions, liveVisualMapping, gripperPreview]);
 
   const recordedFrame = useMemo(
     () => ({ joints: targetUrdfJoints, motor_positions: positions }),
@@ -805,36 +810,85 @@ export const ScorpionMappingWizardModal: React.FC<Props> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 pt-2">
-                  <span className="text-slate-300">
-                    {side}_gripper: {gripperPreview === "closed" ? "Closed" : "Open"}
+                  <span className="font-mono text-slate-300">
+                    {side}_gripper:{" "}
+                    {typeof positions[`${side}_gripper.pos`] === "number"
+                      ? `${positions[`${side}_gripper.pos`].toFixed(0)}%`
+                      : "—"}
+                    {" "}
+                    <span className="text-slate-400">
+                      ({gripperLimits[side].closed === 0 ? "0%=閉 / 100%=開" : "0%=開 / 100%=閉"})
+                    </span>
                   </span>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
+                      disabled={!connected || typeof positions[`${side}_gripper.pos`] !== "number"}
                       onClick={() => {
-                        setGripperPreview((p) => (p === "closed" ? "open" : "closed"));
+                        const pct = positions[`${side}_gripper.pos`];
+                        if (typeof pct !== "number") return;
+                        setGripperLimits((prev) => ({
+                          ...prev,
+                          [side]: pct < 50 ? { closed: 0, open: -45 } : { closed: -45, open: 0 },
+                        }));
+                        setGripperPreview("live");
                       }}
-                      className="h-7 border-slate-600 bg-slate-800 px-2 text-[11px] text-slate-200"
+                      className="h-7 border-slate-600 bg-slate-800 px-2 text-[11px] text-slate-200 hover:bg-slate-700"
                     >
-                      Gripper 確認
+                      実機は今「閉」
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!connected || typeof positions[`${side}_gripper.pos`] !== "number"}
+                      onClick={() => {
+                        const pct = positions[`${side}_gripper.pos`];
+                        if (typeof pct !== "number") return;
+                        setGripperLimits((prev) => ({
+                          ...prev,
+                          [side]: pct >= 50 ? { closed: 0, open: -45 } : { closed: -45, open: 0 },
+                        }));
+                        setGripperPreview("live");
+                      }}
+                      className="h-7 border-slate-600 bg-slate-800 px-2 text-[11px] text-slate-200 hover:bg-slate-700"
+                    >
+                      実機は今「開」
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       onClick={() => {
-                        const nextOpen = (gripperLimits[side].open ?? -45) > 0 ? -45 : 45;
                         setGripperLimits((prev) => ({
                           ...prev,
-                          [side]: { closed: 0, open: nextOpen },
+                          [side]: {
+                            closed: prev[side].open,
+                            open: prev[side].closed,
+                          },
                         }));
-                        setGripperPreview("open");
+                        setGripperPreview("live");
                       }}
-                      className="h-7 border-slate-600 bg-slate-800 px-2 text-[11px] text-slate-200"
+                      className="h-7 border-slate-600 bg-slate-800 px-2 text-[11px] text-sky-300 hover:bg-slate-700"
                     >
-                      開閉向き反転
+                      開閉入れ替え
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        setGripperPreview((p) =>
+                          p === "live" ? "open" : p === "open" ? "closed" : "live",
+                        )
+                      }
+                      className="h-7 border-slate-600 bg-slate-800 px-2 text-[11px] text-slate-300 hover:bg-slate-700"
+                    >
+                      {gripperPreview === "live"
+                        ? "開/閉プレビュー"
+                        : `プレビュー中:${gripperPreview === "open" ? "開" : "閉"}→Live`}
                     </Button>
                   </div>
                 </div>
