@@ -38,6 +38,7 @@ from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import AliasChoices, BaseModel, Field
 
+from .episode_media import lerobot_cache_root
 from .train import TrainingRequest
 
 logger = logging.getLogger(__name__)
@@ -730,8 +731,8 @@ class JobRegistry:
         Older lelab versions wrote job dirs to `<cwd>/outputs/train/`, which
         meant history disappeared when you launched from a different cwd. We
         now anchor to ~/.cache/.../outputs/train. On first boot under the new
-        layout, move any pre-existing cwd-relative job dirs over and rewrite
-        each job.json's `output_dir` field to the new absolute path.
+        layout, move completed LeLab jobs with valid records and rewrite their
+        output paths. Other training runs and checkpoints keep their paths.
 
         Idempotent: skipped if (a) the new root is the legacy one itself
         (LELAB_OUTPUT_ROOT=outputs/train still wins for tests), or (b) the
@@ -741,7 +742,17 @@ class JobRegistry:
         if legacy_root == self._output_root or not legacy_root.is_dir():
             return
 
-        legacy_dirs = [p for p in legacy_root.iterdir() if p.is_dir()]
+        legacy_dirs = []
+        for candidate in legacy_root.iterdir():
+            meta = candidate / "job.json"
+            if candidate.is_symlink() or not candidate.is_dir() or not meta.is_file() or meta.is_symlink():
+                continue
+            try:
+                record = JobRecord.model_validate(_read_job_meta(meta))
+            except (OSError, ValueError):
+                continue
+            if record.id == candidate.name and record.state != "running":
+                legacy_dirs.append(candidate)
         if not legacy_dirs:
             return
 
@@ -1318,8 +1329,7 @@ class JobRegistry:
 # from different cwds. JobRegistry.__init__ migrates legacy `<cwd>/outputs/train/`
 # job dirs into this root on first boot. LELAB_OUTPUT_ROOT overrides for tests.
 _DEFAULT_OUTPUT_ROOT = Path(
-    os.environ.get("LELAB_OUTPUT_ROOT")
-    or (Path.home() / ".cache" / "huggingface" / "lerobot" / "outputs" / "train")
+    os.environ.get("LELAB_OUTPUT_ROOT") or (lerobot_cache_root() / "outputs" / "train")
 ).expanduser()
 job_registry = JobRegistry(_DEFAULT_OUTPUT_ROOT)
 

@@ -274,6 +274,38 @@ def test_read_checkpoint_config_hub_tree(monkeypatch, tmp_path) -> None:
     assert seen["filename"] == "checkpoints/000050/pretrained_model/config.json"
 
 
+def test_migration_keeps_native_lerobot_checkpoints(tmp_path, monkeypatch) -> None:
+    from lelab.jobs import JobRecord, JobRegistry
+    from lelab.train import TrainingRequest
+
+    monkeypatch.chdir(tmp_path)
+    legacy = tmp_path / "outputs" / "train"
+    native = legacy / "act-run" / "checkpoints"
+    native.mkdir(parents=True)
+    weights = native / "model.safetensors"
+    weights.write_bytes(b"test checkpoint")
+
+    old_lelab = legacy / "old-lelab"
+    old_lelab.mkdir()
+    (old_lelab / "job.json").write_text(
+        JobRecord(
+            id=old_lelab.name,
+            name="Previously trained in LeLab",
+            state="done",
+            config=TrainingRequest(dataset_repo_id="local/example"),
+            output_dir=str(old_lelab / "run"),
+            started_at=1.0,
+        ).model_dump_json()
+    )
+    target = tmp_path / "lab-train"
+    registry = JobRegistry(target)
+    assert weights.read_bytes() == b"test checkpoint"
+    assert not (target / "act-run").exists()
+    assert (target / "old-lelab" / "job.json").is_file()
+    assert registry.get("old-lelab").output_dir == str(target / "old-lelab" / "run")
+    assert not old_lelab.exists()
+
+
 def test_register_imported_local_dir(tmp_path) -> None:
     from lelab.jobs import JobRegistry
 
