@@ -8,8 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from . import scorpion_view
 from .hardware import scorpion_follower
-from .scorpion_view import SCORPION_MODEL_DIR, supports_verified_view_mapping
 from .utils.config import is_valid_robot_name, save_robot_record
 
 logger = logging.getLogger(__name__)
@@ -163,16 +163,17 @@ def _to_visual_mapping(document: dict) -> dict | None:
 
 def save_mapping_from_wizard(request: MappingSaveRequest) -> dict:
     """Build and write a hardware mapping YAML from visual 3D alignment captures."""
-    if not supports_verified_view_mapping():
+    if not scorpion_view.supports_verified_view_mapping():
         return {"success": False, "message": "Mapping verification tools are not available on this branch."}
     if not request.joints:
         return {"success": False, "message": "Capture at least one joint before saving."}
 
-    from lerobot.robots import make_robot_from_config
     from telegrip.mocopi.dataset.hardware_dataset import (
         verify_joint_mapping_from_measurements,
         write_mapping,
     )
+
+    from lerobot.robots import make_robot_from_config
 
     cfg = scorpion_follower(
         request.follower_left_port,
@@ -196,7 +197,7 @@ def save_mapping_from_wizard(request: MappingSaveRequest) -> dict:
         }
         for joint_key, entry in request.joints.items()
     }
-    model_cfg = {"robot": {"mujoco_full_model": str(SCORPION_MODEL_DIR / "mujoco/scorpion.xml")}}
+    model_cfg = {"robot": {"mujoco_full_model": str(scorpion_view.SCORPION_MODEL_DIR / "mujoco/scorpion.xml")}}
     document, verification = verify_joint_mapping_from_measurements(
         {"joints": measurements_joints},
         robot,
@@ -221,7 +222,7 @@ def save_mapping_from_wizard(request: MappingSaveRequest) -> dict:
     if Path(raw_name).name != raw_name or Path(raw_name).suffix not in {".yaml", ".yml"}:
         return {"success": False, "message": "Invalid mapping filename."}
 
-    out_path = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware" / raw_name
+    out_path = scorpion_view.SCORPION_MAPPING_DIR / raw_name
     write_mapping(out_path, document, overwrite=True)
 
     if request.robot_name and is_valid_robot_name(request.robot_name):

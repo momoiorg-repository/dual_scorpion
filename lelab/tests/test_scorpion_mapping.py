@@ -1,11 +1,10 @@
 """Tests for the zero-CAD Scorpion visual mapping wizard backend."""
 
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
-from lelab import hardware, scorpion_mapping, scorpion_view
+from lelab import hardware, scorpion_view
 from lelab.utils import config as cfg
 
 
@@ -81,15 +80,13 @@ def test_mapping_session_connects_follower_disables_torque_and_reads(client, moc
 def test_save_mapping_from_wizard_creates_verified_yaml_and_links_robot(
     client, tmp_path, tmp_lerobot_home, mock_follower, monkeypatch
 ):
-    model_dir = tmp_path / "model"
+    model_dir = tmp_path / "dual_scorpion_Full_urdf" / "default"
+    mapping_dir = tmp_path / "config" / "mocopi" / "hardware"
     (model_dir / "mujoco").mkdir(parents=True)
     xml_copy = model_dir / "mujoco" / "scorpion.xml"
     xml_copy.write_text((scorpion_view.SCORPION_MODEL_DIR / "mujoco" / "scorpion.xml").read_text())
-    (model_dir.parent / "telegrip_teleoperation/telegrip/mocopi/dataset").mkdir(parents=True)
-    (model_dir.parent / "telegrip_teleoperation/telegrip/mocopi/dataset/hardware_dataset.py").write_text("")
-    monkeypatch.setattr(scorpion_mapping, "SCORPION_MODEL_DIR", model_dir)
     monkeypatch.setattr(scorpion_view, "SCORPION_MODEL_DIR", model_dir)
-    monkeypatch.setattr(scorpion_mapping, "supports_verified_view_mapping", lambda: True)
+    monkeypatch.setattr(scorpion_view, "SCORPION_MAPPING_DIR", mapping_dir)
     monkeypatch.setattr(scorpion_view, "supports_verified_view_mapping", lambda: True)
 
     cfg.save_robot_record(
@@ -134,8 +131,9 @@ def test_save_mapping_from_wizard_creates_verified_yaml_and_links_robot(
     assert res["verification_status"] == "physically_verified"
     assert res["filename"] == "follower-mapping.yaml"
 
-    saved_yaml = Path(model_dir.parent / "config" / "mocopi" / "hardware" / "follower-mapping.yaml")
+    saved_yaml = mapping_dir / "follower-mapping.yaml"
     assert saved_yaml.is_file()
+    assert not (model_dir.parent / "config").exists()
 
     record = cfg.get_robot_record("scorp1")
     assert record["view_mapping"] == "follower-mapping.yaml"
