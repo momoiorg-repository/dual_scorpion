@@ -1,0 +1,2566 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="scorpion_wrist_cameras">
+  <!--Dual Scorpion camera configuration. The original 16 actuatable joints, joint7 servos and moving r_link_8/l_link_8 are retained.-->
+  <!--Mount from the repaired SO-101 integrated STEP, aligned to the original wrists by measured CAD surfaces.-->
+  <!--InnoMaker U20CAM-1080P-S1 camera envelopes use a 32 mm square PCB, M12 lens and the mount's 27 mm hole pitch. See README.md.-->
+  <!--CAD inertias; provisional effort and speed; angular limits uncalibrated.-->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.00117771623477 -0.00146029484333 0.130378077239" rpy="0 0 0" />
+      <mass value="11.0637891353" />
+      <inertia ixx="0.401527599786" iyy="0.436504415911" izz="0.0566803348046" ixy="-3.39122367397e-06" ixz="0.00151470708523" iyz="-0.000370593185649" />
+    </inertial>
+    <visual name="base_link_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/base_link.stl" />
+      </geometry>
+      <material name="base_link_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="base_link_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/Joint0_mount_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_26">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_27">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_28">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_29">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_30">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_31">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_32">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_33">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_34">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_35">
+      <geometry>
+        <mesh filename="../../meshes/collision/base_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_36">
+      <geometry>
+        <mesh filename="../../meshes/collision/body_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_37">
+      <geometry>
+        <mesh filename="../../meshes/collision/body_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_38">
+      <geometry>
+        <mesh filename="../../meshes/collision/body_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_39">
+      <geometry>
+        <mesh filename="../../meshes/collision/body_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_40">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_41">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_42">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_43">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_44">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_45">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_46">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_47">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_48">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_49">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_50">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_51">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_52">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_53">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_54">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_55">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_56">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_57">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_58">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_59">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_60">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_61">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_62">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_63">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_64">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="base_link_collision_65">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_motor_mount_R_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_1">
+    <inertial>
+      <origin xyz="0.00660014057392 5.22775273055e-05 -0.0391968843532" rpy="0 0 0" />
+      <mass value="0.309338798141" />
+      <inertia ixx="7.55702197495e-05" iyy="0.000127028755395" izz="8.49552278876e-05" ixy="-1.04023392429e-07" ixz="-1.20847613186e-05" iyz="-6.12417662849e-08" />
+    </inertial>
+    <visual name="r_link_1_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_1.stl" />
+      </geometry>
+      <material name="r_link_1_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_1_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_horn_opposite_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_1_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_2">
+    <inertial>
+      <origin xyz="0.000262124831934 -0.00357815821928 -0.0426370877555" rpy="0 0 0" />
+      <mass value="0.318442421543" />
+      <inertia ixx="0.00010913955038" iyy="0.00012361585783" izz="5.49633861528e-05" ixy="8.21601829493e-08" ixz="-2.29783129229e-07" iyz="-5.36142350589e-07" />
+    </inertial>
+    <visual name="r_link_2_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_2.stl" />
+      </geometry>
+      <material name="r_link_2_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_2_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_2_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_R_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_3">
+    <inertial>
+      <origin xyz="-0.0160452302436 -0.00314108243969 -0.0986573124988" rpy="0 0 0" />
+      <mass value="0.401806654917" />
+      <inertia ixx="0.00061244069169" iyy="0.000659037251243" izz="9.38322977344e-05" ixy="2.31065467208e-07" ixz="5.68730775233e-06" iyz="-2.74670072813e-05" />
+    </inertial>
+    <visual name="r_link_3_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_3.stl" />
+      </geometry>
+      <material name="r_link_3_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_3_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_horn_opposite_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_3_collision_26">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_R_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_4">
+    <inertial>
+      <origin xyz="0.00609483584225 0.0391378465432 -8.89000310186e-07" rpy="0 0 0" />
+      <mass value="0.309338866623" />
+      <inertia ixx="7.57890197837e-05" iyy="8.47482893224e-05" izz="0.000127037689027" ixy="1.24180884341e-05" ixz="3.48340211846e-07" iyz="-4.60621500209e-08" />
+    </inertial>
+    <visual name="r_link_4_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_4.stl" />
+      </geometry>
+      <material name="r_link_4_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_4_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_horn_opposite_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_4_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_5">
+    <inertial>
+      <origin xyz="0.000187294095178 0.0436485282233 -0.00320765516773" rpy="0 0 0" />
+      <mass value="0.318442529429" />
+      <inertia ixx="0.00011278849056" iyy="5.50493861126e-05" izz="0.000127196222533" ixy="7.65142675497e-07" ixz="3.78186644029e-07" iyz="-1.93984213617e-07" />
+    </inertial>
+    <visual name="r_link_5_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_5.stl" />
+      </geometry>
+      <material name="r_link_5_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_5_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_5_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_R_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_6">
+    <inertial>
+      <origin xyz="-0.00870604118767 0.0389798784941 0.000194386297131" rpy="0 0 0" />
+      <mass value="0.309338779172" />
+      <inertia ixx="7.59667413123e-05" iyy="8.40119023969e-05" izz="0.000126470292137" ixy="-1.16799358316e-05" ixz="4.72758940438e-07" iyz="3.08702350097e-08" />
+    </inertial>
+    <visual name="r_link_6_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_6.stl" />
+      </geometry>
+      <material name="r_link_6_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_6_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_horn_opposite_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_R_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_6_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_7">
+    <inertial>
+      <origin xyz="0.00243158665829 0.0246323868811 0.00156922158487" rpy="0 0 0" />
+      <mass value="0.344354948073" />
+      <inertia ixx="0.000119597162821" iyy="0.000142948223739" izz="0.00014591547141" ixy="1.44795881864e-05" ixz="7.43155664257e-07" iyz="1.32319800036e-05" />
+    </inertial>
+    <visual name="r_integrated_camera_mount">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_integrated_camera_mount.stl" />
+      </geometry>
+      <material name="r_integrated_camera_mount_material">
+        <color rgba="0.74 0.76 0.79 1" />
+      </material>
+    </visual>
+    <visual name="r_wrist_roll_horn">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_wrist_roll_horn.stl" />
+      </geometry>
+      <material name="r_wrist_roll_horn_material">
+        <color rgba="0.33 0.36 0.40 1" />
+      </material>
+    </visual>
+    <visual name="r_gripper_motor_case">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_gripper_motor_case.stl" />
+      </geometry>
+      <material name="r_gripper_motor_case_material">
+        <color rgba="0.20 0.22 0.24 1" />
+      </material>
+    </visual>
+    <collision name="r_link_7_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_7_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint7_motor_case_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_01">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_01.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_02">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_02.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_03">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_03.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_04">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_04.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_05">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_05.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_06">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_06.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_07">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_07.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_08">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_08.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_09">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_09.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_10">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_11">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_12">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_12.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_13">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_13.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_14">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_14.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_15">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_15.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_16">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_16.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_17">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_17.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_18">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_18.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_19">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_19.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_mount_convex_20">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/r_mount_collision_20.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_link_8">
+    <inertial>
+      <origin xyz="-0.00128000498891 0.0213696619129 -0.0182334523572" rpy="0 0 0" />
+      <mass value="0.0360479390996" />
+      <inertia ixx="2.42117815295e-05" iyy="7.46620713165e-06" izz="1.84601333631e-05" ixy="1.03970348548e-06" ixz="-8.93557790173e-08" iyz="7.43165176776e-07" />
+    </inertial>
+    <visual name="r_link_8_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/r_link_8.stl" />
+      </geometry>
+      <material name="r_link_8_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="r_link_8_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint7_horn_drive_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint7_horn_opposite_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="r_link_8_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_R_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_1">
+    <inertial>
+      <origin xyz="-0.00660012821099 5.22782078872e-05 -0.0391968800027" rpy="0 0 0" />
+      <mass value="0.309338878502" />
+      <inertia ixx="7.55702532984e-05" iyy="0.000127028831228" izz="8.49552824696e-05" ixy="1.04013951343e-07" ixz="1.20846422614e-05" iyz="-6.12436388076e-08" />
+    </inertial>
+    <visual name="l_link_1_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_1.stl" />
+      </geometry>
+      <material name="l_link_1_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_1_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint0_horn_opposite_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_1_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_2">
+    <inertial>
+      <origin xyz="-0.000262125312398 -0.00357815752065 -0.0426370876369" rpy="0 0 0" />
+      <mass value="0.3184423944" />
+      <inertia ixx="0.00010913954298" iyy="0.000123615842759" izz="5.49633730227e-05" ixy="-8.21645190238e-08" ixz="2.29789507231e-07" iyz="-5.36143825971e-07" />
+    </inertial>
+    <visual name="l_link_2_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_2.stl" />
+      </geometry>
+      <material name="l_link_2_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_2_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint1_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_holder_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_2_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_new_L_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_3">
+    <inertial>
+      <origin xyz="0.016045226142 -0.00314108342507 -0.0986573269758" rpy="0 0 0" />
+      <mass value="0.40180657075" />
+      <inertia ixx="0.000612440047598" iyy="0.000659036545" izz="9.38322278165e-05" ixy="-2.31063094551e-07" ixz="-5.68712160022e-06" iyz="-2.74669875434e-05" />
+    </inertial>
+    <visual name="l_link_3_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_3.stl" />
+      </geometry>
+      <material name="l_link_3_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_3_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint2_horn_opposite_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_holder_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_3_collision_26">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_under_arm_L_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_4">
+    <inertial>
+      <origin xyz="-0.00609482794162 0.0391378503575 -8.88814833636e-07" rpy="0 0 0" />
+      <mass value="0.30933887239" />
+      <inertia ixx="7.57889530711e-05" iyy="8.47483387149e-05" izz="0.000127037650964" ixy="-1.24180242031e-05" ixz="-3.48330985188e-07" iyz="-4.60678930478e-08" />
+    </inertial>
+    <visual name="l_link_4_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_4.stl" />
+      </geometry>
+      <material name="l_link_4_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_4_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint3_horn_opposite_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_4_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_5">
+    <inertial>
+      <origin xyz="-0.00018729410637 0.0436486036633 -0.00320765444157" rpy="0 0 0" />
+      <mass value="0.318442498231" />
+      <inertia ixx="0.000112786739343" iyy="5.50493725418e-05" izz="0.000127194463954" ixy="-7.64654042061e-07" ixz="-3.78190191368e-07" iyz="-1.93577274905e-07" />
+    </inertial>
+    <visual name="l_link_5_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_5.stl" />
+      </geometry>
+      <material name="l_link_5_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_5_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint4_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_holder_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_15">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_16">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_17">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_18">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_19">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_20">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_21">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_22">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_23">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_24">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_5_collision_25">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_new_L_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_6">
+    <inertial>
+      <origin xyz="0.00870603036812 0.0389798802711 0.000194385202946" rpy="0 0 0" />
+      <mass value="0.30933880955" />
+      <inertia ixx="7.59666796647e-05" iyy="8.40119126134e-05" izz="0.000126470231034" ixy="1.16798464679e-05" ixz="-4.72765501932e-07" iyz="3.08680085936e-08" />
+    </inertial>
+    <visual name="l_link_6_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_6.stl" />
+      </geometry>
+      <material name="l_link_6_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_6_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint5_horn_opposite_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_L_9.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_6_collision_14">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_7">
+    <inertial>
+      <origin xyz="-0.00243158654985 0.0246323871569 0.00156922196291" rpy="0 0 0" />
+      <mass value="0.344354940872" />
+      <inertia ixx="0.000119597162527" iyy="0.000142948223346" izz="0.000145915470179" ixy="-1.44795898723e-05" ixz="-7.43155684716e-07" iyz="1.32319811668e-05" />
+    </inertial>
+    <visual name="l_integrated_camera_mount">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_integrated_camera_mount.stl" />
+      </geometry>
+      <material name="l_integrated_camera_mount_material">
+        <color rgba="0.74 0.76 0.79 1" />
+      </material>
+    </visual>
+    <visual name="l_wrist_roll_horn">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_wrist_roll_horn.stl" />
+      </geometry>
+      <material name="l_wrist_roll_horn_material">
+        <color rgba="0.33 0.36 0.40 1" />
+      </material>
+    </visual>
+    <visual name="l_gripper_motor_case">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_gripper_motor_case.stl" />
+      </geometry>
+      <material name="l_gripper_motor_case_material">
+        <color rgba="0.20 0.22 0.24 1" />
+      </material>
+    </visual>
+    <collision name="l_link_7_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint6_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_7_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint7_motor_case_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_01">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_01.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_02">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_02.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_03">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_03.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_04">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_04.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_05">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_05.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_06">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_06.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_07">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_07.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_08">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_08.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_09">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_09.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_10">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_11">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_12">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_12.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_13">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_13.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_14">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_14.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_15">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_15.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_16">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_16.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_17">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_17.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_18">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_18.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_19">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_19.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_mount_convex_20">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/l_mount_collision_20.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_link_8">
+    <inertial>
+      <origin xyz="0.00128000495986 0.0213696612456 -0.0182334523841" rpy="0 0 0" />
+      <mass value="0.0360479400407" />
+      <inertia ixx="2.4211782664e-05" iyy="7.46620766937e-06" izz="1.84601340095e-05" ixy="-1.03970351227e-06" ixz="8.93557824948e-08" iyz="7.43165151689e-07" />
+    </inertial>
+    <visual name="l_link_8_visual">
+      <geometry>
+        <mesh filename="../../meshes/visual/l_link_8.stl" />
+      </geometry>
+      <material name="l_link_8_material">
+        <color rgba="0.65 0.67 0.70 1" />
+      </material>
+    </visual>
+    <collision name="l_link_8_collision_0">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint7_horn_drive_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_1">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint7_horn_opposite_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_2">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_0.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_3">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_1.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_4">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_10.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_5">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_11.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_6">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_2.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_7">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_3.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_8">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_4.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_9">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_5.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_10">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_6.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_11">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_7.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_12">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_8.obj" />
+      </geometry>
+    </collision>
+    <collision name="l_link_8_collision_13">
+      <geometry>
+        <mesh filename="../../meshes/collision/joint8_EE_L_9.obj" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint0_R" type="continuous">
+    <parent link="base_link" />
+    <child link="r_link_1" />
+    <origin xyz="0.164907854944 -0.00154764693297 0.371312491593" rpy="0 0 0" />
+    <axis xyz="-0.999961923064 1.32169450199e-16 0.00872653549836" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint1_R" type="continuous">
+    <parent link="r_link_1" />
+    <child link="r_link_2" />
+    <origin xyz="0.0175416891267 -3.82723366887e-16 -0.0604053785623" rpy="0 0 0" />
+    <axis xyz="-0.00872653549848 -2.27963866515e-16 -0.999961923064" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint2_R" type="continuous">
+    <parent link="r_link_2" />
+    <child link="r_link_3" />
+    <origin xyz="0.018019016586 -0.00332929363692 -0.0603866239508" rpy="0 0 0" />
+    <axis xyz="0.999961923064 -2.27963866515e-16 0.00872653549838" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint3_R" type="continuous">
+    <parent link="r_link_3" />
+    <child link="r_link_4" />
+    <origin xyz="-0.0335762958668 -0.00473944550447 -0.133767856817" rpy="0 0 0" />
+    <axis xyz="-0.999961923064 5.28677800797e-16 0.00872653549837" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint4_R" type="continuous">
+    <parent link="r_link_4" />
+    <child link="r_link_5" />
+    <origin xyz="0.0172174952589 0.0602500003377 -0.000150254804814" rpy="0 0 0" />
+    <axis xyz="-1.18423827378e-13 1 0" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint5_R" type="continuous">
+    <parent link="r_link_5" />
+    <child link="r_link_6" />
+    <origin xyz="0.0177890203159 0.0618092195625 -0.00318024472957" rpy="0 0 0" />
+    <axis xyz="0.999847415341 -1.73656827615e-05 -0.0174684210575" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint6_R" type="continuous">
+    <parent link="r_link_6" />
+    <child link="r_link_7" />
+    <origin xyz="-0.0202613633435 0.0598843310444 0.000354315954453" rpy="0 0 0" />
+    <axis xyz="-0.0174150226804 0.999848300699 0.000304259384805" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint7_R" type="continuous">
+    <parent link="r_link_7" />
+    <child link="r_link_8" />
+    <origin xyz="0.0200040965265 0.0246920967323 0.0177558949056" rpy="0 0 0" />
+    <axis xyz="0.00872653549838 0 0.999961923064" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint0_L" type="continuous">
+    <parent link="base_link" />
+    <child link="l_link_1" />
+    <origin xyz="-0.164907854944 -0.00154764693297 0.371312491593" rpy="0 0 0" />
+    <axis xyz="-0.999961923064 -1.13981933258e-16 -0.00872653549838" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint1_L" type="continuous">
+    <parent link="l_link_1" />
+    <child link="l_link_2" />
+    <origin xyz="-0.0175416891267 -3.82506526453e-16 -0.0604053785623" rpy="0 0 0" />
+    <axis xyz="-0.00872653549848 1.32169450199e-16 0.999961923064" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint2_L" type="continuous">
+    <parent link="l_link_2" />
+    <child link="l_link_3" />
+    <origin xyz="-0.018019016586 -0.00332929363692 -0.0603866239508" rpy="0 0 0" />
+    <axis xyz="0.999961923064 2.64338900398e-16 -0.00872653549838" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint3_L" type="continuous">
+    <parent link="l_link_3" />
+    <child link="l_link_4" />
+    <origin xyz="0.0335762958668 -0.00473944550447 -0.133767856817" rpy="0 0 0" />
+    <axis xyz="-0.999961923064 -4.55927733031e-16 -0.00872653549837" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint4_L" type="continuous">
+    <parent link="l_link_4" />
+    <child link="l_link_5" />
+    <origin xyz="-0.0172174952589 0.0602500003377 -0.000150254804814" rpy="0 0 0" />
+    <axis xyz="-1.18423827378e-13 -1 0" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint5_L" type="continuous">
+    <parent link="l_link_5" />
+    <child link="l_link_6" />
+    <origin xyz="-0.0177890203159 0.0618092195625 -0.00318024472957" rpy="0 0 0" />
+    <axis xyz="0.999847415341 1.73656827661e-05 0.0174684210575" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint6_L" type="continuous">
+    <parent link="l_link_6" />
+    <child link="l_link_7" />
+    <origin xyz="0.0202613633435 0.0598843310444 0.000354315954453" rpy="0 0 0" />
+    <axis xyz="-0.0174150226804 -0.999848300699 -0.000304259384801" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <joint name="joint7_L" type="continuous">
+    <parent link="l_link_7" />
+    <child link="l_link_8" />
+    <origin xyz="-0.0200040965265 0.0246920967323 0.0177558949056" rpy="0 0 0" />
+    <axis xyz="0.00872653549838 0 -0.999961923064" />
+    <limit effort="1" velocity="2" />
+    <dynamics damping="0.05" friction="0" />
+  </joint>
+  <link name="r_wrist_camera_link">
+    <inertial>
+      <origin xyz="0.00664525452771 0 -9.14149996216e-05" rpy="0 0 0" />
+      <mass value="0.0108514191446" />
+      <inertia ixx="7.4089642253e-07" iyy="9.00061557673e-07" izz="9.08886976824e-07" ixy="-1.81068483739e-23" ixz="-9.66712172536e-09" iyz="-5.37868684902e-24" />
+    </inertial>
+    <visual name="r_innomaker_u20cam_1080p_board">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_board.stl" />
+      </geometry>
+      <material name="r_innomaker_u20cam_1080p_board_material">
+        <color rgba="0.075 0.105 0.12 1" />
+      </material>
+    </visual>
+    <visual name="r_innomaker_u20cam_1080p_connector">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_connector.stl" />
+      </geometry>
+      <material name="r_innomaker_u20cam_1080p_connector_material">
+        <color rgba="0.78 0.79 0.77 1" />
+      </material>
+    </visual>
+    <visual name="r_innomaker_u20cam_1080p_housing">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_housing.stl" />
+      </geometry>
+      <material name="r_innomaker_u20cam_1080p_housing_material">
+        <color rgba="0.10 0.11 0.12 1" />
+      </material>
+    </visual>
+    <visual name="r_innomaker_u20cam_1080p_lens">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_lens.stl" />
+      </geometry>
+      <material name="r_innomaker_u20cam_1080p_lens_material">
+        <color rgba="0.025 0.085 0.115 1" />
+      </material>
+    </visual>
+    <collision name="r_wrist_camera_pcb">
+      <origin xyz="-0.0008 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0016 0.032 0.032" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_camera_usb_connector">
+      <origin xyz="-0.0031 0 -0.012" rpy="0 0 0" />
+      <geometry>
+        <box size="0.003 0.0064 0.0036" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_camera_lens_seat">
+      <origin xyz="0.0026 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0052 0.014 0.014" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_camera_lens_seat_ears">
+      <origin xyz="0.00195 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0039 0.0205 0.005" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_camera_lens_thread">
+      <origin xyz="0.0087 0 0" rpy="0 1.57079632679 0" />
+      <geometry>
+        <cylinder radius="0.006" length="0.007" />
+      </geometry>
+    </collision>
+    <collision name="r_wrist_camera_lens_barrel">
+      <origin xyz="0.016 0 0" rpy="0 1.57079632679 0" />
+      <geometry>
+        <cylinder radius="0.0078" length="0.0072" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_wrist_camera_optical_frame" />
+  <joint name="r_wrist_camera_mount" type="fixed">
+    <parent link="r_link_7" />
+    <child link="r_wrist_camera_link" />
+    <origin xyz="0.00376608694391 -0.00660913964935 0.0737597671839" rpy="0.019324962628 0.443727003833 1.57909354026" />
+  </joint>
+  <joint name="r_wrist_camera_optical_joint" type="fixed">
+    <parent link="r_wrist_camera_link" />
+    <child link="r_wrist_camera_optical_frame" />
+    <origin xyz="0.0195 0 0" rpy="-1.57079632679 0 -1.57079632679" />
+  </joint>
+  <gazebo reference="r_wrist_camera_link">
+    <sensor name="r_wrist_camera" type="camera">
+      <pose>0.0195 0 0 0 0 0</pose>
+      <always_on>true</always_on>
+      <update_rate>30</update_rate>
+      <topic>/scorpion/r_wrist_camera/image</topic>
+      <camera>
+        <optical_frame_id>r_wrist_camera_optical_frame</optical_frame_id>
+        <horizontal_fov>1.85004900711</horizontal_fov>
+        <image>
+          <width>1920</width>
+          <height>1080</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.01</near>
+          <far>10</far>
+        </clip>
+      </camera>
+    </sensor>
+  </gazebo>
+  <link name="l_wrist_camera_link">
+    <inertial>
+      <origin xyz="0.00664525452771 0 -9.14149996216e-05" rpy="0 0 0" />
+      <mass value="0.0108514191446" />
+      <inertia ixx="7.4089642253e-07" iyy="9.00061557673e-07" izz="9.08886976824e-07" ixy="-1.81068483739e-23" ixz="-9.66712172536e-09" iyz="-5.37868684902e-24" />
+    </inertial>
+    <visual name="l_innomaker_u20cam_1080p_board">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_board.stl" />
+      </geometry>
+      <material name="l_innomaker_u20cam_1080p_board_material">
+        <color rgba="0.075 0.105 0.12 1" />
+      </material>
+    </visual>
+    <visual name="l_innomaker_u20cam_1080p_connector">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_connector.stl" />
+      </geometry>
+      <material name="l_innomaker_u20cam_1080p_connector_material">
+        <color rgba="0.78 0.79 0.77 1" />
+      </material>
+    </visual>
+    <visual name="l_innomaker_u20cam_1080p_housing">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_housing.stl" />
+      </geometry>
+      <material name="l_innomaker_u20cam_1080p_housing_material">
+        <color rgba="0.10 0.11 0.12 1" />
+      </material>
+    </visual>
+    <visual name="l_innomaker_u20cam_1080p_lens">
+      <geometry>
+        <mesh filename="../../meshes/wrist_cameras/innomaker_u20cam_1080p_lens.stl" />
+      </geometry>
+      <material name="l_innomaker_u20cam_1080p_lens_material">
+        <color rgba="0.025 0.085 0.115 1" />
+      </material>
+    </visual>
+    <collision name="l_wrist_camera_pcb">
+      <origin xyz="-0.0008 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0016 0.032 0.032" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_camera_usb_connector">
+      <origin xyz="-0.0031 0 -0.012" rpy="0 0 0" />
+      <geometry>
+        <box size="0.003 0.0064 0.0036" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_camera_lens_seat">
+      <origin xyz="0.0026 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0052 0.014 0.014" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_camera_lens_seat_ears">
+      <origin xyz="0.00195 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.0039 0.0205 0.005" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_camera_lens_thread">
+      <origin xyz="0.0087 0 0" rpy="0 1.57079632679 0" />
+      <geometry>
+        <cylinder radius="0.006" length="0.007" />
+      </geometry>
+    </collision>
+    <collision name="l_wrist_camera_lens_barrel">
+      <origin xyz="0.016 0 0" rpy="0 1.57079632679 0" />
+      <geometry>
+        <cylinder radius="0.0078" length="0.0072" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_wrist_camera_optical_frame" />
+  <joint name="l_wrist_camera_mount" type="fixed">
+    <parent link="l_link_7" />
+    <child link="l_wrist_camera_link" />
+    <origin xyz="-0.00376608694391 -0.00660913964935 0.0737597671839" rpy="-0.019324962628 0.443727003833 1.56249911333" />
+  </joint>
+  <joint name="l_wrist_camera_optical_joint" type="fixed">
+    <parent link="l_wrist_camera_link" />
+    <child link="l_wrist_camera_optical_frame" />
+    <origin xyz="0.0195 0 0" rpy="-1.57079632679 0 -1.57079632679" />
+  </joint>
+  <gazebo reference="l_wrist_camera_link">
+    <sensor name="l_wrist_camera" type="camera">
+      <pose>0.0195 0 0 0 0 0</pose>
+      <always_on>true</always_on>
+      <update_rate>30</update_rate>
+      <topic>/scorpion/l_wrist_camera/image</topic>
+      <camera>
+        <optical_frame_id>l_wrist_camera_optical_frame</optical_frame_id>
+        <horizontal_fov>1.85004900711</horizontal_fov>
+        <image>
+          <width>1920</width>
+          <height>1080</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.01</near>
+          <far>10</far>
+        </clip>
+      </camera>
+    </sensor>
+  </gazebo>
+</robot>
