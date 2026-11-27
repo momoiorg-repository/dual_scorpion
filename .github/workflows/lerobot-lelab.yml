@@ -74,7 +74,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Fetch browser meshes
-        run: git lfs pull --include="dual_scorpion_Full_urdf/urdf/meshes/visual/*.stl"
+        run: git lfs pull --include="dual_scorpion_Full_urdf/default/urdf/meshes/visual/*.stl"
       - name: Install system libraries
         run: |
           sudo apt-get update
