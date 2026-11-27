@@ -18,7 +18,7 @@ package:
 
 ```sh
 mkdir -p ~/scorpion_ws/src
-cp -R <path-to-repository>/dual_scorpion_Full_urdf/urdf \
+cp -R <path-to-repository>/dual_scorpion_Full_urdf/default/urdf \
   ~/scorpion_ws/src/scorpion_description
 cd ~/scorpion_ws
 source /opt/ros/<distribution>/setup.bash

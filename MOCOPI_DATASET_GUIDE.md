@@ -351,7 +351,7 @@ IK失敗、手の目標が制限されたフレーム数が入ります。
 位置誤差が大きい場合は、再生をゆっくりにして計画し直せます。例えば `--slowdown 3` は
 各記録フレームを3更新保持し、再生時間を3倍にします。出力ファイルは新しい名前にしてください。
 
-既定は `dual_scorpion_Full_urdf/mujoco/scorpion.xml` を使い、左はCADの `L`、右は `R` です。
+既定は `dual_scorpion_Full_urdf/default/mujoco/scorpion.xml` を使い、左はCADの `L`、右は `R` です。
 左右の `joint0`〜`joint6` を使用し、グリッパーの `joint7` は固定します。計算上の±180度の
 範囲は仮値で、実機の可動範囲ではありません。別のMJCFを使う場合は `--mujoco-model 新しい.xml`
 を指定し、計画と評価結果にそのXMLのSHA-256を保存します。

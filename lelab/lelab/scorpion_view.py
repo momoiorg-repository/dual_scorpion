@@ -3,17 +3,18 @@
 import math
 from pathlib import Path
 
-SCORPION_MODEL_DIR = Path(__file__).resolve().parents[2] / "dual_scorpion_Full_urdf"
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+SCORPION_MODEL_DIR = WORKSPACE_ROOT / "dual_scorpion_Full_urdf" / "default"
 
 
 def supports_verified_view_mapping() -> bool:
-    mocopi = SCORPION_MODEL_DIR.parent / "telegrip_teleoperation/telegrip/mocopi"
+    mocopi = WORKSPACE_ROOT / "telegrip_teleoperation/telegrip/mocopi"
     return (mocopi / "dataset/hardware_dataset.py").is_file()
 
 
 def list_view_mappings() -> list[str]:
     """Return available Scorpion hardware mapping YAML filenames."""
-    mapping_dir = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware"
+    mapping_dir = WORKSPACE_ROOT / "config" / "mocopi" / "hardware"
     if not mapping_dir.is_dir():
         return []
     return sorted(
@@ -38,7 +39,7 @@ def read_view_mapping(filename, robot):
         validate_mapping_for_robot,
     )
 
-    path = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware" / filename
+    path = WORKSPACE_ROOT / "config" / "mocopi" / "hardware" / filename
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict) or document.get("mujoco_model_sha256") != file_sha256(
         SCORPION_MODEL_DIR / "mujoco/scorpion.xml"

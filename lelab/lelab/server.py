@@ -83,7 +83,7 @@ from .scorpion_mapping import (
     start_mapping_session,
     stop_mapping_session,
 )
-from .scorpion_view import SCORPION_MODEL_DIR, list_view_mappings, supports_verified_view_mapping
+from .scorpion_view import SCORPION_MODEL_DIR, WORKSPACE_ROOT, list_view_mappings, supports_verified_view_mapping
 
 # Import our custom teleoperation functionality
 from .teleoperate import (
@@ -208,7 +208,7 @@ app.add_middleware(
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
 
-logger.info("LeRobot workspace: %s", SCORPION_MODEL_DIR.parent)
+logger.info("LeRobot workspace: %s", WORKSPACE_ROOT)
 
 
 class ConnectionManager:
