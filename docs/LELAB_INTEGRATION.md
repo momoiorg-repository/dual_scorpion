@@ -9,7 +9,7 @@ git fetch origin
 git pull --ff-only
 export UV_PROJECT_ENVIRONMENT="$PWD/.venv-lelab"
 uv sync --locked --all-packages --extra dual_scorpion --extra lelab
-git lfs pull --include="dual_scorpion_Full_urdf/urdf/meshes/visual/*.stl"
+git lfs pull --include="dual_scorpion_Full_urdf/default/urdf/meshes/visual/*.stl"
 ```
 
 `UV_PROJECT_ENVIRONMENT` で LeLab 用の環境を作ります。Linux x86-64 で CPU のみを使う場合は `uv sync` に `--extra cpu` を、Pi0.5 を使用する場合は `--extra pi` を追加します。GPU を使う場合は、インストールされる PyTorch と NVIDIA ドライバーの対応を確認してください。LeRobot v0.7.0 では Linux の標準 CUDA ビルドが変更されています。[LeRobot v0.7.0 リリースノート](https://github.com/huggingface/lerobot/releases/tag/v0.7.0)
