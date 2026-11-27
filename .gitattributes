@@ -24,5 +24,5 @@ tests/artifacts/cameras/*.png filter=lfs diff=lfs merge=lfs -text
 tests/artifacts/** -filter -diff -merge -text
 dual_scorpion_3d_printer_parts/**/*.stl -filter -diff -merge -text
 
-dual_scorpion_Full_urdf/isaac_sim/*.usd filter=lfs diff=lfs merge=lfs -text
-dual_scorpion_Full_urdf/isaac_sim/*.usda filter=lfs diff=lfs merge=lfs -text
+dual_scorpion_Full_urdf/default/isaac_sim/*.usd filter=lfs diff=lfs merge=lfs -text
+dual_scorpion_Full_urdf/default/isaac_sim/*.usda filter=lfs diff=lfs merge=lfs -text

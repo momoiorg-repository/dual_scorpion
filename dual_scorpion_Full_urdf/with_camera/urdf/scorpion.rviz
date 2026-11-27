@@ -1,0 +1,41 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Plane Cell Count: 12
+      Cell Size: 0.1
+      Reference Frame: base_link
+    - Class: rviz_default_plugins/RobotModel
+      Enabled: true
+      Name: Dual Scorpion
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Visual Enabled: true
+      Collision Enabled: false
+  Enabled: true
+  Global Options:
+    Background Color: 35; 39; 47
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.1
+      Focal Point:
+        X: 0
+        Y: 0.1
+        Z: 0.22
+      Name: Orbit
+      Pitch: 0.5
+      Yaw: 4.1

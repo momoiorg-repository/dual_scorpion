@@ -1,0 +1,210 @@
+#usda 1.0
+(
+    defaultPrim = "Scorpion"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    subLayers = [
+        @scorpion.usd@
+    ]
+    upAxis = "Z"
+)
+
+over "Scorpion"
+{
+    over "base_link"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (0, 0, 0)
+    }
+
+    over "r_link_1"
+    {
+        quatf xformOp:orient = (0.9993284, 0.036642313, -2.347858e-18, -0.00031977263)
+        double3 xformOp:translate = (0.1649078549440819, -0.00154764693296899, 0.3713124915927699)
+    }
+
+    over "r_link_2"
+    {
+        quatf xformOp:orient = (0.9993098, 0.0366949, -0.00022384229, 0.0057845125)
+        double3 xformOp:translate = (0.1824509560482487, 0.0028649544687014625, 0.311068909617682)
+    }
+
+    over "r_link_3"
+    {
+        quatf xformOp:orient = (0.9992441, 0.038438898, -0.00021430534, 0.005800115)
+        double3 xformOp:translate = (0.20050868967785762, 0.004181731806780373, 0.25061646665110543)
+    }
+
+    over "r_link_4"
+    {
+        quatf xformOp:orient = (0.9992441, 0.038438898, -0.00021430534, 0.005800115)
+        double3 xformOp:translate = (0.16698731507844944, 0.009344302832567014, 0.11685049635035694)
+    }
+
+    over "r_link_5"
+    {
+        quatf xformOp:orient = (0.9992441, 0.038438898, -0.00021430534, 0.005800115)
+        double3 xformOp:translate = (0.1835042695164483, 0.06962303989776626, 0.1213439731894979)
+    }
+
+    over "r_link_6"
+    {
+        quatf xformOp:orient = (0.9992441, 0.038438898, -0.00021430534, 0.005800115)
+        double3 xformOp:translate = (0.20057455781989586, 0.13169566943428268, 0.12293668877323977)
+    }
+
+    over "r_link_7"
+    {
+        quatf xformOp:orient = (0.9992441, 0.038438898, -0.00021430534, 0.005800115)
+        double3 xformOp:translate = (0.17961943232841748, 0.19113726293325045, 0.12787239205674958)
+    }
+
+    over "r_link_8"
+    {
+        quatf xformOp:orient = (0.9992441, 0.038438898, -0.00021430534, 0.005800115)
+        double3 xformOp:translate = (0.19933586954834331, 0.2146222314722465, 0.14749007996466182)
+    }
+
+    over "l_link_1"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.16490785494408186, -0.001547646932969009, 0.3713124915927699)
+    }
+
+    over "l_link_2"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.18244954407082334, -0.0015476469329693916, 0.3109071130305017)
+    }
+
+    over "l_link_3"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.20046856065681481, -0.004876940569886763, 0.25052048907969515)
+    }
+
+    over "l_link_4"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.16689226479002245, -0.009616386074358383, 0.11675263226310843)
+    }
+
+    over "l_link_5"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.18410976004888546, 0.05063361426332213, 0.11660237745829484)
+    }
+
+    over "l_link_6"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.20189878036481715, 0.11244283382586097, 0.11342213272872932)
+    }
+
+    over "l_link_7"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.18163741702131078, 0.17232716487021185, 0.11377644868318262)
+    }
+
+    over "l_link_8"
+    {
+        quatf xformOp:orient = (1, 0, 0, 0)
+        double3 xformOp:translate = (-0.2016415135478379, 0.19701926160251507, 0.13153234358873303)
+    }
+
+    over "joints"
+    {
+        over "joint0_R"
+        {
+            float drive:angular:physics:targetPosition = -4.2
+        }
+
+        over "joint1_R"
+        {
+            float drive:angular:physics:targetPosition = -0.7
+        }
+
+        over "joint2_R"
+        {
+            float drive:angular:physics:targetPosition = 0.2
+        }
+
+        over "joint3_R"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint4_R"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint5_R"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint6_R"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint7_R"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint0_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint1_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint2_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint3_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint4_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint5_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint6_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+
+        over "joint7_L"
+        {
+            float drive:angular:physics:targetPosition = 0
+        }
+    }
+
+    over "r_wrist_camera_link"
+    {
+        quatf xformOp:orient = (0.6896412, -0.124108836, 0.13393311, 0.70075244)
+        double3 xformOp:translate = (0.18346328316475513, 0.17892530571257448, 0.20090978182654623)
+    }
+
+    over "l_wrist_camera_link"
+    {
+        quatf xformOp:orient = (0.6911011, -0.16163565, 0.14959706, 0.688385)
+        double3 xformOp:translate = (-0.1854035039652208, 0.16571802522086185, 0.18753621586708263)
+    }
+}

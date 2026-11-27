@@ -1,0 +1,1206 @@
+#usda 1.0
+(
+    defaultPrim = "Scorpion"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    subLayers = [
+        @../../default/isaac_sim/scorpion.usd@
+    ]
+    upAxis = "Z"
+)
+
+over "Scorpion"
+{
+    over "r_link_7" (
+        prepend apiSchemas = ["PhysicsMassAPI", "PhysicsFilteredPairsAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.0024315866, 0.024632387, 0.0015692216)
+        float3 physics:diagonalInertia = (0.00011182985, 0.0001360946, 0.0001605364)
+        prepend rel physics:filteredPairs = </Scorpion/r_wrist_camera_link>
+        float physics:mass = 0.34435496
+        quatf physics:principalAxes = (0.41452026, 0.87234956, -0.2576669, -0.028054025)
+
+        over "visual" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_0" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_1" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_2" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_3" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_4" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_5" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_6" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_7" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_8" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_9" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_10" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_11" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_12" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_13" (
+            active = false
+        )
+        {
+        }
+
+        def Mesh "r_integrated_camera_mount" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_integrated_camera_mount>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.74, 0.76, 0.79)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_roll_horn" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_wrist_roll_horn>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.33, 0.36, 0.4)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_gripper_motor_case" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_gripper_motor_case>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.2, 0.22, 0.24)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_link_7_collision_0" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/joint6_horn_drive_R_0>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_link_7_collision_13" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/joint7_motor_case_R_0>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_01>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_02" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_02>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_03" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_03>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_04" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_04>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_05" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_05>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_06" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_06>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_07" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_07>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_08" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_08>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_09" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_09>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_10" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_10>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_11" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_11>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_12" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_12>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_13" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_13>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_14" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_14>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_15" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_15>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_16" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_16>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_17" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_17>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_18" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_18>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_19" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_19>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_wrist_mount_convex_20" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/r_mount_collision_20>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def Xform "r_wrist_camera_link" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.0066452543, 0, -0.000091415)
+        float3 physics:diagonalInertia = (7.4034193e-7, 9.0006154e-7, 9.0944144e-7)
+        float physics:mass = 0.0108514195
+        quatf physics:principalAxes = (0.9995897, 1.1730139e-14, -0.028642854, 4.3206113e-16)
+        bool physics:rigidBodyEnabled = 1
+        quatf xformOp:orient = (0.688385, -0.14959706, 0.16163565, 0.6911011)
+        double3 xformOp:translate = (0.1854035039652208, 0.16571802522086185, 0.18753621586708258)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Mesh "r_innomaker_u20cam_1080p_board" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_board>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.075, 0.105, 0.12)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_innomaker_u20cam_1080p_connector" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_connector>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.78, 0.79, 0.77)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_innomaker_u20cam_1080p_housing" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_housing>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.1, 0.11, 0.12)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "r_innomaker_u20cam_1080p_lens" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_lens>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.025, 0.085, 0.115)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Cube "r_wrist_camera_pcb" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.0016, 0.032, 0.032)
+            double3 xformOp:translate = (-0.0008, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "r_wrist_camera_usb_connector" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.003, 0.0064, 0.0036)
+            double3 xformOp:translate = (-0.0031, 0, -0.012)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "r_wrist_camera_lens_seat" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.0052, 0.014, 0.014)
+            double3 xformOp:translate = (0.0026, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "r_wrist_camera_lens_seat_ears" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.0039, 0.0205, 0.005)
+            double3 xformOp:translate = (0.00195, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cylinder "r_wrist_camera_lens_thread" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.007
+            uniform token purpose = "guide"
+            double radius = 0.006
+            token visibility = "invisible"
+            quatf xformOp:orient = (0.70710677, 0, 0.70710677, 0)
+            double3 xformOp:translate = (0.0087, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Cylinder "r_wrist_camera_lens_barrel" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.0072
+            uniform token purpose = "guide"
+            double radius = 0.0078
+            token visibility = "invisible"
+            quatf xformOp:orient = (0.70710677, 0, 0.70710677, 0)
+            double3 xformOp:translate = (0.016, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Xform "r_wrist_camera_optical_frame"
+        {
+            quatf xformOp:orient = (0.5, -0.5, 0.5, -0.5)
+            double3 xformOp:translate = (0.0195, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+            def Camera "r_wrist_camera" (
+                customData = {
+                    int2 resolution = (1920, 1080)
+                }
+            )
+            {
+                float2 clippingRange = (0.01, 10)
+                float focalLength = 7.8953624
+                float horizontalAperture = 20.955
+                float verticalAperture = 11.787188
+                quatf xformOp:orient = (0, 1, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:orient"]
+            }
+        }
+    }
+
+    over "joints"
+    {
+        def PhysicsFixedJoint "r_wrist_camera_mount"
+        {
+            rel physics:body0 = </Scorpion/r_link_7>
+            rel physics:body1 = </Scorpion/r_wrist_camera_link>
+            point3f physics:localPos0 = (0.003766087, -0.0066091395, 0.073759764)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.688385, -0.14959706, 0.16163565, 0.6911011)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+
+        def PhysicsFixedJoint "l_wrist_camera_mount"
+        {
+            rel physics:body0 = </Scorpion/l_link_7>
+            rel physics:body1 = </Scorpion/l_wrist_camera_link>
+            point3f physics:localPos0 = (-0.003766087, -0.0066091395, 0.073759764)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (0.6911011, -0.16163565, 0.14959706, 0.688385)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+
+    over "l_link_7" (
+        prepend apiSchemas = ["PhysicsMassAPI", "PhysicsFilteredPairsAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (-0.0024315866, 0.024632387, 0.001569222)
+        float3 physics:diagonalInertia = (0.00011182985, 0.0001360946, 0.0001605364)
+        prepend rel physics:filteredPairs = </Scorpion/l_wrist_camera_link>
+        float physics:mass = 0.34435493
+        quatf physics:principalAxes = (0.41452026, 0.8723495, 0.25766692, 0.028054027)
+
+        over "visual" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_0" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_1" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_2" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_3" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_4" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_5" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_6" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_7" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_8" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_9" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_10" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_11" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_12" (
+            active = false
+        )
+        {
+        }
+
+        over "collision_13" (
+            active = false
+        )
+        {
+        }
+
+        def Mesh "l_integrated_camera_mount" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_integrated_camera_mount>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.74, 0.76, 0.79)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_roll_horn" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_wrist_roll_horn>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.33, 0.36, 0.4)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_gripper_motor_case" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_gripper_motor_case>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.2, 0.22, 0.24)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_link_7_collision_0" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/joint6_horn_drive_L_0>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_link_7_collision_13" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/joint7_motor_case_L_0>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_01" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_01>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_02" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_02>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_03" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_03>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_04" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_04>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_05" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_05>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_06" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_06>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_07" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_07>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_08" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_08>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_09" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_09>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_10" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_10>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_11" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_11>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_12" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_12>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_13" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_13>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_14" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_14>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_15" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_15>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_16" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_16>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_17" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_17>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_18" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_18>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_19" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_19>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_wrist_mount_convex_20" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"]
+            prepend references = @wrist_geometry.usdc@</WristGeometry/l_mount_collision_20>
+        )
+        {
+            uniform token physics:approximation = "convexHull"
+            uniform token purpose = "guide"
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+    }
+
+    def Xform "l_wrist_camera_link" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0.0066452543, 0, -0.000091415)
+        float3 physics:diagonalInertia = (7.4034193e-7, 9.0006154e-7, 9.0944144e-7)
+        float physics:mass = 0.0108514195
+        quatf physics:principalAxes = (0.9995897, 1.1730139e-14, -0.028642854, 4.3206113e-16)
+        bool physics:rigidBodyEnabled = 1
+        quatf xformOp:orient = (0.6911011, -0.16163565, 0.14959706, 0.688385)
+        double3 xformOp:translate = (-0.1854035039652208, 0.16571802522086185, 0.18753621586708263)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+        def Mesh "l_innomaker_u20cam_1080p_board" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_board>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.075, 0.105, 0.12)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_innomaker_u20cam_1080p_connector" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_connector>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.78, 0.79, 0.77)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_innomaker_u20cam_1080p_housing" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_housing>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.1, 0.11, 0.12)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Mesh "l_innomaker_u20cam_1080p_lens" (
+            prepend references = @wrist_geometry.usdc@</WristGeometry/innomaker_u20cam_1080p_lens>
+        )
+        {
+            color3f[] primvars:displayColor = [(0.025, 0.085, 0.115)]
+            float[] primvars:displayOpacity = [1]
+            quatf xformOp:orient = (1, 0, 0, 0)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Cube "l_wrist_camera_pcb" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.0016, 0.032, 0.032)
+            double3 xformOp:translate = (-0.0008, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "l_wrist_camera_usb_connector" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.003, 0.0064, 0.0036)
+            double3 xformOp:translate = (-0.0031, 0, -0.012)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "l_wrist_camera_lens_seat" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.0052, 0.014, 0.014)
+            double3 xformOp:translate = (0.0026, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cube "l_wrist_camera_lens_seat_ears" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token purpose = "guide"
+            double size = 1
+            token visibility = "invisible"
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (0.0039, 0.0205, 0.005)
+            double3 xformOp:translate = (0.00195, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Cylinder "l_wrist_camera_lens_thread" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.007
+            uniform token purpose = "guide"
+            double radius = 0.006
+            token visibility = "invisible"
+            quatf xformOp:orient = (0.70710677, 0, 0.70710677, 0)
+            double3 xformOp:translate = (0.0087, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Cylinder "l_wrist_camera_lens_barrel" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            uniform token axis = "Z"
+            double height = 0.0072
+            uniform token purpose = "guide"
+            double radius = 0.0078
+            token visibility = "invisible"
+            quatf xformOp:orient = (0.70710677, 0, 0.70710677, 0)
+            double3 xformOp:translate = (0.016, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+        }
+
+        def Xform "l_wrist_camera_optical_frame"
+        {
+            quatf xformOp:orient = (0.5, -0.5, 0.5, -0.5)
+            double3 xformOp:translate = (0.0195, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+
+            def Camera "l_wrist_camera" (
+                customData = {
+                    int2 resolution = (1920, 1080)
+                }
+            )
+            {
+                float2 clippingRange = (0.01, 10)
+                float focalLength = 7.8953624
+                float horizontalAperture = 20.955
+                float verticalAperture = 11.787188
+                quatf xformOp:orient = (0, 1, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:orient"]
+            }
+        }
+    }
+}
+
+def DistantLight "CameraPreviewSun"
+{
+    float inputs:intensity = 700
+    float3 xformOp:rotateXYZ = (25, -30, 0)
+    uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+}
+
+def DomeLight "CameraPreviewFill"
+{
+    float inputs:intensity = 150
+}
