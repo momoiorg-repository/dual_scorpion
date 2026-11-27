@@ -60,7 +60,7 @@ MuJoCoでは新しいCADモデルの台座・腕・グリッパーの形状を�
 上腕追従中は、小さい青・オレンジの球が肘の目標、ピンクの点が実際の肘位置です。
 手先には向きを示す赤(X)・緑(Y)・青(Z)の矢印を表示します。
 短い濃い軸が実際の向き、長い半透明の軸が目標の向きです。
-既定では [新しいMuJoCoモデル](dual_scorpion_Full_urdf/mujoco/scorpion.xml) を使い、
+既定では [新しいMuJoCoモデル](dual_scorpion_Full_urdf/default/mujoco/scorpion.xml) を使い、
 IKと順運動学もMuJoCoで計算します。mocopiの左腕はCADの `L`、右腕は `R` に対応します。
 左右の `joint0`〜`joint6` を追従させ、グリッパーに対応する `joint7` は0で固定します。
 元モデルには実測の関節限界がなく、プレビュー計算用の±180度は実機の可動範囲ではありません。

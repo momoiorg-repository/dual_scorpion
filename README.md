@@ -142,7 +142,7 @@ repository root, on Linux x86-64 for CPU verification, run:
 
 ```bash
 uv sync --locked --all-packages --extra dual_scorpion --extra lelab --extra cpu
-git lfs pull --include="dual_scorpion_Full_urdf/urdf/meshes/visual/*.stl"
+git lfs pull --include="dual_scorpion_Full_urdf/default/urdf/meshes/visual/*.stl"
 npm --prefix lelab/frontend ci --ignore-scripts
 npm --prefix lelab/frontend run build
 uv run --no-sync lelab --no-open
