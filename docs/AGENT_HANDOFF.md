@@ -56,7 +56,7 @@ URDF差し替え（元の要求1〜4）は完了済み。`/home/syun/for_sim` �
 ## アーキテクチャ（このリポジトリでの配置）
 
 - `telegrip_teleoperation/telegrip/mocopi/` — mocopi受信・校正・retarget・IK・MuJoCoプレビュー
-  - `full_mujoco.py` — 新CADモデル（`dual_scorpion_Full_urdf/mujoco/scorpion.xml`）でのIK/FK/表示
+  - `full_mujoco.py` — 新CADモデル（`dual_scorpion_Full_urdf/default/mujoco/scorpion.xml`）でのIK/FK/表示
   - `mujoco_sim.py` — 旧URDF（左右別）でのプレビュー（`--sim-model legacy`）
 - `telegrip_teleoperation/telegrip/mocopi/dataset/` — 収録・評価・変換・再生
   - `capture.py` / `convert.py` — 生記録とLeRobot v3変換

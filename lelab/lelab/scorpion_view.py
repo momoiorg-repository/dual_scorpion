@@ -3,11 +3,12 @@
 import math
 from pathlib import Path
 
-SCORPION_MODEL_DIR = Path(__file__).resolve().parents[2] / "dual_scorpion_Full_urdf"
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+SCORPION_MODEL_DIR = WORKSPACE_ROOT / "dual_scorpion_Full_urdf" / "default"
 
 
 def supports_verified_view_mapping() -> bool:
-    mocopi = SCORPION_MODEL_DIR.parent / "telegrip_teleoperation/telegrip/mocopi"
+    mocopi = WORKSPACE_ROOT / "telegrip_teleoperation/telegrip/mocopi"
     return (mocopi / "dataset/hardware_dataset.py").is_file()
 
 
@@ -22,7 +23,7 @@ def read_view_mapping(filename, robot):
     from telegrip.mocopi.dataset.fingerprint import file_sha256
     from telegrip.mocopi.dataset.hardware_dataset import validate_mapping_for_robot
 
-    path = SCORPION_MODEL_DIR.parent / "config" / "mocopi" / "hardware" / filename
+    path = WORKSPACE_ROOT / "config" / "mocopi" / "hardware" / filename
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict) or document.get("mujoco_model_sha256") != file_sha256(
         SCORPION_MODEL_DIR / "mujoco/scorpion.xml"
